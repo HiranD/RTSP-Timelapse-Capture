@@ -4,16 +4,29 @@ block_cipher = None
 
 a = Analysis(
     ['run_gui.py'],
-    pathex=[],
-    binaries=[],
+    pathex=['src'],
+    binaries=[
+        ('C:/Users/wande/miniconda3/Library/bin/tcl86t.dll', '.'),
+        ('C:/Users/wande/miniconda3/Library/bin/tk86t.dll', '.'),
+    ],
     datas=[
+        ('src', 'src'),
         ('config', 'config'),
+        ('C:/Users/wande/miniconda3/Library/lib/tcl8.6', 'tcl'),
+        ('C:/Users/wande/miniconda3/Library/lib/tk8.6', 'tk'),
     ],
     hiddenimports=[
         'tkinter',
         'PIL._tkinter_finder',
         'cv2',
         'numpy',
+        'gui_app',
+        'capture_engine',
+        'config_manager',
+        'ffmpeg_wrapper',
+        'preset_manager',
+        'video_export_controller',
+        'video_export_panel',
     ],
     hookspath=[],
     hooksconfig={},

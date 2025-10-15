@@ -85,7 +85,8 @@ class FFmpegWrapper:
                 [self.ffmpeg_path, '-version'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             if result.returncode == 0:
                 # Extract version from first line

@@ -38,13 +38,13 @@ copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.0.0_Windows\"
 copy "README.md" "release\RTSP_Timelapse_v2.0.0_Windows\"
 copy "requirements.txt" "release\RTSP_Timelapse_v2.0.0_Windows\"
 
-REM Bundle FFmpeg (no separate install needed!)
+REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
 if not exist "release\RTSP_Timelapse_v2.0.0_Windows\bin" mkdir "release\RTSP_Timelapse_v2.0.0_Windows\bin"
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\ffmpeg.exe" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\ffprobe.exe" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo   - FFmpeg bundled successfully! Users don't need to install it.
+    echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
+    echo   - Users don't need to install anything!
 ) else (
     echo   - Warning: FFmpeg not found, users will need to install it separately
 )
