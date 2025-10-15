@@ -1,0 +1,28 @@
+{
+  "camera": {
+    "ip_address": "192.168.1.100",
+    "username": "admin",
+    "password": "your_password_here",
+    "stream_path": "/stream1",
+    "force_tcp": true
+  },
+  "schedule": {
+    "start_time": "22:00",
+    "end_time": "07:00",
+    "folder_rollover_hour": 12
+  },
+  "capture": {
+    "interval_seconds": 60,
+    "jpeg_quality": 90,
+    "output_folder": "snapshots",
+    "buffer_frames": 4,
+    "max_retries": 5
+  },
+  "ui": {
+    "window_width": 1000,
+    "window_height": 700,
+    "preview_size": "medium",
+    "preview_enabled": true,
+    "auto_start": false
+  }
+}

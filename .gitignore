@@ -8,7 +8,7 @@ __pycache__/
 dist/
 build/
 *.egg
-docs/
+*.pyc
 
 # Virtual Environment
 .venv/
@@ -24,21 +24,71 @@ env/
 *~
 .DS_Store
 
-# Project specific
+# PyInstaller
+*.manifest
+*.spec.bak
+build/
+dist/
+
+# Project-specific - Build Artifacts
+release/
+*.exe
+!release/.gitkeep
+
+# Project-specific - User Data
 snapshots/
-*.json
+test_output/
+exports/
+videos/
+
+# Project-specific - Configuration
+config/camera_config.json
+config/*.json
 !config/camera_config_example.json
 
 # Logs
 *.log
+logs/
+*.log.*
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
 
 # Claude
 .claude/
+.claude-*
 
 # OS specific
 Thumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# FFmpeg binaries (optional - uncomment if you want to ignore these)
+# bin/ffmpeg.exe
+# bin/ffprobe.exe
+
+# Release archives
+*.zip
+*.tar.gz
+*.7z
+!release/.gitkeep
+
+# Video files (generated timelapses)
+*.mp4
+*.avi
+*.mov
+*.mkv
+!examples/*.mp4
+
+docs/
