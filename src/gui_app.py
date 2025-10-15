@@ -1,8 +1,9 @@
 """
 RTSP Timelapse Capture System - GUI Application
-Phase 3: Enhanced Features
+Phase 3.5: Video Export Feature Added
 
-A Tkinter-based GUI for managing RTSP camera timelapse captures with live preview.
+A Tkinter-based GUI for managing RTSP camera timelapse captures with live preview
+and video export capabilities.
 """
 
 import tkinter as tk
@@ -15,6 +16,7 @@ import numpy as np
 
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
+from video_export_panel import VideoExportPanel
 
 
 class RTSPTimelapseGUI:
@@ -53,15 +55,32 @@ class RTSPTimelapseGUI:
         self.update_status()
 
     def create_widgets(self):
-        """Create all GUI widgets"""
+        """Create all GUI widgets with tabbed interface"""
 
-        # Main container with padding
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-
-        # Configure grid weights for responsiveness
+        # Configure root grid
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
+
+        # Create notebook (tabbed interface)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+
+        # Tab 1: Capture (existing functionality)
+        self.capture_tab = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(self.capture_tab, text="  Capture  ")
+        self.create_capture_tab()
+
+        # Tab 2: Video Export (NEW)
+        self.video_export_panel = VideoExportPanel(
+            self.notebook,
+            default_snapshots_dir=self.config_manager.capture.output_folder
+        )
+        self.notebook.add(self.video_export_panel, text="  Video Export  ")
+
+    def create_capture_tab(self):
+        """Create the capture tab (original main view)"""
+        # Main container
+        main_frame = self.capture_tab
         main_frame.columnconfigure(1, weight=0)  # Middle column (status/controls) - fixed width
         main_frame.columnconfigure(2, weight=1)  # Right column (preview) - expandable
         main_frame.rowconfigure(2, weight=1)
