@@ -47,12 +47,15 @@ Transform your captured images into professional timelapse videos with one click
 ```
 RTSP_Timelapse_v2.0.0_Windows/
 ├── RTSP_Timelapse.exe    # Main application (no Python required!)
+├── bin/
+│   ├── ffmpeg.exe        # Video encoding (bundled!)
+│   └── ffprobe.exe       # Video info tool
 ├── README.md              # Full documentation
 ├── QUICKSTART.txt         # Quick start guide
 └── requirements.txt       # For source installation
 ```
 
-**File Size:** ~150-200 MB (includes all dependencies)
+**File Size:** 59 MB (includes all dependencies + FFmpeg!)
 
 ---
 
@@ -62,10 +65,9 @@ RTSP_Timelapse_v2.0.0_Windows/
 
 1. **Download the ZIP file** from Assets below
 2. **Extract** to your desired location
-3. **Install FFmpeg** (required for video export):
-   - Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-   - Add to system PATH OR place `ffmpeg.exe` in same folder as application
-4. **Run** `RTSP_Timelapse.exe`
+3. **Run** `RTSP_Timelapse.exe`
+
+**That's it!** FFmpeg is bundled - no separate installation needed!
 
 ### First Use
 
@@ -117,8 +119,9 @@ RTSP_Timelapse_v2.0.0_Windows/
 - Windows 10/11 (64-bit)
 - 4 GB RAM minimum
 - RTSP-compatible camera
-- FFmpeg (for video export)
 - Network connection to camera
+
+**No additional software needed** - FFmpeg is bundled!
 
 **Technologies:**
 - Python 3.8+ (bundled in executable)
@@ -136,13 +139,10 @@ RTSP_Timelapse_v2.0.0_Windows/
 
 ## 🐛 Known Issues
 
-1. **FFmpeg Required** - Must be installed separately for video export
-   - Solution: Download from ffmpeg.org and add to PATH
-
-2. **Antivirus False Positives** - Some antivirus may flag the executable
+1. **Antivirus False Positives** - Some antivirus may flag the executable
    - Solution: This is normal for PyInstaller executables, add exception
 
-3. **First Launch Slow** - Executable may take 10-20 seconds on first run
+2. **First Launch Slow** - Executable may take 10-20 seconds on first run
    - Solution: Normal behavior, subsequent launches are faster
 
 ---

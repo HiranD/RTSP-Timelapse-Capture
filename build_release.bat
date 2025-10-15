@@ -38,6 +38,17 @@ copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.0.0_Windows\"
 copy "README.md" "release\RTSP_Timelapse_v2.0.0_Windows\"
 copy "requirements.txt" "release\RTSP_Timelapse_v2.0.0_Windows\"
 
+REM Bundle FFmpeg (no separate install needed!)
+echo Bundling FFmpeg...
+if not exist "release\RTSP_Timelapse_v2.0.0_Windows\bin" mkdir "release\RTSP_Timelapse_v2.0.0_Windows\bin"
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\ffmpeg.exe" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\ffprobe.exe" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo   - FFmpeg bundled successfully! Users don't need to install it.
+) else (
+    echo   - Warning: FFmpeg not found, users will need to install it separately
+)
+
 REM Create user guide
 echo [5/5] Creating user guide...
 (
@@ -50,10 +61,11 @@ echo 2. Configure your camera settings in the Capture tab
 echo 3. Click "Start Capture" to begin capturing images
 echo 4. Switch to "Video Export" tab to create videos
 echo.
-echo REQUIREMENTS:
-echo - FFmpeg is required for video export
-echo - Download from: https://ffmpeg.org/download.html
-echo - Add to PATH or place in a 'bin' folder next to the exe
+echo FEATURES:
+echo - RTSP camera capture with live preview
+echo - Overnight scheduling support
+echo - Video export with 6 built-in presets
+echo - FFmpeg is included - no separate installation needed!
 echo.
 echo DOCUMENTATION:
 echo - See README.md for full documentation

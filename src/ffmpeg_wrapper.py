@@ -8,6 +8,7 @@ Handles FFmpeg detection, command building, and video export execution.
 import subprocess
 import re
 import os
+import sys
 import shutil
 from pathlib import Path
 from typing import Optional, Tuple, Callable, Dict, Any
@@ -38,17 +39,25 @@ class FFmpegWrapper:
     def find_ffmpeg(self) -> Optional[str]:
         """
         Locate FFmpeg executable
-        Checks: 1) System PATH, 2) Local bin/ folder, 3) Common install locations
+        Checks: 1) Bundled with exe, 2) Local bin/, 3) System PATH, 4) Common locations
         """
+        # Check if running as PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            app_dir = Path(sys.executable).parent
+            bundled_ffmpeg = app_dir / 'bin' / 'ffmpeg.exe'
+            if bundled_ffmpeg.exists():
+                return str(bundled_ffmpeg)
+
+        # Check local bin folder (for development/source)
+        local_bin = Path(__file__).parent.parent / 'bin' / 'ffmpeg.exe'
+        if local_bin.exists():
+            return str(local_bin)
+
         # Check if ffmpeg is in PATH
         ffmpeg_cmd = shutil.which('ffmpeg')
         if ffmpeg_cmd:
             return ffmpeg_cmd
-
-        # Check local bin folder (for bundled versions)
-        local_bin = Path(__file__).parent.parent / 'bin' / 'ffmpeg.exe'
-        if local_bin.exists():
-            return str(local_bin)
 
         # Check common Windows installation locations
         common_paths = [
