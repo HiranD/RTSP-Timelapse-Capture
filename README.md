@@ -44,60 +44,12 @@
 ## 📸 Screenshots
 
 ### Capture Tab
-```
-┌─────────────────────────────────────────────────────────────┐
-│  RTSP Timelapse Capture System                       [Tabs] │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──[ Capture ]──┬──[ Video Export ]──┐                     │
-│  │                                                           │
-│  │  ┌─ Camera Config ─┐  ┌─ Status ──┐  ┌─ Live Preview ─┐ │
-│  │  │ IP: 192.168.0.1 │  │ ● Running │  │                 │ │
-│  │  │ User: admin     │  │ Frames: 42│  │  [Camera Feed]  │ │
-│  │  │ Path: /stream1  │  │ Up: 14:03 │  │                 │ │
-│  │  └────────────────┘  └───────────┘  └─────────────────┘ │
-│  │                                                           │
-│  │  ┌─ Schedule ──────┐  ┌─ Controls ────┐                 │
-│  │  │ Start: 22:40    │  │ [Start]       │  Statistics:    │
-│  │  │ End:   07:00    │  │ [Stop]        │  • Total: 42    │
-│  │  │ Int:   20s      │  │ [Test]        │  • Success: 100%│
-│  │  └─────────────────┘  └───────────────┘  • Avg: 20.1s   │
-│  │                                                           │
-│  │  ┌─ Activity Log ──────────────────────────────────────┐ │
-│  │  │ [00:55:04] Capture started                          │ │
-│  │  │ [00:55:24] Saved: 20251015-005524.jpg               │ │
-│  │  └─────────────────────────────────────────────────────┘ │
-│  └───────────────────────────────────────────────────────────┘
-```
+![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)
+*Live capture interface showing camera configuration, real-time preview with astrophotography feed, session statistics, and activity logging*
 
 ### Video Export Tab
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ┌──[ Capture ]──┬──[✓ Video Export ]──┐                    │
-│  │                                                           │
-│  │  ┌─ Input Selection ─────────────────────────────────┐   │
-│  │  │ Folder: snapshots/20251015/    [Browse] [Quick]  │   │
-│  │  │ Found: 1,234 images | 6h 17m | 2025-10-15        │   │
-│  │  └──────────────────────────────────────────────────┘   │
-│  │                                                           │
-│  │  ┌─ Video Settings ──────────────────────────────────┐   │
-│  │  │ Frame Rate: [24] fps    Quality: [20] (lower=best)│   │
-│  │  │ Speed: [1x] ▼           Resolution: [Original] ▼  │   │
-│  │  │ Format: [MP4] ▼         Est: 51s video, ~12 MB   │   │
-│  │  └──────────────────────────────────────────────────┘   │
-│  │                                                           │
-│  │  ┌─ Presets ─────────────────────────────────────────┐   │
-│  │  │ [Standard 24fps ▼]  [Save As] [Manage]           │   │
-│  │  └──────────────────────────────────────────────────┘   │
-│  │                                                           │
-│  │  ┌─ Progress ────────────────────────────────────────┐   │
-│  │  │ Status: Encoding... (frame 562/1234)              │   │
-│  │  │ [████████████████░░░░░░░░] 45%                   │   │
-│  │  │ Elapsed: 00:02:15 | Remaining: ~00:02:50         │   │
-│  │  └──────────────────────────────────────────────────┘   │
-│  │                                                           │
-│  │  [Create Video] [Cancel]                                │
-│  └───────────────────────────────────────────────────────────┘
-```
+![Video Export Interface](screenshots/Video_export.jpg)
+*Video export interface with input selection, customizable settings, presets management, and real-time encoding progress*
 
 ---
 
@@ -348,13 +300,6 @@ RSTP/
 │   ├── test_backend.py          # Interactive backend tests
 │   ├── test_backend_auto.py     # Automated tests
 │   └── test_video_export.py     # Video export tests
-│
-├── docs/                         # Documentation
-│   ├── claude.md                # Development context
-│   ├── IMPLEMENTATION_PLAN.md   # Project roadmap
-│   ├── PHASE3.5_VIDEO_EXPORT_PLAN.md
-│   ├── PHASE3.5_COMPLETE.md     # Video export summary
-│   └── GUI_TEST_GUIDE.md        # Testing guide
 │
 ├── config/                       # Configuration files
 │   ├── camera_config.json       # Current config (auto-saved)
@@ -630,7 +575,7 @@ Contributions welcome! Please follow these steps:
 
 ```bash
 # Clone your fork
-git clone https://github.com/your-username/rtsp-timelapse.git
+git clone https://github.com/HiranD/rtsp-timelapse.git
 
 # Create virtual environment
 python -m venv .venv
@@ -672,7 +617,6 @@ MIT License - See [LICENSE](LICENSE) file for details.
 - 📖 **Documentation:** Check `docs/` folder
 - 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/rtsp-timelapse/issues)
 - 💡 **Feature Requests:** [Open an issue](https://github.com/yourusername/rtsp-timelapse/issues)
-- 📧 **Email:** your.email@example.com
 
 ### Useful Resources
 
@@ -718,41 +662,6 @@ MIT License - See [LICENSE](LICENSE) file for details.
 - ✅ Configuration management
 - ✅ Activity logging
 - ✅ Thread-safe architecture
-
----
-
-## 🗺️ Roadmap
-
-### Version 2.1 (Planned)
-- ☐ Multi-camera support (multiple tabs)
-- ☐ Batch video export (queue multiple folders)
-- ☐ Advanced timestamp overlay (actual timestamps)
-- ☐ Video preview before export
-
-### Version 2.2 (Planned)
-- ☐ GPU acceleration (NVENC, QuickSync, VideoToolbox)
-- ☐ Audio track support (background music)
-- ☐ Video stabilization
-- ☐ Color correction filters
-
-### Version 3.0 (Future)
-- ☐ Cloud upload (YouTube, Vimeo, Dropbox)
-- ☐ Mobile app for monitoring
-- ☐ Email notifications
-- ☐ Motion detection
-- ☐ Time-based filtering (day/night only)
-
-### Community Requested
-- ☐ Executable build (no Python required)
-- ☐ System tray integration
-- ☐ Auto-start with Windows
-- ☐ Remote API for automation
-
----
-
-## 🌟 Star History
-
-If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 ---
 
