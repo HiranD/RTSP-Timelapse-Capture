@@ -792,7 +792,7 @@ If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 <div align="center">
 
-## Made with ❤️ for timelapse photography
+## From Wandering Astrophotography
 
 **[⬆ Back to Top](#rtsp-timelapse-capture-system)**
 
