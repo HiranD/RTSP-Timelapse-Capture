@@ -14,22 +14,26 @@ import os
 from video_export_controller import VideoExportController, ImageCollection, ExportJob, ExportResult
 from preset_manager import PresetManager, VideoExportSettings
 from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
+from tooltip import ToolTip
+from video_export_tooltips import VIDEO_EXPORT_TOOLTIPS
 
 
 class VideoExportPanel(ttk.Frame):
     """Video export tab UI component"""
 
-    def __init__(self, parent, default_snapshots_dir: str = "snapshots"):
+    def __init__(self, parent, default_snapshots_dir: str = "snapshots", config_manager=None):
         """
         Initialize video export panel
 
         Args:
             parent: Parent widget
             default_snapshots_dir: Default directory containing snapshots
+            config_manager: ConfigManager instance for saving/loading preferences
         """
         super().__init__(parent, padding="10")
 
         self.default_snapshots_dir = Path(default_snapshots_dir)
+        self.config_manager = config_manager
 
         # Initialize components
         self.ffmpeg_wrapper = FFmpegWrapper()
@@ -94,18 +98,22 @@ class VideoExportPanel(ttk.Frame):
 
         self.source_folder_entry = ttk.Entry(folder_frame)
         self.source_folder_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        ToolTip(self.source_folder_entry, VIDEO_EXPORT_TOOLTIPS["source_folder"])
 
         browse_btn = ttk.Button(folder_frame, text="Browse", command=self.browse_source_folder, width=10)
         browse_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(browse_btn, VIDEO_EXPORT_TOOLTIPS["browse_source"])
 
         quick_select_btn = ttk.Button(folder_frame, text="Quick Select", command=self.quick_select_folder, width=12)
         quick_select_btn.grid(row=0, column=2, padx=(5, 0))
+        ToolTip(quick_select_btn, VIDEO_EXPORT_TOOLTIPS["quick_select"])
 
         row += 1
 
         # Image info
         self.image_info_label = ttk.Label(input_frame, text="No folder selected", foreground="gray")
         self.image_info_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 5), padx=(0, 0))
+        ToolTip(self.image_info_label, VIDEO_EXPORT_TOOLTIPS["image_info"])
 
     def create_settings_section(self):
         """Create video settings section"""
@@ -123,6 +131,7 @@ class VideoExportPanel(ttk.Frame):
         framerate_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=(5, 10))
         self.framerate_spinbox = ttk.Spinbox(framerate_frame, from_=1, to=120, textvariable=self.framerate_var, width=10)
         self.framerate_spinbox.pack(side=tk.LEFT)
+        ToolTip(self.framerate_spinbox, VIDEO_EXPORT_TOOLTIPS["framerate"])
         ttk.Label(framerate_frame, text="fps").pack(side=tk.LEFT, padx=(5, 0))
 
         # Quality (CRF)
@@ -132,6 +141,7 @@ class VideoExportPanel(ttk.Frame):
         self.quality_var = tk.IntVar(value=20)
         self.quality_spinbox = ttk.Spinbox(quality_frame, from_=0, to=51, textvariable=self.quality_var, width=10)
         self.quality_spinbox.pack(side=tk.LEFT)
+        ToolTip(self.quality_spinbox, VIDEO_EXPORT_TOOLTIPS["quality_crf"])
         ttk.Label(quality_frame, text="(lower=better)").pack(side=tk.LEFT, padx=(5, 0))
 
         row += 1
@@ -144,6 +154,7 @@ class VideoExportPanel(ttk.Frame):
         self.speed_combo = ttk.Combobox(speed_frame, textvariable=self.speed_var, width=8, state='readonly',
                                         values=[1, 2, 4, 8, 16, 32])
         self.speed_combo.pack(side=tk.LEFT)
+        ToolTip(self.speed_combo, VIDEO_EXPORT_TOOLTIPS["speed_multiplier"])
         ttk.Label(speed_frame, text="x").pack(side=tk.LEFT, padx=(5, 0))
 
         # Resolution
@@ -154,6 +165,7 @@ class VideoExportPanel(ttk.Frame):
         self.resolution_combo = ttk.Combobox(resolution_frame, textvariable=self.resolution_var, width=15, state='readonly',
                                              values=self.preset_manager.get_resolution_options())
         self.resolution_combo.pack(side=tk.LEFT)
+        ToolTip(self.resolution_combo, VIDEO_EXPORT_TOOLTIPS["resolution"])
 
         row += 1
 
@@ -165,11 +177,13 @@ class VideoExportPanel(ttk.Frame):
         self.format_combo = ttk.Combobox(format_frame, textvariable=self.format_var, width=8, state='readonly',
                                          values=self.preset_manager.get_format_options())
         self.format_combo.pack(side=tk.LEFT)
+        ToolTip(self.format_combo, VIDEO_EXPORT_TOOLTIPS["format"])
 
         # Estimated info
         ttk.Label(settings_frame, text="Estimated:").grid(row=row, column=2, sticky=tk.W, pady=5, padx=(10, 0))
         self.estimate_label = ttk.Label(settings_frame, text="Select folder first", foreground="gray")
         self.estimate_label.grid(row=row, column=3, sticky=tk.W, pady=5, padx=(5, 0))
+        ToolTip(self.estimate_label, VIDEO_EXPORT_TOOLTIPS["estimate"])
 
         # Bind change events to update estimates
         self.framerate_var.trace_add('write', lambda *args: self.update_estimates())
@@ -194,10 +208,19 @@ class VideoExportPanel(ttk.Frame):
 
         self.output_file_entry = ttk.Entry(file_frame)
         self.output_file_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
-        self.output_file_entry.insert(0, "timelapse.mp4")
+
+        # Set initial default path (current directory or last used directory)
+        if self.config_manager and self.config_manager.ui.last_video_export_dir:
+            default_path = Path(self.config_manager.ui.last_video_export_dir) / "timelapse.mp4"
+        else:
+            default_path = Path(os.getcwd()) / "timelapse.mp4"
+
+        self.output_file_entry.insert(0, str(default_path))
+        ToolTip(self.output_file_entry, VIDEO_EXPORT_TOOLTIPS["output_file"])
 
         browse_output_btn = ttk.Button(file_frame, text="Browse", command=self.browse_output_file, width=10)
         browse_output_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(browse_output_btn, VIDEO_EXPORT_TOOLTIPS["browse_output"])
 
         row += 1
 
@@ -206,16 +229,22 @@ class VideoExportPanel(ttk.Frame):
         options_frame.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         self.preserve_originals_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Preserve original filenames (create temp copies)",
-                        variable=self.preserve_originals_var).pack(side=tk.LEFT, padx=(0, 15))
+        preserve_check = ttk.Checkbutton(options_frame, text="Preserve original filenames (create temp copies)",
+                        variable=self.preserve_originals_var)
+        preserve_check.pack(side=tk.LEFT, padx=(0, 15))
+        ToolTip(preserve_check, VIDEO_EXPORT_TOOLTIPS["preserve_originals"])
 
         self.add_timestamp_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="Add frame counter overlay",
-                        variable=self.add_timestamp_var).pack(side=tk.LEFT, padx=(0, 15))
+        timestamp_check = ttk.Checkbutton(options_frame, text="Add frame counter overlay",
+                        variable=self.add_timestamp_var)
+        timestamp_check.pack(side=tk.LEFT, padx=(0, 15))
+        ToolTip(timestamp_check, VIDEO_EXPORT_TOOLTIPS["frame_counter"])
 
         self.open_when_done_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="Open video when complete",
-                        variable=self.open_when_done_var).pack(side=tk.LEFT)
+        open_check = ttk.Checkbutton(options_frame, text="Open video when complete",
+                        variable=self.open_when_done_var)
+        open_check.pack(side=tk.LEFT)
+        ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
 
     def create_presets_section(self):
         """Create presets section"""
@@ -234,10 +263,16 @@ class VideoExportPanel(ttk.Frame):
         self.preset_combo.pack(side=tk.LEFT, padx=(0, 10))
         self.preset_combo['values'] = self.preset_manager.list_presets()
         self.preset_combo.bind('<<ComboboxSelected>>', self.load_preset)
+        ToolTip(self.preset_combo, VIDEO_EXPORT_TOOLTIPS["preset_select"])
 
         # Preset buttons
-        ttk.Button(preset_select_frame, text="Save As Preset", command=self.save_as_preset).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_select_frame, text="Manage Presets", command=self.manage_presets).pack(side=tk.LEFT, padx=2)
+        save_preset_btn = ttk.Button(preset_select_frame, text="Save As Preset", command=self.save_as_preset)
+        save_preset_btn.pack(side=tk.LEFT, padx=2)
+        ToolTip(save_preset_btn, VIDEO_EXPORT_TOOLTIPS["save_preset"])
+
+        manage_presets_btn = ttk.Button(preset_select_frame, text="Manage Presets", command=self.manage_presets)
+        manage_presets_btn.pack(side=tk.LEFT, padx=2)
+        ToolTip(manage_presets_btn, VIDEO_EXPORT_TOOLTIPS["manage_presets"])
 
     def create_progress_section(self):
         """Create progress section"""
@@ -248,6 +283,7 @@ class VideoExportPanel(ttk.Frame):
         # Status label
         self.status_label = ttk.Label(progress_frame, text="Ready", font=("Arial", 10, "bold"))
         self.status_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        ToolTip(self.status_label, VIDEO_EXPORT_TOOLTIPS["status"])
 
         # Progress bar
         self.progress_bar = ttk.Progressbar(progress_frame, length=400, mode='determinate')
@@ -256,6 +292,7 @@ class VideoExportPanel(ttk.Frame):
         # Progress details
         self.progress_details_label = ttk.Label(progress_frame, text="", foreground="gray")
         self.progress_details_label.grid(row=2, column=0, sticky=tk.W)
+        ToolTip(self.progress_details_label, VIDEO_EXPORT_TOOLTIPS["progress_details"])
 
     def create_log_section(self):
         """Create log section"""
@@ -278,12 +315,15 @@ class VideoExportPanel(ttk.Frame):
 
         self.create_video_btn = ttk.Button(button_frame, text="Create Video", command=self.start_export)
         self.create_video_btn.pack(side=tk.RIGHT, padx=5)
+        ToolTip(self.create_video_btn, VIDEO_EXPORT_TOOLTIPS["create_video"])
 
         self.cancel_btn = ttk.Button(button_frame, text="Cancel", command=self.cancel_export, state=tk.DISABLED)
         self.cancel_btn.pack(side=tk.RIGHT, padx=5)
+        ToolTip(self.cancel_btn, VIDEO_EXPORT_TOOLTIPS["cancel"])
 
         self.test_ffmpeg_btn = ttk.Button(button_frame, text="Test FFmpeg", command=self.test_ffmpeg)
         self.test_ffmpeg_btn.pack(side=tk.LEFT, padx=5)
+        ToolTip(self.test_ffmpeg_btn, VIDEO_EXPORT_TOOLTIPS["test_ffmpeg"])
 
     # Event handlers
 
@@ -363,12 +403,24 @@ class VideoExportPanel(ttk.Frame):
             self.log_message(f"✓ {message}: {info_text}")
             self.update_estimates()
 
-            # Auto-suggest output filename based on date
+            # Auto-suggest output filename with full path based on date
             if collection.first_timestamp:
                 date_str = collection.first_timestamp.strftime("%Y-%m-%d")
                 suggested_name = f"timelapse-{date_str}.mp4"
+
+                # Determine output directory
+                # Priority: 1) Last used dir, 2) Parent of source folder, 3) Current directory
+                if self.config_manager and self.config_manager.ui.last_video_export_dir:
+                    output_dir = Path(self.config_manager.ui.last_video_export_dir)
+                else:
+                    # Use parent directory of source folder
+                    output_dir = collection.source_folder.parent
+
+                # Construct full path
+                suggested_path = output_dir / suggested_name
+
                 self.output_file_entry.delete(0, tk.END)
-                self.output_file_entry.insert(0, suggested_name)
+                self.output_file_entry.insert(0, str(suggested_path))
         else:
             self.current_collection = None
             self.image_info_label.configure(text=message, foreground="red")
@@ -376,19 +428,37 @@ class VideoExportPanel(ttk.Frame):
 
     def browse_output_file(self):
         """Browse for output file"""
+        # Determine initial directory
+        current_path = self.output_file_entry.get()
+        if current_path and os.path.dirname(current_path):
+            initial_dir = os.path.dirname(current_path)
+            initial_file = os.path.basename(current_path)
+        elif self.config_manager and self.config_manager.ui.last_video_export_dir:
+            initial_dir = self.config_manager.ui.last_video_export_dir
+            initial_file = f"timelapse.{self.format_var.get()}"
+        else:
+            initial_dir = os.getcwd()
+            initial_file = f"timelapse.{self.format_var.get()}"
+
         filename = filedialog.asksaveasfilename(
             title="Save Video As",
+            initialdir=initial_dir,
+            initialfile=initial_file,
             defaultextension=f".{self.format_var.get()}",
             filetypes=[
                 (f"{self.format_var.get().upper()} files", f"*.{self.format_var.get()}"),
                 ("All files", "*.*")
-            ],
-            initialfile=self.output_file_entry.get()
+            ]
         )
 
         if filename:
             self.output_file_entry.delete(0, tk.END)
             self.output_file_entry.insert(0, filename)
+
+            # Save the directory for next time
+            if self.config_manager:
+                output_dir = os.path.dirname(filename)
+                self.config_manager.ui.last_video_export_dir = output_dir
 
     def load_preset(self, event=None):
         """Load selected preset"""
@@ -622,6 +692,13 @@ class VideoExportPanel(ttk.Frame):
                 self.log_message(f"Output: {result.output_file}")
                 self.log_message(f"Size: {result.output_size_bytes / (1024*1024):.2f} MB")
                 self.log_message("=" * 50)
+
+                # Save the directory for next time
+                if self.config_manager and result.output_file:
+                    output_dir = str(result.output_file.parent)
+                    self.config_manager.ui.last_video_export_dir = output_dir
+                    # Save config to disk
+                    self.config_manager.save_to_file("camera_config.json")
 
                 # Open video if requested
                 if self.open_when_done_var.get() and result.output_file:
