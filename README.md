@@ -2,60 +2,59 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 
-**Complete end-to-end timelapse workflow:** Capture images → Export to video → All in one GUI!
+**Complete end-to-end timelapse workflow:** capture stills + export to video + manage it all from one GUI.
 
 ---
 
-## 🎬 Features
+## Key Features
 
 ### Image Capture
-- 📷 **RTSP Stream Capture** - Connect to any RTSP-compatible camera
-- ⏰ **Smart Scheduling** - Overnight support (e.g., 22:40 PM to 07:00 AM)
-- 🔄 **Auto-Interval Capture** - 1-3600 seconds between frames
-- 📁 **Date Organization** - Automatic folder structure by date
-- 🎨 **Quality Control** - Adjustable JPEG quality (1-100%)
-- 👁️ **Live Preview** - Real-time camera feed with auto-scaling
-- 📊 **Session Statistics** - Track captures, success rate, uptime
+- RTSP stream capture with optional TCP forcing for stability.
+- **Proactive reconnection** to prevent camera firmware timeouts (100% capture success rate).
+- Smart scheduling that supports overnight windows (e.g., 22:40 → 07:00).
+- Automatic interval capture from 1 to 3600 seconds.
+- Automatic date-based folder structure for snapshots.
+- Adjustable JPEG output quality (1–100%).
+- Live preview with auto-scaling and JPEG compression control.
+- Session statistics with uptime, success rate, and error tracking.
 
-### Video Export ✨ NEW!
-- 🎥 **One-Click Export** - Convert images to video instantly
-- 🎛️ **Built-in Presets** - 6 professional presets ready to use
-- ⚙️ **Full Customization** - Frame rate, quality, resolution, speed
-- 🔒 **Non-Destructive** - Original images never modified
-- 📈 **Progress Tracking** - Real-time encoding progress
-- 💾 **Smart Estimates** - Duration and file size predictions
-- 🎨 **Frame Overlays** - Optional frame counter overlay
+### Video Export (New in v2.0)
+- One-click export from image folders to MP4.
+- Six built-in presets plus unlimited custom presets.
+- Full control over frame rate, CRF quality, resolution, and playback speed.
+- Non-destructive—source images are never modified.
+- Real-time progress, ETA, and output size estimates.
+- Optional frame counter overlay.
 
 ### User Experience
-- 🖥️ **Tabbed Interface** - Capture | Video Export
-- ⌨️ **Keyboard Shortcuts** - Quick access to common actions
-- 💾 **Auto-Save Settings** - Remembers your preferences
-- 🔄 **Thread-Safe** - Responsive UI, never freezes
-- 📝 **Activity Logs** - Color-coded event logging
-- 🌐 **Cross-Platform** - Windows tested, Linux/macOS compatible
+- Two-tab interface: **Capture** and **Video Export**.
+- **Comprehensive tooltip system** with 37 hover tooltips explaining every control.
+- Keyboard shortcuts for common actions.
+- Auto-save of UI preferences.
+- Thread-safe capture engine keeps the UI responsive.
+- Color-coded activity log with timestamps.
+- Cross-platform Python source (Windows-focused release builds).
 
 ---
 
-## 📸 Screenshots
+## Screenshots
 
 ### Capture Tab
-![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)
-*Live capture interface showing camera configuration, real-time preview with astrophotography feed, session statistics, and activity logging*
+![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)  
+*Live capture interface showing camera configuration, real-time preview, session statistics, and activity logging.*
 
 ### Video Export Tab
-![Video Export Interface](screenshots/Video_export.jpg)
-*Video export interface with input selection, customizable settings, presets management, and real-time encoding progress*
+![Video Export Interface](screenshots/Video_export.jpg)  
+*Video export interface with input selection, customizable settings, presets management, and real-time encoding progress.*
 
 ---
 
-## 🚀 Quick Start
-
-### Installation
+## Quick Start
 
 1. **Clone the repository**
    ```bash
@@ -79,9 +78,9 @@
    ```
 
 3. **Install FFmpeg** (required for video export)
-   - Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-   - Add to system PATH **OR** place `ffmpeg.exe` in `bin/` folder
-   - Verify: `ffmpeg -version`
+   - Download from [ffmpeg.org](https://ffmpeg.org/download.html).
+   - Add `ffmpeg.exe` to your PATH **or** place it in a `bin/` folder beside the app.
+   - Verify with `ffmpeg -version`.
 
 4. **Launch the application**
    ```bash
@@ -90,203 +89,345 @@
 
 ---
 
-## 📖 Usage Guide
+## Using the Capture Tab
 
-### Capturing Images
+### Learning the Interface
 
-#### 1. Configure Camera (Capture Tab)
-```
-Camera Settings:
-  IP Address:  192.168.0.101
-  Username:    admin
-  Password:    ••••••••
-  Stream Path: /stream1
-  Force TCP:   ☑ (recommended)
-```
+**Hover your mouse** over any button, input field, or checkbox for helpful tooltips that explain:
+- What the control does
+- Expected values and formats
+- Recommended settings
+- Keyboard shortcuts
+- Common examples
 
-#### 2. Set Schedule
-```
-Schedule:
-  Start Time:  22:40  (10:40 PM)
-  End Time:    07:00  (7:00 AM)
-  Interval:    20     (seconds)
-```
+**Example tooltips:**
+- *IP Address:* "IP address of your RTSP camera on the local network. Example: 192.168.0.101"
+- *Proactive Reconnect:* "Automatically reconnect every N seconds to prevent timeouts. Recommended: 420s for Annke cameras"
+- *Frame Rate:* "Video playback speed in fps. 24 = cinematic, 30 = smooth, 60 = ultra-smooth"
 
-#### 3. Start Capture
-- Click **"Test Connection"** to verify camera
-- Click **"Start Capture"** to begin
-- Watch live preview and statistics
-- Capture runs automatically until end time
+1. **Configure Camera**
+   ```
+   Camera Settings:
+     IP Address:  192.168.0.101
+     Username:    admin
+     Password:    ********
+     Stream Path: /stream1
+     Force TCP:   Enabled (recommended for most IP cameras)
+   ```
 
-#### Output Structure
-```
-snapshots/
-├── 20251015/
-│   ├── 20251015-224000.jpg
-│   ├── 20251015-224020.jpg
-│   ├── 20251015-224040.jpg
-│   └── ... (1,234 images)
-└── 20251016/
-    └── ...
-```
+2. **Set Schedule**
+   ```
+   Schedule:
+     Start Time:  22:40  (10:40 PM)
+     End Time:    07:00  (7:00 AM)
+     Interval:    20     (seconds)
+   ```
+
+3. **Start Capture**
+   - Click **Test Connection** to verify credentials and stream.
+   - Click **Start Capture** to begin the timelapse session.
+   - Watch the live preview, session statistics, and activity log.
+
+4. **Output Structure**
+   ```
+   snapshots/
+     20251015/
+       20251015-224000.jpg
+       20251015-224020.jpg
+       ...
+     20251016/
+       20251016-070000.jpg
+       ...
+   ```
 
 ---
 
-### Creating Videos ✨
+## Creating Videos from Snapshots
 
-#### Quick Export (Using Presets)
+### Quick Export with Presets
 
-1. **Switch to Video Export tab**
-2. Click **"Quick Select"** → Choose date folder
-3. Select a preset:
-   - **Standard 24fps** - General purpose
-   - **High Quality 30fps** - Best quality
-   - **Fast Motion 60fps** - Smooth, 4x speed
-   - **Web Optimized** - YouTube/social media
-   - **Storage Saver** - Small file size
-   - **Ultra Speed 16x** - Very fast timelapse
-4. Click **"Create Video"**
-5. Video opens automatically when done!
+1. Switch to the **Video Export** tab.
+2. Click **Quick Select** and choose the desired date folder.
+3. Pick a preset:
+   - **Standard 24fps** – Balanced quality.
+   - **High Quality 30fps** – Lower compression, smoother output.
+   - **Fast Motion 60fps** – Every 4th frame for ultra-smooth motion.
+   - **Web Optimized** – Ready for YouTube/social uploads.
+   - **Storage Saver** – Small files for archival use.
+   - **Ultra Speed 16x** – Extreme speed-ups for rapid reviews.
+4. Click **Create Video**. The video opens automatically if you enable that option.
 
-#### Custom Export
+### Custom Export
 
-**Frame Rate** (1-120 fps)
-- 24 fps = Standard cinema look
-- 30 fps = Smooth, natural motion
-- 60 fps = Ultra-smooth, professional
+- **Frame Rate**: 1–120 fps (24 for cinematic, 30 for smooth, 60 for ultra-smooth).
+- **Quality (CRF)**: 18 = visually lossless, 20 = default, 23+ = smaller files.
+- **Speed Multiplier**: Skip frames to speed up (2×, 4×, 8×, 16×, 32×).
+- **Resolution**: Keep original size or scale to 4K / 1080p / 720p / 480p / 360p.
+- **Overlay**: Optional frame counter overlay for QA workflows.
 
-**Quality - CRF** (0-51, lower = better)
-- 18 = Very high quality, large files
-- 20 = High quality (recommended)
-- 23 = Medium quality, smaller files
-- 28 = Lower quality, very small files
-
-**Speed Multiplier**
-- 1x = Use all images
-- 2x = Use every 2nd image (2x faster)
-- 4x = Use every 4th image (4x faster)
-- 8x/16x/32x = Even faster timelapses
-
-**Resolution**
-- Original = Keep source resolution
-- 1920×1080 = Full HD
-- 1280×720 = HD
-- 640×360 = Low bandwidth
-
-**Example Settings**
+Example outputs for 1,234 images captured over 6 hours:
 ```
-For 1,234 images captured over 6 hours:
-
 Standard Export:
-  24 fps, 1x speed → 51 second video, ~12 MB
+  24 fps, 1x speed → 51 s video, ~12 MB
 
 Fast Motion:
-  60 fps, 4x speed → 5 second video, ~3 MB
+  60 fps, 4x speed → 5 s video, ~3 MB
 
 Ultra Speed:
-  30 fps, 16x speed → 2.5 second video, ~1 MB
+  30 fps, 16x speed → 2.5 s video, ~1 MB
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration Reference
 
 ### Camera Settings
 
-| Setting | Description | Example |
-|---------|-------------|---------|
-| IP Address | Camera's network IP | `192.168.0.101` |
-| Username | RTSP authentication | `admin` |
-| Password | RTSP password | `YourPassword123` |
-| Stream Path | Camera-specific path | `/stream1` |
-| Force TCP | Use TCP (more stable) | ☑ Recommended |
+| Setting     | Description                | Example                    |
+|-------------|----------------------------|----------------------------|
+| IP Address  | Camera IP on your network  | `192.168.0.101`            |
+| Username    | RTSP authentication user   | `admin`                    |
+| Password    | RTSP authentication pass   | `YourPassword123`          |
+| Stream Path | Camera-specific RTSP path  | `/stream1`                 |
+| Force TCP   | Use TCP for stability      | `True` (recommended)       |
 
-**Common Stream Paths:**
-- **Hikvision:** `/Streaming/Channels/101`
-- **Dahua:** `/cam/realmonitor?channel=1&subtype=0`
-- **Generic:** `/stream1`, `/live`, `/h264`
+**Common RTSP Paths**
+- **Hikvision**: `/Streaming/Channels/101`
+- **Dahua**: `/cam/realmonitor?channel=1&subtype=0`
+- **Ubiquiti/UniFi**: `/s0`
+- **Generic**: `/stream1`, `/live`, `/h264`
 
 ### Schedule Settings
 
-| Setting | Description | Example |
-|---------|-------------|---------|
-| Start Time | Begin capturing (24h) | `22:40` |
-| End Time | Stop capturing (24h) | `07:00` |
-| Interval | Seconds between captures | `20` |
+| Setting     | Description                       | Example |
+|-------------|-----------------------------------|---------|
+| Start Time  | Capture start (24-hour HH:MM)     | `22:40` |
+| End Time    | Capture end (24-hour HH:MM)       | `07:00` |
+| Interval    | Seconds between captures          | `20`    |
+| Rollover    | Hour after midnight to switch day | `12`    |
 
-**Overnight Support:** Start time can be later than end time (crosses midnight)
+Overnight windows (start later than end) are handled automatically.
 
 ### Capture Settings
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| Output Folder | Where to save images | `snapshots` |
-| JPEG Quality | Image quality (1-100) | `90` |
-| Buffer Frames | Read-ahead buffer | `4` |
-| Max Retries | Connection retry attempts | `5` |
+| Setting                  | Description                      | Default  |
+|--------------------------|----------------------------------|----------|
+| Output Folder            | Base folder for snapshots        | `snapshots` |
+| JPEG Quality             | Saved image quality (higher = better quality but larger files) | `90` |
+| Buffer Frames            | Frames to buffer in OpenCV       | `2`      |
+| Max Retries              | Connection retry attempts        | `5`      |
+| Proactive Reconnect (s)  | Reconnect interval to prevent camera timeout (0 = disabled) | `0` |
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## Camera Configuration Tips
+
+- **Verify credentials**: Use VLC or `ffplay` to confirm IP, username, password, and stream path before configuring the app.
+- **Prefer TCP**: Many consumer IP cameras are unreliable over UDP; keep **Force TCP** enabled unless the camera vendor recommends otherwise.
+- **Mind network latency**: For remote cameras, increase `buffer_frames` (e.g., to 6-8) if you frequently see reconnect messages.
+- **Deal with overnight lighting**: Configure the camera's own exposure or IR settings; the app captures whatever the RTSP feed delivers.
+- **Multiple cameras**: Copy `config/camera_config_example.json` per device and load them through the GUI to swap configurations quickly.
+- **Security**: Store configs in a protected location if the RTSP password is sensitive; the app saves the password in plain text JSON.
+- **Prevent camera timeouts**: Enable **Proactive Reconnect** to maintain 100% capture success rate. Most IP cameras have firmware timeouts (typically 5-10 minutes). Set the reconnect interval to ~40 seconds before your camera's timeout for uninterrupted captures.
+
+### Optimal Settings for Annke I81EM Cameras
+
+Based on extensive testing with Annke I81EM IP cameras, two configurations are recommended depending on your needs:
+
+**Camera Settings (Web Interface) - Same for Both Configurations:**
+- Frame Rate: `10 FPS` (provides fresh frames without overwhelming buffer)
+- I Frame Interval: `4` (keyframe every 0.4 seconds for accurate timestamps)
+- Max Bitrate: `3072 Kbps` or lower (stable streaming over network)
+
+#### Configuration A: Maximum Timestamp Accuracy (Recommended)
+
+**Best for:** Most timelapse applications where timestamp precision matters
+
+**Application Settings:**
+- Capture Interval: `30 seconds`
+- Buffer Frames: `1` (minimal buffer for freshest frames)
+- Proactive Reconnect: `300 seconds` (5 minutes - before 460s camera timeout)
+- Force TCP: `Enabled` (required for stability)
+
+**Performance Results:**
+- 100% capture success rate ✅
+- Timestamp accuracy: **8-33 seconds** (avg: 25s) - 4x better than Config B
+- Very stable and predictable behavior
+- Lower system overhead
+- 120 frames per hour
+
+#### Configuration B: Maximum Frame Density
+
+**Best for:** Fast-changing scenes requiring maximum temporal resolution
+
+**Application Settings:**
+- Capture Interval: `20 seconds`
+- Buffer Frames: `1` (minimal buffer for freshest frames)
+- Proactive Reconnect: `420 seconds` (7 minutes - before 460s camera timeout)
+- Force TCP: `Enabled` (required for stability)
+
+**Performance Results:**
+- 100% capture success rate ✅
+- Timestamp accuracy: 33s-4min (avg: 1m 30s)
+- More frames for smoother video playback
+- 180 frames per hour
+
+#### Comparison Table
+
+| Metric | Config A (30s/300s) | Config B (20s/420s) |
+|--------|---------------------|---------------------|
+| **Timestamp Accuracy (avg)** | 25 seconds ✅ | 1 min 30 sec |
+| **Timestamp Accuracy (worst)** | 33 seconds ✅ | 4 minutes |
+| **Frames per hour** | 120 frames | 180 frames ✅ |
+| **System overhead** | Lower ✅ | Higher |
+| **Stability** | Very stable ✅ | Stable |
+| **Reconnection frequency** | Every 5 min | Every 7 min ✅ |
+
+**Recommendation:** Use **Configuration A (30s/300s)** for most applications. The slight reduction in frame density (30s vs 20s intervals) is more than compensated by the 4x improvement in timestamp accuracy and lower system load.
+
+**Note:** Other Annke models may have different timeout intervals. Test your camera's behavior and adjust the proactive reconnect interval to ~40 seconds before the observed timeout.
+
+---
+
+## Keyboard Shortcuts
 
 ### Capture Tab
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+S` | Save configuration |
-| `Ctrl+O` | Load configuration |
-| `Ctrl+T` | Test camera connection |
-| `Space` | Start capture (when stopped) |
-| `Esc` | Stop capture (when running) |
+
+| Shortcut | Action                |
+|----------|-----------------------|
+| `Ctrl+S` | Save configuration    |
+| `Ctrl+O` | Load configuration    |
+| `Ctrl+T` | Test camera connection|
+| `Space`  | Start capture         |
+| `Esc`    | Stop capture          |
 
 ### Video Export Tab
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+E` | Open video export tab |
-| `Ctrl+B` | Browse for folder |
-| `Enter` | Start video export |
-| `Esc` | Cancel export |
+
+| Shortcut | Action              |
+|----------|---------------------|
+| `Ctrl+E` | Focus export tab    |
+| `Ctrl+B` | Browse for folder   |
+| `Enter`  | Begin export        |
+| `Esc`    | Cancel export       |
 
 ---
 
-## 🎯 Video Export Presets
+## Testing & Automation
 
-### Built-in Presets
-
-| Preset | Frame Rate | Quality | Speed | Resolution | Best For |
-|--------|-----------|---------|-------|------------|----------|
-| **Standard 24fps** | 24 fps | CRF 20 | 1x | Original | General purpose |
-| **High Quality 30fps** | 30 fps | CRF 18 | 1x | Original | Best quality output |
-| **Fast Motion 60fps** | 60 fps | CRF 20 | 4x | Original | Smooth, fast motion |
-| **Web Optimized** | 30 fps | CRF 23 | 1x | 720p | YouTube, social media |
-| **Storage Saver** | 20 fps | CRF 28 | 1x | 480p | Small file sizes |
-| **Ultra Speed 16x** | 30 fps | CRF 20 | 16x | Original | Very fast timelapses |
-
-### Custom Presets
-
-**Save Your Own:**
-1. Configure settings to your liking
-2. Click "Save As Preset"
-3. Name your preset
-4. Use anytime with one click!
-
-**Manage Presets:**
-- View all custom presets
-- Delete unwanted presets
-- Export/import preset collections
+- `tests/test_backend.py` exercises configuration management and capture logic with interactive prompts.
+- `tests/test_backend_auto.py` runs the same checks without user input (connection tests will fail harmlessly if no camera is reachable).
+- `tests/test_video_export.py` validates the export pipeline; provide a populated `snapshots/YYYYMMDD` folder before running it.
 
 ---
 
-## 🔧 Project Structure
+## Build & Release
+
+- `build_release.bat` builds a PyInstaller executable and packages a release folder (optionally bundling FFmpeg).
+- `bundle_ffmpeg.bat` copies FFmpeg/FFprobe into the release bundle.
+- `RTSP_Timelapse.spec` defines the PyInstaller build (GUI-only executable with bundled resources).
+- For detailed build instructions, see `docs/BUILD_AND_RELEASE.md`.
+
+---
+
+## Troubleshooting
+
+### Camera Connection Issues
+
+**Cannot connect to camera:**
+- Verify camera IP with `ping 192.168.0.101`.
+- Test stream URL in VLC: `rtsp://user:pass@ip/stream1`.
+- Check port 554 (RTSP) is not blocked by firewall.
+- Enable **Force TCP** option if using UDP causes dropouts.
+
+**Connection drops frequently:**
+- Enable **Force TCP** for more stable connections.
+- Enable **Proactive Reconnect** to reconnect before camera timeout (recommended: 420 seconds for Annke cameras).
+- Check network stability between PC and camera.
+- Increase capture interval to reduce request frequency.
+- Check camera settings for session timeout/keepalive options.
+- If drops occur at exact intervals (e.g., every 460 seconds), this is a camera firmware timeout - use proactive reconnect set to ~40 seconds before the timeout.
+
+### Video Export Issues
+
+**FFmpeg not found:**
+- Download FFmpeg from [ffmpeg.org](https://ffmpeg.org/download.html).
+- Add to system PATH **or** place in `bin/` folder next to executable.
+- Ensure all FFmpeg DLL files are present (~150 MB total).
+- Click **Test FFmpeg** button to verify installation.
+
+**Export is slow:**
+- Lower resolution (720p or 480p instead of original).
+- Increase CRF quality value (23-28 for smaller files).
+- Use speed multiplier (2×, 4×) to skip frames.
+- Close other applications to free system resources.
+
+**Video won't play:**
+- Ensure using MP4 format (most compatible).
+- Try opening in VLC media player.
+- Check FFmpeg log for encoding errors.
+
+### Performance Issues
+
+**GUI is slow or laggy:**
+- Disable live preview (uncheck "Enable Preview").
+- Lower JPEG quality (70-80 instead of 90).
+- Increase capture interval (30s+ instead of 20s).
+- Close background applications.
+
+**Disk filling up:**
+- Monitor available disk space regularly.
+- Lower JPEG quality to reduce file sizes.
+- Delete old snapshots after exporting to video.
+- Use "Storage Saver" preset for smaller video files.
+
+**Disk Space Calculator:**
+```
+At quality 90, each 1280×720 frame ≈ 400 KB
+
+Formula: (3600 / interval) × hours × 0.4 MB
+
+Example: 20s interval for 8 hours
+  = (3600/20) × 8 × 0.4
+  = 576 MB for images
+  + ~50 MB for final video
+  = ~625 MB total
+```
+
+---
+
+## System Requirements
+
+**Minimum:**
+- Windows 10/11 (64-bit) or Linux/macOS
+- Python 3.8 or higher
+- 4 GB RAM
+- 2 GB free disk space
+- Network connection to RTSP camera
+
+**Recommended:**
+- Windows 10/11 (64-bit)
+- Python 3.10+
+- 8 GB RAM
+- 10 GB+ free disk space (for captures)
+- Wired Ethernet connection to camera
+
+**For Video Export:**
+- FFmpeg installed and in PATH
+- Additional disk space for video output
+- Faster CPU for quicker encoding
+
+---
+
+## Project Structure
 
 ```
-RSTP/
+RTSP/
 ├── run_gui.py                    # Application launcher
 ├── requirements.txt              # Python dependencies
 ├── README.md                     # This file
 ├── .gitignore                    # Git ignore rules
 │
 ├── src/                          # Source code
-│   ├── __init__.py
 │   ├── gui_app.py               # Main GUI (tabbed interface)
 │   ├── capture_engine.py        # RTSP capture logic
 │   ├── config_manager.py        # Configuration management
@@ -294,7 +435,9 @@ RSTP/
 │   ├── video_export_controller.py # Video export logic
 │   ├── ffmpeg_wrapper.py        # FFmpeg integration
 │   ├── preset_manager.py        # Preset management
-│   └── main.py                  # Legacy CLI version
+│   ├── tooltip.py               # Tooltip helper class
+│   ├── video_export_tooltips.py # Video export tooltip messages
+│   └── capture_tooltips.py      # Capture tab tooltip messages
 │
 ├── tests/                        # Test files
 │   ├── test_backend.py          # Interactive backend tests
@@ -302,11 +445,7 @@ RSTP/
 │   └── test_video_export.py     # Video export tests
 │
 ├── config/                       # Configuration files
-│   ├── camera_config.json       # Current config (auto-saved)
 │   └── camera_config_example.json # Template
-│
-├── bin/                          # Optional FFmpeg location
-│   └── ffmpeg.exe               # (not included, user provides)
 │
 └── snapshots/                    # Captured images (gitignored)
     └── YYYYMMDD/                # Date-organized folders
@@ -315,394 +454,160 @@ RSTP/
 
 ---
 
-## 🐛 Troubleshooting
-
-### Camera Connection Issues
-
-**Problem:** Can't connect to camera
-- ✅ Verify camera IP: `ping 192.168.0.101`
-- ✅ Check credentials are correct
-- ✅ Test stream URL in VLC: `rtsp://user:pass@ip/stream1`
-- ✅ Ensure port 554 (RTSP) not blocked by firewall
-- ✅ Try enabling "Force TCP" option
-
-**Problem:** Connection drops frequently
-- ✅ Enable "Force TCP" (more stable than UDP)
-- ✅ Check network stability
-- ✅ Reduce capture interval (less frequent requests)
-
-### Video Export Issues
-
-**Problem:** FFmpeg not found
-```
-Solution:
-1. Download FFmpeg from https://ffmpeg.org/download.html
-2. Extract files
-3. Add to system PATH OR place in bin/ folder
-4. Click "Test FFmpeg" button to verify
-```
-
-**Problem:** Export is slow
-- ✅ Lower resolution (720p or 480p)
-- ✅ Increase CRF quality value (23-28)
-- ✅ Use speed multiplier (2x, 4x)
-- ✅ Close other applications
-
-**Problem:** Video won't play
-- ✅ Ensure using MP4 format (most compatible)
-- ✅ Try opening in VLC media player
-- ✅ Check FFmpeg export log for errors
-
-### Performance Issues
-
-**Problem:** GUI is slow/laggy
-- ✅ Disable live preview (uncheck "Enable Preview")
-- ✅ Lower JPEG quality (70-80 instead of 90)
-- ✅ Increase capture interval (30s+ instead of 20s)
-- ✅ Close background applications
-
-**Problem:** Disk filling up
-- ✅ Check available space regularly
-- ✅ Lower JPEG quality
-- ✅ Delete old snapshots after exporting to video
-- ✅ Use "Storage Saver" preset for videos
-
-**Disk Space Calculator:**
-```
-At quality 90, each 1280×720 frame ≈ 400KB
-
-Formula: (3600 / interval) × hours × 0.4 MB
-
-Example: 20s interval for 8 hours
-= (3600/20) × 8 × 0.4
-= 576 MB for images
-+ ~50 MB for final video
-= ~625 MB total
-```
-
----
-
-## 💻 Technical Details
-
-### Architecture
-
-**Frontend:** Tkinter (Python standard library)
-**Backend:** Threading-based capture engine
-**Video:** OpenCV for RTSP streaming
-**Images:** PIL/Pillow for processing
-**Export:** FFmpeg for video encoding
-
-### Dependencies
-
-```txt
-opencv-python==4.10.0.82   # RTSP capture & processing
-numpy==1.26.4              # Numerical operations
-Pillow>=10.0.0             # Image processing
-```
-
-**External:** FFmpeg (required for video export)
-
-### Thread Safety
-
-- All UI updates use `root.after()` for thread-safe callbacks
-- Capture engine runs in separate daemon thread
-- Video export runs in background thread
-- State synchronized with `threading.Lock`
-
-### Image Processing Pipeline
-
-```
-RTSP Stream (OpenCV)
-    ↓
-BGR Frame Capture
-    ↓
-RGB Conversion
-    ↓
-PIL Image Object
-    ↓
-Resize (LANCZOS)
-    ↓
-PhotoImage (Tkinter)
-    ↓
-Canvas Display
-```
-
-### Video Export Pipeline
-
-```
-Image Files (JPG)
-    ↓
-Scan & Timestamp Extract
-    ↓
-Copy to Temp (Sequential Numbering)
-    ↓
-FFmpeg Command Build
-    ↓
-H.264 Encoding (MP4)
-    ↓
-Progress Parsing
-    ↓
-Final Video + Cleanup
-```
-
----
-
-## ❓ FAQ
-
-### General
+## Frequently Asked Questions
 
 **Q: Can I use multiple cameras?**
-A: Currently supports one camera per instance. Run multiple instances for multiple cameras. Multi-camera support planned for future version.
+A: Currently supports one camera per instance. Run multiple instances for multiple cameras. Save different configs and load them via **File → Load Configuration**.
 
 **Q: Does it work on Linux/macOS?**
-A: Yes! Tested primarily on Windows, but compatible with Linux/macOS. Just install dependencies and FFmpeg for your OS.
+A: Yes! The Python source is cross-platform. Install dependencies and FFmpeg for your OS. Windows releases include pre-built executables.
 
 **Q: Can I run it headless (no GUI)?**
-A: Not currently. The legacy CLI version (`src/main.py`) exists but isn't maintained. GUI is recommended.
-
-### Camera Setup
+A: Not currently. The legacy CLI version (`src/main.py`) exists but isn't maintained. The GUI is recommended.
 
 **Q: What RTSP URL format do I use?**
-A: Depends on your camera brand:
-- **Hikvision:** `rtsp://user:pass@ip/Streaming/Channels/101`
-- **Dahua:** `rtsp://user:pass@ip/cam/realmonitor?channel=1&subtype=0`
-- **Amcrest:** `rtsp://user:pass@ip/cam/realmonitor?channel=1&subtype=1`
-- **Reolink:** `rtsp://user:pass@ip/h264Preview_01_main`
-- **Generic:** `rtsp://user:pass@ip/stream1` or `/live`
+A: Depends on your camera brand. See [Camera Settings](#camera-settings) for common paths. Test with VLC first: `rtsp://user:pass@ip/path`.
 
 **Q: My camera requires a specific port. How do I set it?**
-A: Include port in IP address: `192.168.0.101:8554`
-
-**Q: Can I test without a camera?**
-A: Yes, use a public RTSP test stream:
-```
-rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mp4
-```
-
-### Video Export
+A: Include port in IP address field: `192.168.0.101:8554`
 
 **Q: What's the best preset for YouTube?**
 A: Use **"Web Optimized"** (30fps, 720p) or **"High Quality 30fps"** (original resolution).
 
 **Q: How do I make a very fast timelapse?**
-A: Use **"Ultra Speed 16x"** preset or set Speed Multiplier to 8x/16x/32x.
+A: Use **"Ultra Speed 16×"** preset or set Speed Multiplier to 8×/16×/32×.
 
 **Q: Can I add music to the video?**
-A: Not built-in yet. Use video editing software to add audio after export.
+A: Not built-in. Use video editing software (like DaVinci Resolve, Premiere, or OpenShot) to add audio after export.
 
 **Q: Why are my original files safe?**
-A: The export creates temporary numbered copies in `.temp_export_*/` folder. Your originals are never renamed or modified. Temp folder is automatically deleted after export.
+A: The export creates temporary numbered copies in a `.temp_export_*/` folder. Your originals are never renamed or modified. The temp folder is automatically deleted after export.
 
-**Q: Can I pause and resume export?**
-A: No, but you can cancel anytime. Progress is lost if cancelled. Future enhancement planned.
+**Q: What is Proactive Reconnect and should I use it?**
+A: Proactive Reconnect automatically disconnects and reconnects to the camera at a scheduled interval **before** the camera's firmware timeout occurs. This prevents failed captures during timeout periods. Enable it if you notice connection drops at regular intervals (e.g., every 5-10 minutes). Set the value to ~40 seconds before your camera's timeout. For Annke I81EM cameras, use 420 seconds (7 minutes).
 
-### Performance
+**Q: How do I know what reconnect interval to use?**
+A: Monitor your logs for "Connection lost" messages. If they occur at regular intervals (e.g., exactly every 460 seconds), that's your camera's timeout. Set Proactive Reconnect to that value minus 40 seconds. Example: 460s timeout → use 420s reconnect interval.
 
-**Q: How long does export take?**
-A: Depends on settings and hardware:
-- **1000 images → 720p:** ~30-60 seconds
-- **1000 images → 1080p:** ~60-120 seconds
-- **5000 images → 4K:** ~5-10 minutes
+**Q: Why are my snapshot timestamps off by 30 seconds?**
+A: This is normal! The timestamp in the filename is when the capture was initiated. The timestamp embedded by the camera in the image is when the frame was encoded. With optimal settings (10 FPS, I-frame 4), this difference should be 5-33 seconds with Configuration A (30s/300s) or 33s-4min with Configuration B (20s/420s). This is acceptable for timelapse purposes.
 
-**Q: Can I use GPU acceleration?**
-A: Not yet. Currently uses CPU encoding. GPU acceleration (NVENC, QuickSync) is a planned enhancement.
+**Q: Should I use 20-second or 30-second capture intervals?**
+A: For most users, **30-second intervals with 300-second proactive reconnect (Configuration A)** is recommended. This provides 4x better timestamp accuracy (25s avg vs 1m30s avg) and lower system overhead. Use 20-second intervals (Configuration B) only if you need maximum frame density for fast-changing scenes. Both achieve 100% capture success rate. See the [Optimal Settings](#optimal-settings-for-annke-i81em-cameras) section for detailed comparison.
 
----
+**Q: What does timestamp accuracy mean for my timelapse video?**
+A: Timestamp accuracy refers to the difference between when you requested the frame (filename) and when the camera actually encoded it. For timelapse videos played back at 24-30 fps, even a 1-2 minute difference is imperceptible. However, if you need accurate timestamps for scientific analysis or precise time correlation, use Configuration A (30s/300s) for 8-33 second accuracy.
 
-## 🧪 Testing
+**Q: How do I learn what each setting does?**
+A: Simply hover your mouse over any control (button, input field, checkbox, etc.) and wait ~500ms. A helpful tooltip will appear explaining what it does, expected values, and recommendations. The app has 37 tooltips covering every important control.
 
-### Run Tests
-
-```bash
-# Activate virtual environment
-source .venv/Scripts/activate  # Windows: .venv\Scripts\activate
-
-# Test backend capture engine
-python tests/test_backend_auto.py
-
-# Test video export
-python test_video_export.py
-
-# Interactive backend test
-python tests/test_backend.py
-```
-
-### Manual Testing
-
-1. **Capture Test**
-   - Configure with test RTSP stream
-   - Set 10-second interval
-   - Capture for 2 minutes
-   - Verify 12 images saved
-
-2. **Video Export Test**
-   - Select test folder
-   - Use "Standard 24fps" preset
-   - Export video
-   - Verify video plays correctly
+**Q: Can I disable tooltips?**
+A: Tooltips are built into the interface and cannot be disabled. However, they only appear when you hover for 500ms, so they won't interfere with normal usage. They disappear instantly when you move your mouse away.
 
 ---
 
-## 🤝 Contributing
+## Version History
 
-Contributions welcome! Please follow these steps:
-
-1. **Fork the repository**
-2. **Create feature branch**
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
-3. **Make your changes**
-   - Add new features
-   - Fix bugs
-   - Improve documentation
-4. **Add tests**
-   - Test your changes thoroughly
-   - Add automated tests if applicable
-5. **Commit changes**
-   ```bash
-   git commit -m "Add amazing feature"
-   ```
-6. **Push to branch**
-   ```bash
-   git push origin feature/amazing-feature
-   ```
-7. **Open Pull Request**
-   - Describe your changes
-   - Reference any related issues
-
-### Development Setup
-
-```bash
-# Clone your fork
-git clone https://github.com/HiranD/rtsp-timelapse.git
-
-# Create virtual environment
-python -m venv .venv
-source .venv/Scripts/activate
-
-# Install dev dependencies
-pip install -r requirements.txt
-
-# Run tests
-python tests/test_backend_auto.py
-```
-
----
-
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-**TL;DR:** Free to use, modify, and distribute. No warranty provided.
-
----
-
-## 🙏 Acknowledgments
-
-- **Python** - Amazing language for rapid development
-- **Tkinter** - Built-in GUI framework
-- **OpenCV** - Powerful video processing library
-- **FFmpeg** - Industry-standard video encoding
-- **PIL/Pillow** - Image processing excellence
-- **Claude AI** - Development assistance
-- **Open Source Community** - Inspiration and support
-
----
-
-## 📞 Support
-
-### Get Help
-
-- 📖 **Documentation:** Check `docs/` folder
-- 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/rtsp-timelapse/issues)
-- 💡 **Feature Requests:** [Open an issue](https://github.com/yourusername/rtsp-timelapse/issues)
-
-### Useful Resources
-
-- [FFmpeg Download](https://ffmpeg.org/download.html)
-- [RTSP Protocol Info](https://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol)
-- [Tkinter Documentation](https://docs.python.org/3/library/tkinter.html)
-- [OpenCV Python Tutorials](https://docs.opencv.org/4.x/d6/d00/tutorial_py_root.html)
-
----
-
-## 📊 Changelog
-
-### Version 2.0.0 (2025-10-15) ✨ CURRENT
-
-**Major Release: Video Export Feature**
-- ✅ Complete video export functionality
-- ✅ 6 built-in presets (Standard, High Quality, Fast Motion, Web, Storage Saver, Ultra Speed)
-- ✅ Custom preset save/load/manage
-- ✅ Non-destructive workflow (temp copies)
-- ✅ Real-time progress tracking
-- ✅ FFmpeg integration with auto-detection
-- ✅ Frame rate, quality, speed, resolution customization
-- ✅ Tabbed interface (Capture | Video Export)
-- ✅ Duration and file size estimation
-- ✅ Frame counter overlay option
-- ✅ Auto-open video when complete
+### v2.2.0 (2025-01-19) - Latest
+**New Features:**
+- **Comprehensive Tooltip System**: 37 hover tooltips across both tabs providing contextual help for all controls
+  - 19 tooltips for Video Export tab
+  - 18 tooltips for Capture tab
+  - Smart positioning with 500ms delay
+  - Helpful explanations with examples and recommendations
+- **Output Path Memory**: Video export now remembers your last export location
+- Full path display in output file field (no more confusion!)
 
 **Improvements:**
-- ✅ Enhanced GUI with tabbed layout
-- ✅ Better error handling and user feedback
-- ✅ Comprehensive test suite
-- ✅ Updated documentation
+- Enhanced user experience with self-documenting interface
+- Reduced learning curve for new users
+- Professional tooltip styling with light yellow popups
+- Dynamic tooltips (e.g., Start/Stop button changes tooltip text)
+- Complete tooltip documentation in `docs/TOOLTIPS.md`
 
-### Version 1.0.0 (2025-10-14)
+### v2.1.0 (2025-10-19)
+**New Features:**
+- **Proactive Reconnection**: Automatically reconnect before camera firmware timeouts to achieve 100% capture success rate
+- Added "Proactive Reconnect (s)" configuration field in GUI
+- Optimized buffer settings (default changed from 4 to 2 frames)
+- Two recommended configurations for Annke I81EM cameras (timestamp accuracy vs frame density)
 
-**Initial Release**
-- ✅ Full GUI with live preview
-- ✅ RTSP camera capture
-- ✅ Overnight schedule support
-- ✅ Session statistics
-- ✅ Keyboard shortcuts
-- ✅ Dynamic preview scaling
-- ✅ Configuration management
-- ✅ Activity logging
-- ✅ Thread-safe architecture
+**Improvements:**
+- Reduced buffer_frames default to 2 for fresher frame captures
+- Added flush_buffer_count parameter (internal, for advanced users)
+- Enhanced reconnection logging with uptime tracking
+- **Dramatically improved timestamp accuracy**: 8-33 seconds (avg 25s) with 30s/300s configuration vs 33s-4min with 20s/420s
+- Comprehensive testing and documentation of optimal camera settings
+- Added configuration comparison table and selection guidance
 
----
+### v2.0.1 (2025-10-17)
+**Bug Fixes:**
+- Fixed PyInstaller executable build issues
+- Bundled all FFmpeg DLLs (~150 MB) for video export
+- Fixed Tkinter DLL dependencies for Windows
+- Increased FFmpeg subprocess timeout to prevent false failures
+- Video export now works properly in standalone executable
 
-## 📸 Use Cases
+### v2.0.0 (2025-10-15)
+**Major Release: Video Export Feature**
+- Complete video export functionality
+- 6 built-in presets + custom preset management
+- Tabbed interface (Capture | Video Export)
+- FFmpeg integration with real-time progress
+- Non-destructive workflow with temp copies
+- Duration and file size estimation
+- Enhanced GUI with better error handling
+- **Note:** Executable had build issues - use v2.0.1 instead
 
-### Astronomy Photography
-- **Setup:** Point camera at night sky
-- **Schedule:** 22:00 to 06:00, 30s intervals
-- **Export:** Ultra Speed 16x for fast cloud movement
-- **Result:** 8-hour night compressed to 90 seconds
-
-### Construction Progress
-- **Setup:** Fixed camera on construction site
-- **Schedule:** 08:00 to 17:00, 60s intervals
-- **Export:** Standard 24fps for smooth progress
-- **Result:** Day of construction in 2 minutes
-
-### Weather Monitoring
-- **Setup:** Outdoor weather camera
-- **Schedule:** All day, 10s intervals
-- **Export:** Fast Motion 60fps, 4x speed
-- **Result:** Full day of weather in 3 minutes
-
-### Wildlife Observation
-- **Setup:** Camera at bird feeder
-- **Schedule:** Dawn to dusk, 15s intervals
-- **Export:** High Quality 30fps for detail
-- **Result:** Day of wildlife activity in 5 minutes
-
-### Plant Growth
-- **Setup:** Indoor camera on plant
-- **Schedule:** 24/7, 300s intervals
-- **Export:** Ultra Speed 16x, week to 30 seconds
-- **Result:** Week of growth in half a minute
+### v1.0.0 (2025-10-14)
+**Initial Release:**
+- RTSP camera capture with live preview
+- Overnight scheduling support
+- Session statistics and monitoring
+- Configuration management with JSON
+- Thread-safe architecture
+- Keyboard shortcuts
 
 ---
 
-<div align="center">
+## Contributing
 
-## From Wandering Astrophotography
+Contributions welcome! Please:
 
-**[⬆ Back to Top](#rtsp-timelapse-capture-system)**
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and add tests
+4. Commit: `git commit -m "Add amazing feature"`
+5. Push: `git push origin feature/amazing-feature`
+6. Open a Pull Request
 
-</div>
+---
+
+## Support & Contact
+
+- **Documentation:** Check this README and `docs/` folder
+- **Bug Reports:** [Open an issue](https://github.com/HiranD/RTSP-Timelapse-Capture/issues)
+- **Feature Requests:** [Open an issue](https://github.com/HiranD/RTSP-Timelapse-Capture/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/HiranD/RTSP-Timelapse-Capture/discussions)
+
+**Useful Resources:**
+- [FFmpeg Download](https://ffmpeg.org/download.html)
+- [RTSP Protocol Info](https://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol)
+- [OpenCV Documentation](https://docs.opencv.org/)
+
+---
+
+## Acknowledgments
+
+- **OpenCV** - RTSP streaming and image processing
+- **FFmpeg** - Professional video encoding
+- **Tkinter** - Python GUI framework
+- **PIL/Pillow** - Image manipulation
+- **PyInstaller** - Executable packaging
+- **Python Community** - Amazing ecosystem and support
+
+---
+
+## License
+
+Released under the MIT License. See `version_info.txt` for Windows executable metadata.
