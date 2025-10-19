@@ -15,14 +15,23 @@
     "interval_seconds": 60,
     "jpeg_quality": 90,
     "output_folder": "snapshots",
-    "buffer_frames": 4,
-    "max_retries": 5
+    "buffer_frames": 2,
+    "max_retries": 5,
+    "proactive_reconnect_seconds": 0,
+    "flush_buffer_count": 10
   },
   "ui": {
     "window_width": 1000,
     "window_height": 700,
     "preview_size": "medium",
     "preview_enabled": true,
-    "auto_start": false
+    "auto_start": false,
+    "last_video_export_dir": ""
+  },
+  "_comments": {
+    "buffer_frames": "OpenCV buffer size (2 recommended for IP cameras, reduced from 4)",
+    "proactive_reconnect_seconds": "Reconnect interval to prevent camera timeout (0=disabled, 420=recommended for Annke I81EM)",
+    "flush_buffer_count": "Number of frames to flush before capture for fresh frames (10=default)",
+    "last_video_export_dir": "Last directory used for video export (auto-saved by GUI)"
   }
 }
