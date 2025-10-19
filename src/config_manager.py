@@ -35,8 +35,10 @@ class CaptureConfig:
     interval_seconds: int = 20
     jpeg_quality: int = 90  # 1-100
     output_folder: str = "snapshots"
-    buffer_frames: int = 4
+    buffer_frames: int = 2
     max_retries: int = 5
+    proactive_reconnect_seconds: int = 0  # 0 = disabled, >0 = reconnect after N seconds to avoid camera timeout
+    flush_buffer_count: int = 10  # Number of frames to read and discard before capturing (ensures fresh frame)
 
 
 @dataclass
@@ -47,6 +49,7 @@ class UIConfig:
     preview_size: str = "medium"  # small/medium/large
     preview_enabled: bool = True
     auto_start: bool = False
+    last_video_export_dir: str = ""  # Last directory used for video export
 
 
 class ConfigManager:
@@ -227,6 +230,10 @@ class ConfigManager:
             errors.append(f"Buffer frames must be 1-100, got {self.capture.buffer_frames}")
         if not 1 <= self.capture.max_retries <= 20:
             errors.append(f"Max retries must be 1-20, got {self.capture.max_retries}")
+        if not 0 <= self.capture.proactive_reconnect_seconds <= 3600:
+            errors.append(f"Proactive reconnect must be 0-3600 seconds, got {self.capture.proactive_reconnect_seconds}")
+        if not 0 <= self.capture.flush_buffer_count <= 50:
+            errors.append(f"Flush buffer count must be 0-50, got {self.capture.flush_buffer_count}")
 
         # Validate UI
         if self.ui.preview_size not in ["small", "medium", "large"]:
@@ -282,6 +289,7 @@ class ConfigManager:
             f"  Output Folder: {self.capture.output_folder}",
             f"  Buffer Frames: {self.capture.buffer_frames}",
             f"  Max Retries: {self.capture.max_retries}",
+            f"  Proactive Reconnect: {self.capture.proactive_reconnect_seconds}s ({'enabled' if self.capture.proactive_reconnect_seconds > 0 else 'disabled'})",
             "",
             "UI:",
             f"  Window Size: {self.ui.window_width}x{self.ui.window_height}",

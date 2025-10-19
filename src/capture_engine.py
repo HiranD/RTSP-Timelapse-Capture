@@ -55,8 +55,14 @@ class CaptureEngine:
 
         # Statistics
         self.frame_count = 0
+        self.failed_frame_count = 0
         self.session_start_time: Optional[datetime] = None
         self.last_error: Optional[str] = None
+
+        # Connection stability tracking
+        self.disconnect_count = 0
+        self.last_disconnect_time: Optional[datetime] = None
+        self.connection_start_time: Optional[datetime] = None
 
     def set_status_callback(self, callback: Callable[[CaptureState, dict], None]):
         """
@@ -99,6 +105,7 @@ class CaptureEngine:
 
         self.stop_event.clear()
         self.frame_count = 0
+        self.failed_frame_count = 0
         self.session_start_time = datetime.now()
         self.last_error = None
 
@@ -151,7 +158,7 @@ class CaptureEngine:
         Get current capture statistics.
 
         Returns:
-            Dictionary with frame_count, uptime, state, etc.
+            Dictionary with frame_count, failed_frame_count, uptime, state, etc.
         """
         uptime_seconds = 0
         if self.session_start_time:
@@ -160,6 +167,7 @@ class CaptureEngine:
         return {
             "state": self.state.value,
             "frame_count": self.frame_count,
+            "failed_frame_count": self.failed_frame_count,
             "uptime_seconds": uptime_seconds,
             "last_error": self.last_error
         }
@@ -188,6 +196,7 @@ class CaptureEngine:
                 self._update_state(CaptureState.ERROR)
                 return
 
+            self.connection_start_time = datetime.now()
             self._log("INFO", "Connected to RTSP stream successfully")
             self._update_state(CaptureState.RUNNING)
 
@@ -198,6 +207,25 @@ class CaptureEngine:
             # Main capture loop
             while not self.stop_event.is_set() and datetime.now() < end_dt:
                 loop_start = time.time()
+
+                # Check for proactive reconnection to avoid camera timeout
+                proactive_reconnect = self.config["capture"].get("proactive_reconnect_seconds", 0)
+                if proactive_reconnect > 0 and self.connection_start_time:
+                    uptime = (datetime.now() - self.connection_start_time).total_seconds()
+                    if uptime >= proactive_reconnect:
+                        self._log("INFO", f"Proactive reconnection (connected for {int(uptime)}s, limit: {proactive_reconnect}s)")
+                        if not self._reconnect(url):
+                            self._update_state(CaptureState.ERROR)
+                            break
+                        # Don't capture this cycle - reconnection takes time
+                        # Sleep for remaining interval and continue to next cycle
+                        elapsed = time.time() - loop_start
+                        interval = self.config["capture"]["interval_seconds"]
+                        remain = interval - elapsed
+                        if remain > 0:
+                            if self.stop_event.wait(timeout=remain):
+                                break
+                        continue
 
                 try:
                     frame = self._grab_frame()
@@ -217,6 +245,10 @@ class CaptureEngine:
                 except Exception as ex:
                     self._log("ERROR", f"Frame capture error: {ex}")
                     self.last_error = str(ex)
+                    self.failed_frame_count += 1
+
+                    # Update status to reflect failed frame
+                    self._notify_status()
 
                     # Try to reconnect
                     if not self._reconnect(url):
@@ -240,6 +272,12 @@ class CaptureEngine:
                 self._log("INFO", f"Capture completed - reached end time")
             else:
                 self._log("INFO", "Capture stopped by user")
+
+            # Log connection stability summary
+            if self.disconnect_count > 0:
+                total_time = (datetime.now() - self.session_start_time).total_seconds()
+                avg_uptime = total_time / (self.disconnect_count + 1) if self.disconnect_count > 0 else total_time
+                self._log("INFO", f"Connection summary: {self.disconnect_count} disconnects, avg uptime: {int(avg_uptime)}s between disconnects")
 
         except Exception as ex:
             self._log("ERROR", f"Capture loop error: {ex}")
@@ -302,12 +340,13 @@ class CaptureEngine:
                 return True
 
     def _build_rtsp_url(self) -> str:
-        """Build RTSP URL from configuration."""
+        """Build RTSP URL from configuration with Annke-optimized parameters."""
         camera = self.config["camera"]
         base = f"rtsp://{camera['username']}:{camera['password']}@{camera['ip_address']}/stream1"
 
+        # Force TCP transport for reliability (Annke cameras work better with TCP)
         if camera.get("force_tcp", True):
-            base += "?rtsp_transport=tcp"
+            base += "?tcp"
 
         return base
 
@@ -318,7 +357,7 @@ class CaptureEngine:
 
     def _open_capture(self, url: str, retries: int = None) -> Optional[cv2.VideoCapture]:
         """
-        Open RTSP stream with retries.
+        Open RTSP stream with retries and optimized settings for Annke cameras.
 
         Args:
             url: RTSP URL
@@ -336,11 +375,23 @@ class CaptureEngine:
 
             self._log("INFO", f"Connection attempt {attempt}/{retries}...")
 
+            # Create capture with FFmpeg backend and optimized options
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+
             if cap.isOpened():
-                buffer_frames = self.config["capture"]["buffer_frames"]
+                # Configure buffer - smaller buffer for IP cameras to reduce latency
+                buffer_frames = self.config["capture"].get("buffer_frames", 1)
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_frames)
-                self._log("INFO", f"Connection successful (buffer: {buffer_frames} frames)")
+
+                # Set timeout for read operations (milliseconds)
+                # This prevents hanging on disconnections
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)  # 10 second read timeout
+
+                # For Annke cameras: Enable FFmpeg options for better stability
+                # These are already set in the environment variable approach
+
+                self._log("INFO", f"Connection successful (buffer: {buffer_frames} frames, timeouts: 10s)")
                 return cap
 
             cap.release()
@@ -354,23 +405,52 @@ class CaptureEngine:
 
     def _reconnect(self, url: str) -> bool:
         """
-        Attempt to reconnect to RTSP stream.
+        Attempt to reconnect to RTSP stream with connection stability tracking.
 
         Returns:
             True if reconnected, False otherwise
         """
-        self._log("WARNING", "Connection lost, attempting to reconnect...")
+        # Track disconnect event
+        now = datetime.now()
+        self.disconnect_count += 1
 
+        # Log connection uptime if we know when it started
+        uptime_msg = ""
+        if self.connection_start_time:
+            uptime = (now - self.connection_start_time).total_seconds()
+            uptime_msg = f" (was connected for {int(uptime)}s)"
+
+        self._log("WARNING", f"Connection lost{uptime_msg}, attempting to reconnect... (disconnect #{self.disconnect_count})")
+
+        # Track time between disconnects for pattern analysis
+        if self.last_disconnect_time:
+            time_since_last = (now - self.last_disconnect_time).total_seconds()
+            if time_since_last < 60:  # Less than 1 minute between disconnects
+                self._log("WARNING", f"Frequent disconnects detected ({int(time_since_last)}s since last)")
+
+        self.last_disconnect_time = now
+
+        # Release old connection
         if self.cap:
             self.cap.release()
             self.cap = None
 
+        # Attempt reconnection with more retries for Annke cameras
         self.cap = self._open_capture(url, retries=3)
-        return self.cap is not None
+
+        if self.cap is not None:
+            self.connection_start_time = datetime.now()
+            return True
+        else:
+            return False
 
     def _grab_frame(self) -> np.ndarray:
         """
         Read a frame from the capture device.
+
+        Flushes buffered frames first to ensure we get the freshest frame.
+        This is critical for timelapse where frames are captured infrequently,
+        preventing the issue where old buffered frames are saved instead of current ones.
 
         Returns:
             Frame as numpy array
@@ -381,6 +461,17 @@ class CaptureEngine:
         if not self.cap or not self.cap.isOpened():
             raise RuntimeError("Capture device not open")
 
+        # Flush buffer by reading and discarding old frames
+        # This ensures we get the freshest frame from the camera
+        flush_count = self.config["capture"].get("flush_buffer_count", 10)
+        if flush_count > 0:
+            for i in range(flush_count):
+                ret, _ = self.cap.read()
+                if not ret:
+                    # If we can't flush, that's okay - just continue with what we have
+                    break
+
+        # Now read the fresh frame
         ret, frame = self.cap.read()
 
         if not ret or frame is None:
