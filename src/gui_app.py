@@ -6,6 +6,7 @@ A Tkinter-based GUI for managing RTSP camera timelapse captures with live previe
 and video export capabilities.
 """
 
+import os
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -17,6 +18,19 @@ import numpy as np
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
 from video_export_panel import VideoExportPanel
+from tooltip import ToolTip
+from capture_tooltips import CAPTURE_TOOLTIPS
+
+# Configure FFmpeg environment for Annke camera compatibility
+# These settings improve RTSP stream stability for IP cameras
+os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
+    'rtsp_transport;tcp|'           # Force TCP transport for reliability
+    'stimeout;5000000|'             # Socket timeout: 5 seconds (in microseconds)
+    'rw_timeout;10000000|'          # Read/write timeout: 10 seconds
+    'rtsp_flags;prefer_tcp|'        # Prefer TCP over UDP
+    'buffer_size;1024000|'          # Increase buffer for network jitter
+    'max_delay;500000'              # Max demux delay: 0.5 seconds
+)
 
 
 class RTSPTimelapseGUI:
@@ -73,7 +87,8 @@ class RTSPTimelapseGUI:
         # Tab 2: Video Export (NEW)
         self.video_export_panel = VideoExportPanel(
             self.notebook,
-            default_snapshots_dir=self.config_manager.capture.output_folder
+            default_snapshots_dir=self.config_manager.capture.output_folder,
+            config_manager=self.config_manager
         )
         self.notebook.add(self.video_export_panel, text="  Video Export  ")
 
@@ -123,6 +138,7 @@ class RTSPTimelapseGUI:
         self.ip_entry = ttk.Entry(config_frame, width=20)
         self.ip_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.ip_entry.insert(0, self.config_manager.camera.ip_address)
+        ToolTip(self.ip_entry, CAPTURE_TOOLTIPS["ip_address"])
         row += 1
 
         # Username
@@ -130,6 +146,7 @@ class RTSPTimelapseGUI:
         self.username_entry = ttk.Entry(config_frame, width=20)
         self.username_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.username_entry.insert(0, self.config_manager.camera.username)
+        ToolTip(self.username_entry, CAPTURE_TOOLTIPS["username"])
         row += 1
 
         # Password
@@ -137,6 +154,7 @@ class RTSPTimelapseGUI:
         self.password_entry = ttk.Entry(config_frame, width=20, show="*")
         self.password_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.password_entry.insert(0, self.config_manager.camera.password)
+        ToolTip(self.password_entry, CAPTURE_TOOLTIPS["password"])
         row += 1
 
         # Stream Path
@@ -144,11 +162,14 @@ class RTSPTimelapseGUI:
         self.stream_path_entry = ttk.Entry(config_frame, width=20)
         self.stream_path_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.stream_path_entry.insert(0, self.config_manager.camera.stream_path)
+        ToolTip(self.stream_path_entry, CAPTURE_TOOLTIPS["stream_path"])
         row += 1
 
         # Force TCP
         self.force_tcp_var = tk.BooleanVar(value=self.config_manager.camera.force_tcp)
-        ttk.Checkbutton(config_frame, text="Force TCP", variable=self.force_tcp_var).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=2)
+        force_tcp_check = ttk.Checkbutton(config_frame, text="Force TCP", variable=self.force_tcp_var)
+        force_tcp_check.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=2)
+        ToolTip(force_tcp_check, CAPTURE_TOOLTIPS["force_tcp"])
         row += 1
 
         # Separator
@@ -160,12 +181,14 @@ class RTSPTimelapseGUI:
         self.start_time_entry = ttk.Entry(config_frame, width=20)
         self.start_time_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.start_time_entry.insert(0, self.config_manager.schedule.start_time)
+        ToolTip(self.start_time_entry, CAPTURE_TOOLTIPS["start_time"])
         row += 1
 
         ttk.Label(config_frame, text="End Time (HH:MM):").grid(row=row, column=0, sticky=tk.W, pady=2)
         self.end_time_entry = ttk.Entry(config_frame, width=20)
         self.end_time_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.end_time_entry.insert(0, self.config_manager.schedule.end_time)
+        ToolTip(self.end_time_entry, CAPTURE_TOOLTIPS["end_time"])
         row += 1
 
         # Separator
@@ -177,6 +200,7 @@ class RTSPTimelapseGUI:
         self.interval_entry = ttk.Entry(config_frame, width=20)
         self.interval_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.interval_entry.insert(0, str(self.config_manager.capture.interval_seconds))
+        ToolTip(self.interval_entry, CAPTURE_TOOLTIPS["interval"])
         row += 1
 
         ttk.Label(config_frame, text="Output Folder:").grid(row=row, column=0, sticky=tk.W, pady=2)
@@ -187,23 +211,38 @@ class RTSPTimelapseGUI:
         self.output_entry = ttk.Entry(output_frame)
         self.output_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
         self.output_entry.insert(0, self.config_manager.capture.output_folder)
+        ToolTip(self.output_entry, CAPTURE_TOOLTIPS["output_folder"])
 
         browse_btn = ttk.Button(output_frame, text="...", width=3, command=self.browse_output_dir)
         browse_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(browse_btn, CAPTURE_TOOLTIPS["browse_output"])
         row += 1
 
         ttk.Label(config_frame, text="JPEG Quality (1-100):").grid(row=row, column=0, sticky=tk.W, pady=2)
         self.jpeg_quality_entry = ttk.Entry(config_frame, width=20)
         self.jpeg_quality_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.jpeg_quality_entry.insert(0, str(self.config_manager.capture.jpeg_quality))
+        ToolTip(self.jpeg_quality_entry, CAPTURE_TOOLTIPS["jpeg_quality"])
+        row += 1
+
+        ttk.Label(config_frame, text="Proactive Reconnect (s):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.proactive_reconnect_entry = ttk.Entry(config_frame, width=20)
+        self.proactive_reconnect_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
+        ToolTip(self.proactive_reconnect_entry, CAPTURE_TOOLTIPS["proactive_reconnect"])
         row += 1
 
         # Config buttons
         button_frame = ttk.Frame(config_frame)
         button_frame.grid(row=row, column=0, columnspan=2, pady=(10, 0))
 
-        ttk.Button(button_frame, text="Save Config", command=self.save_config_ui).pack(side=tk.LEFT, padx=2)
-        ttk.Button(button_frame, text="Load Config", command=self.load_config_ui).pack(side=tk.LEFT, padx=2)
+        save_config_btn = ttk.Button(button_frame, text="Save Config", command=self.save_config_ui)
+        save_config_btn.pack(side=tk.LEFT, padx=2)
+        ToolTip(save_config_btn, CAPTURE_TOOLTIPS["save_config"])
+
+        load_config_btn = ttk.Button(button_frame, text="Load Config", command=self.load_config_ui)
+        load_config_btn.pack(side=tk.LEFT, padx=2)
+        ToolTip(load_config_btn, CAPTURE_TOOLTIPS["load_config"])
 
         config_frame.columnconfigure(1, weight=1)
 
@@ -222,21 +261,25 @@ class RTSPTimelapseGUI:
         ttk.Label(status_frame, text="State:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.state_label = ttk.Label(status_frame, text="Stopped", foreground="gray")
         self.state_label.grid(row=1, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.state_label, CAPTURE_TOOLTIPS["status_state"])
 
         # Frame count
         ttk.Label(status_frame, text="Frames Captured:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.frames_label = ttk.Label(status_frame, text="0")
         self.frames_label.grid(row=2, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.frames_label, CAPTURE_TOOLTIPS["status_frames"])
 
         # Uptime
         ttk.Label(status_frame, text="Uptime:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.uptime_label = ttk.Label(status_frame, text="0:00:00")
         self.uptime_label.grid(row=3, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.uptime_label, CAPTURE_TOOLTIPS["status_uptime"])
 
         # Last capture
         ttk.Label(status_frame, text="Last Capture:").grid(row=4, column=0, sticky=tk.W, pady=2)
         self.last_capture_label = ttk.Label(status_frame, text="Never")
         self.last_capture_label.grid(row=4, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.last_capture_label, CAPTURE_TOOLTIPS["status_last_capture"])
 
         status_frame.columnconfigure(1, weight=1)
 
@@ -249,10 +292,12 @@ class RTSPTimelapseGUI:
         # Test connection button
         self.test_btn = ttk.Button(control_frame, text="Test Connection", command=self.test_connection)
         self.test_btn.pack(fill=tk.X, pady=5)
+        ToolTip(self.test_btn, CAPTURE_TOOLTIPS["test_connection"])
 
         # Start/Stop button
         self.start_stop_btn = ttk.Button(control_frame, text="Start Capture", command=self.toggle_capture)
         self.start_stop_btn.pack(fill=tk.X, pady=5)
+        self.start_stop_tooltip = ToolTip(self.start_stop_btn, CAPTURE_TOOLTIPS["start_capture"])
 
         # Status indicator
         self.status_indicator = tk.Canvas(control_frame, height=30, bg="white")
@@ -279,7 +324,9 @@ class RTSPTimelapseGUI:
         self.log_text.tag_config("SUCCESS", foreground="green")
 
         # Clear log button
-        ttk.Button(log_frame, text="Clear Log", command=self.clear_log).grid(row=1, column=0, sticky=tk.E, pady=(5, 0))
+        clear_log_btn = ttk.Button(log_frame, text="Clear Log", command=self.clear_log)
+        clear_log_btn.grid(row=1, column=0, sticky=tk.E, pady=(5, 0))
+        ToolTip(clear_log_btn, CAPTURE_TOOLTIPS["clear_log"])
 
     def create_preview_panel(self, parent):
         """Create live preview panel"""
@@ -293,8 +340,10 @@ class RTSPTimelapseGUI:
         controls_frame = ttk.Frame(preview_frame)
         controls_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Checkbutton(controls_frame, text="Enable Preview", variable=self.preview_enabled,
-                       command=self.toggle_preview).pack(side=tk.LEFT)
+        preview_check = ttk.Checkbutton(controls_frame, text="Enable Preview", variable=self.preview_enabled,
+                       command=self.toggle_preview)
+        preview_check.pack(side=tk.LEFT)
+        ToolTip(preview_check, CAPTURE_TOOLTIPS["enable_preview"])
 
         # Preview canvas
         self.preview_canvas = tk.Canvas(preview_frame, bg="black", highlightthickness=1, highlightbackground="gray")
@@ -322,21 +371,25 @@ class RTSPTimelapseGUI:
         ttk.Label(stats_frame, text="Total Captures:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.total_captures_label = ttk.Label(stats_frame, text="0")
         self.total_captures_label.grid(row=0, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.total_captures_label, CAPTURE_TOOLTIPS["stats_total_captures"])
 
         # Success rate
         ttk.Label(stats_frame, text="Success Rate:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.success_rate_label = ttk.Label(stats_frame, text="100%")
         self.success_rate_label.grid(row=1, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.success_rate_label, CAPTURE_TOOLTIPS["stats_success_rate"])
 
         # Average interval
         ttk.Label(stats_frame, text="Avg Interval:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.avg_interval_label = ttk.Label(stats_frame, text="N/A")
         self.avg_interval_label.grid(row=2, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.avg_interval_label, CAPTURE_TOOLTIPS["stats_avg_interval"])
 
         # Session duration
         ttk.Label(stats_frame, text="Session Duration:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.session_duration_label = ttk.Label(stats_frame, text="0:00:00")
         self.session_duration_label.grid(row=3, column=1, sticky=tk.W, pady=2, padx=(5, 0))
+        ToolTip(self.session_duration_label, CAPTURE_TOOLTIPS["stats_session_duration"])
 
         stats_frame.columnconfigure(1, weight=1)
 
@@ -446,6 +499,7 @@ class RTSPTimelapseGUI:
         self.config_manager.capture.interval_seconds = int(self.interval_entry.get())
         self.config_manager.capture.output_folder = self.output_entry.get()
         self.config_manager.capture.jpeg_quality = int(self.jpeg_quality_entry.get())
+        self.config_manager.capture.proactive_reconnect_seconds = int(self.proactive_reconnect_entry.get())
 
     def update_config_ui(self):
         """Update UI inputs from ConfigManager"""
@@ -477,6 +531,9 @@ class RTSPTimelapseGUI:
 
         self.jpeg_quality_entry.delete(0, tk.END)
         self.jpeg_quality_entry.insert(0, str(self.config_manager.capture.jpeg_quality))
+
+        self.proactive_reconnect_entry.delete(0, tk.END)
+        self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
 
     def test_connection(self):
         """Test camera connection"""
@@ -552,6 +609,7 @@ class RTSPTimelapseGUI:
 
             self.is_capturing = True
             self.start_stop_btn.configure(text="Stop Capture")
+            self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["stop_capture"])
             self.log_message("INFO", "Capture started")
 
             # Disable config inputs during capture
@@ -572,6 +630,7 @@ class RTSPTimelapseGUI:
 
         self.is_capturing = False
         self.start_stop_btn.configure(text="Start Capture")
+        self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
         self.log_message("INFO", "Capture stopped")
 
         # Re-enable config inputs
@@ -585,7 +644,8 @@ class RTSPTimelapseGUI:
         inputs = [
             self.ip_entry, self.username_entry, self.password_entry,
             self.stream_path_entry, self.start_time_entry, self.end_time_entry,
-            self.interval_entry, self.output_entry, self.jpeg_quality_entry
+            self.interval_entry, self.output_entry, self.jpeg_quality_entry,
+            self.proactive_reconnect_entry
         ]
         for widget in inputs:
             widget.configure(state=state)
@@ -744,13 +804,26 @@ class RTSPTimelapseGUI:
 
     def update_statistics(self):
         """Update statistics display"""
-        # Total captures
+        # Get failed count from capture engine if available
+        failed_count = 0
+        if self.capture_engine:
+            stats = self.capture_engine.get_stats()
+            failed_count = stats.get('failed_frame_count', 0)
+        else:
+            failed_count = self.failed_captures
+
+        # Total attempts = successful + failed
+        total_attempts = self.total_captures + failed_count
+
+        # Total captures (successful only)
         self.total_captures_label.configure(text=str(self.total_captures))
 
-        # Success rate
-        if self.total_captures > 0:
-            success_rate = ((self.total_captures - self.failed_captures) / self.total_captures) * 100
+        # Success rate based on total attempts
+        if total_attempts > 0:
+            success_rate = (self.total_captures / total_attempts) * 100
             self.success_rate_label.configure(text=f"{success_rate:.1f}%")
+        else:
+            self.success_rate_label.configure(text="100%")
 
         # Session duration
         if self.session_start_time:
