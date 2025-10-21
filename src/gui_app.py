@@ -716,6 +716,15 @@ class RTSPTimelapseGUI:
         else:
             self.connection_label.configure(text="Disconnected", foreground="red")
 
+        # Handle automatic stop when capture ends naturally (reached end time or error)
+        if (state == CaptureState.STOPPED or state == CaptureState.ERROR) and self.is_capturing:
+            # Clean up GUI state
+            self.is_capturing = False
+            self.start_stop_btn.configure(text="Start Capture")
+            self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
+            # Re-enable config inputs
+            self.set_config_inputs_state(tk.NORMAL)
+
         # Update stats
         self.frames_label.configure(text=str(stats.get('frame_count', 0)))
 
