@@ -32,13 +32,13 @@ class ScheduleConfig:
 @dataclass
 class CaptureConfig:
     """Capture behavior settings"""
-    interval_seconds: int = 20
-    jpeg_quality: int = 90  # 1-100
+    interval_seconds: int = 30  # Optimal for timestamp accuracy (Configuration A)
+    jpeg_quality: int = 95  # 1-100, higher quality for archival purposes
     output_folder: str = "snapshots"
-    buffer_frames: int = 2
-    max_retries: int = 5
-    proactive_reconnect_seconds: int = 0  # 0 = disabled, >0 = reconnect after N seconds to avoid camera timeout
-    flush_buffer_count: int = 10  # Number of frames to read and discard before capturing (ensures fresh frame)
+    buffer_frames: int = 1  # Minimal buffer for multi-threaded bufferless capture
+    max_retries: int = 3  # Quick failure detection - if it fails 3 times, there's a real issue
+    proactive_reconnect_seconds: int = 300  # 5 minutes - optimal for Annke cameras (Configuration A)
+    flush_buffer_count: int = 0  # Not needed with multi-threaded bufferless capture (v2.3.0+)
 
 
 @dataclass
