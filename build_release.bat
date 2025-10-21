@@ -30,18 +30,18 @@ if %ERRORLEVEL% NEQ 0 (
 REM Create release folder
 echo [4/5] Creating release package...
 if not exist "release" mkdir "release"
-if exist "release\RTSP_Timelapse_v2.0.0_Windows" rmdir /s /q "release\RTSP_Timelapse_v2.0.0_Windows"
-mkdir "release\RTSP_Timelapse_v2.0.0_Windows"
+if exist "release\RTSP_Timelapse_v2.3.0_Windows" rmdir /s /q "release\RTSP_Timelapse_v2.3.0_Windows"
+mkdir "release\RTSP_Timelapse_v2.3.0_Windows"
 
 REM Copy files to release folder
-copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.0.0_Windows\"
-copy "README.md" "release\RTSP_Timelapse_v2.0.0_Windows\"
-copy "requirements.txt" "release\RTSP_Timelapse_v2.0.0_Windows\"
+copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.3.0_Windows\"
+copy "README.md" "release\RTSP_Timelapse_v2.3.0_Windows\"
+copy "requirements.txt" "release\RTSP_Timelapse_v2.3.0_Windows\"
 
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
-if not exist "release\RTSP_Timelapse_v2.0.0_Windows\bin" mkdir "release\RTSP_Timelapse_v2.0.0_Windows\bin"
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v2.0.0_Windows\bin\" >nul 2>&1
+if not exist "release\RTSP_Timelapse_v2.3.0_Windows\bin" mkdir "release\RTSP_Timelapse_v2.3.0_Windows\bin"
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v2.3.0_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
     echo   - Users don't need to install anything!
@@ -52,7 +52,7 @@ if %ERRORLEVEL% EQU 0 (
 REM Create user guide
 echo [5/5] Creating user guide...
 (
-echo RTSP Timelapse Capture System v2.0.0
+echo RTSP Timelapse Capture System v2.3.0
 echo =====================================
 echo.
 echo QUICK START:
@@ -63,7 +63,9 @@ echo 4. Switch to "Video Export" tab to create videos
 echo.
 echo FEATURES:
 echo - RTSP camera capture with live preview
+echo - Multi-threaded bufferless capture for ±5s timestamp accuracy
 echo - Overnight scheduling support
+echo - Proactive reconnection to prevent camera timeouts
 echo - Video export with 6 built-in presets
 echo - FFmpeg is included - no separate installation needed!
 echo.
@@ -76,12 +78,12 @@ echo - Report issues on GitHub
 echo - Check docs/ folder for guides
 echo.
 echo LICENSE: MIT
-) > "release\RTSP_Timelapse_v2.0.0_Windows\QUICKSTART.txt"
+) > "release\RTSP_Timelapse_v2.3.0_Windows\QUICKSTART.txt"
 
 REM Create ZIP archive
 echo Creating ZIP archive...
 cd release
-powershell Compress-Archive -Path "RTSP_Timelapse_v2.0.0_Windows" -DestinationPath "RTSP_Timelapse_v2.0.0_Windows.zip" -Force
+powershell Compress-Archive -Path "RTSP_Timelapse_v2.3.0_Windows" -DestinationPath "RTSP_Timelapse_v2.3.0_Windows.zip" -Force
 cd ..
 
 echo.
@@ -90,8 +92,8 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Executable: dist\RTSP_Timelapse.exe
-echo Release Package: release\RTSP_Timelapse_v2.0.0_Windows\
-echo ZIP Archive: release\RTSP_Timelapse_v2.0.0_Windows.zip
+echo Release Package: release\RTSP_Timelapse_v2.3.0_Windows\
+echo ZIP Archive: release\RTSP_Timelapse_v2.3.0_Windows.zip
 echo.
 echo Ready for GitHub release!
 echo.
