@@ -36,7 +36,6 @@ mkdir "release\RTSP_Timelapse_v2.3.0_Windows"
 REM Copy files to release folder
 copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.3.0_Windows\"
 copy "README.md" "release\RTSP_Timelapse_v2.3.0_Windows\"
-copy "requirements.txt" "release\RTSP_Timelapse_v2.3.0_Windows\"
 
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
