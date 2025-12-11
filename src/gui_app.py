@@ -39,8 +39,8 @@ class RTSPTimelapseGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("RTSP Timelapse Capture System")
-        self.root.geometry("1200x800")
-        self.root.minsize(1000, 700)
+        self.root.geometry("1200x900")
+        self.root.minsize(1000, 850)
 
         # Configuration and engine
         self.config_manager = ConfigManager()
