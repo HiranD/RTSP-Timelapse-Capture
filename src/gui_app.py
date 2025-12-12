@@ -18,6 +18,9 @@ import numpy as np
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
 from video_export_panel import VideoExportPanel
+from scheduling_panel import SchedulingPanel
+from video_export_controller import VideoExportController
+from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 
@@ -84,13 +87,28 @@ class RTSPTimelapseGUI:
         self.notebook.add(self.capture_tab, text="  Capture  ")
         self.create_capture_tab()
 
-        # Tab 2: Video Export (NEW)
+        # Tab 2: Video Export
         self.video_export_panel = VideoExportPanel(
             self.notebook,
             default_snapshots_dir=self.config_manager.capture.output_folder,
             config_manager=self.config_manager
         )
         self.notebook.add(self.video_export_panel, text="  Video Export  ")
+
+        # Tab 3: Scheduling
+        self.scheduling_panel = SchedulingPanel(
+            self.notebook,
+            config_manager=self.config_manager
+        )
+        self.notebook.add(self.scheduling_panel, text="  Scheduling  ")
+
+        # Set up scheduling panel callbacks
+        self.scheduling_panel.set_callbacks(
+            start_capture=self.start_capture,
+            stop_capture=self.stop_capture,
+            create_video=self._auto_create_video_for_date,
+            log=self.log_message
+        )
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -848,8 +866,113 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
+    def _auto_create_video_for_date(self, date_str: str):
+        """
+        Automatically create a timelapse video for a specific date's captures.
+
+        Args:
+            date_str: Date string in YYYYMMDD format
+        """
+        self.log_message("INFO", f"[Auto Video] Starting video creation for {date_str}")
+
+        try:
+            # Get the snapshots folder for this date
+            output_folder = Path(self.config_manager.capture.output_folder)
+            date_folder = output_folder / date_str
+
+            if not date_folder.exists():
+                self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
+                return
+
+            # Get video settings from scheduling panel config
+            astro_cfg = self.config_manager.astro_schedule
+            preset_name = astro_cfg.video_preset
+            video_output_folder = astro_cfg.video_output_folder
+
+            # Initialize preset manager and get preset
+            preset_manager = PresetManager()
+            settings = preset_manager.get_preset(preset_name)
+            if not settings:
+                self.log_message("ERROR", f"[Auto Video] Preset not found: {preset_name}")
+                return
+
+            # Don't open video automatically when creating via scheduler
+            settings.open_when_done = False
+
+            # Create video export controller
+            controller = VideoExportController()
+
+            # Check FFmpeg
+            ffmpeg_ok, ffmpeg_msg = controller.check_ffmpeg()
+            if not ffmpeg_ok:
+                self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
+                return
+
+            # Scan folder for images
+            success, collection, msg = controller.scan_folder(date_folder)
+            if not success:
+                self.log_message("ERROR", f"[Auto Video] {msg}")
+                return
+
+            self.log_message("INFO", f"[Auto Video] Found {collection.total_count} images")
+
+            # Prepare output path
+            output_path = Path(video_output_folder)
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            output_file = output_path / f"timelapse_{date_str}.{settings.format}"
+
+            # Prepare and run export
+            success, job, msg = controller.prepare_export(settings, collection, output_file)
+            if not success:
+                self.log_message("ERROR", f"[Auto Video] {msg}")
+                return
+
+            # Progress callback for logging
+            def progress_callback(status: str, progress: float, info):
+                if progress > 0:
+                    self.log_message("INFO", f"[Auto Video] {status}: {progress:.0f}%")
+
+            # Check if we should delete snapshots after video creation
+            delete_snapshots = astro_cfg.delete_snapshots_after_video
+
+            # Run export (this runs in current thread, called via after() so it's safe)
+            def run_export():
+                result = controller.export_video(
+                    job,
+                    progress_callback=progress_callback,
+                    log_callback=lambda msg: self.log_message("INFO", f"[Auto Video] {msg}")
+                )
+
+                if result.success:
+                    self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
+
+                    # Delete snapshot folder if enabled
+                    if delete_snapshots:
+                        try:
+                            import shutil
+                            self.log_message("INFO", f"[Auto Video] Deleting snapshot folder: {date_folder}")
+                            shutil.rmtree(date_folder)
+                            self.log_message("INFO", f"[Auto Video] Snapshot folder deleted successfully")
+                        except Exception as e:
+                            self.log_message("ERROR", f"[Auto Video] Failed to delete snapshot folder: {e}")
+                else:
+                    self.log_message("ERROR", f"[Auto Video] Export failed: {result.message}")
+
+            # Run in a thread to avoid blocking UI
+            threading.Thread(target=run_export, daemon=True).start()
+
+        except Exception as e:
+            self.log_message("ERROR", f"[Auto Video] Failed: {e}")
+
     def on_closing(self):
         """Handle window close event"""
+        # Clean up scheduler
+        if hasattr(self, 'scheduling_panel'):
+            self.scheduling_panel.cleanup()
+
         # Save UI preferences
         self.config_manager.ui.preview_enabled = self.preview_enabled.get()
         self.config_manager.save_to_file("camera_config.json")

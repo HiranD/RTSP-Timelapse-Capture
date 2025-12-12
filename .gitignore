@@ -45,6 +45,8 @@ videos/
 config/camera_config.json
 config/*.json
 !config/camera_config_example.json
+camera_config.json
+capture_config.json
 
 # Logs
 *.log
