@@ -138,10 +138,6 @@ class AstroScheduler:
         """Check if we should start or stop capture based on schedule."""
         cfg = self.config_manager.astro_schedule
 
-        # Skip if location not set
-        if cfg.latitude == 0.0 and cfg.longitude == 0.0:
-            return
-
         # Skip if no scheduled dates
         if not cfg.scheduled_dates:
             return
@@ -158,6 +154,82 @@ class AstroScheduler:
                 if self.capture_active:
                     self._stop_capture_session()
                 return
+
+        # Check which mode we're using
+        if cfg.use_manual_times:
+            # Manual time mode - use fixed start/end times
+            self._check_manual_schedule(now, today_str)
+        else:
+            # Twilight-based mode - use astronomical calculations
+            self._check_twilight_schedule(now)
+
+    def _check_manual_schedule(self, now: datetime, today_str: str):
+        """Check manual time-based schedule."""
+        cfg = self.config_manager.astro_schedule
+
+        start_time_str = cfg.manual_start_time
+        end_time_str = cfg.manual_end_time
+
+        # Check if within manual time window
+        in_window = self._is_within_manual_window(now, start_time_str, end_time_str)
+
+        if in_window:
+            if not self.capture_active:
+                # Start capture with manual times
+                self.config_manager.schedule.start_time = start_time_str
+                self.config_manager.schedule.end_time = end_time_str
+                self._start_capture_session_manual(today_str, start_time_str, end_time_str)
+        else:
+            if self.capture_active:
+                # Stop capture - outside manual window
+                self._stop_capture_session()
+
+    def _is_within_manual_window(self, now: datetime, start_str: str, end_str: str) -> bool:
+        """Check if current time is within manual start/end window."""
+        try:
+            start_parts = start_str.split(":")
+            end_parts = end_str.split(":")
+            start_hour, start_min = int(start_parts[0]), int(start_parts[1])
+            end_hour, end_min = int(end_parts[0]), int(end_parts[1])
+
+            current_mins = now.hour * 60 + now.minute
+            start_mins = start_hour * 60 + start_min
+            end_mins = end_hour * 60 + end_min
+
+            # Handle overnight windows (e.g., 22:00 - 06:00)
+            if end_mins < start_mins:
+                # Overnight window
+                return current_mins >= start_mins or current_mins < end_mins
+            else:
+                # Same day window (e.g., 10:00 - 14:00)
+                return start_mins <= current_mins < end_mins
+
+        except (ValueError, IndexError):
+            self._log("ERROR", f"Invalid manual time format: {start_str} - {end_str}")
+            return False
+
+    def _start_capture_session_manual(self, date_str: str, start_time: str, end_time: str):
+        """Start a capture session with manual times."""
+        self.capture_active = True
+        self.current_session_date = date_str.replace("-", "")
+
+        self._log("INFO", f"Starting scheduled capture session for {self.current_session_date}")
+        self._log("INFO", f"Manual window: {start_time} - {end_time}")
+
+        # Update the capture schedule times in config
+        self.config_manager.schedule.start_time = start_time
+        self.config_manager.schedule.end_time = end_time
+
+        if self.on_start_capture:
+            self.on_start_capture()
+
+    def _check_twilight_schedule(self, now: datetime):
+        """Check twilight-based schedule."""
+        cfg = self.config_manager.astro_schedule
+
+        # Skip if location not set
+        if cfg.latitude == 0.0 and cfg.longitude == 0.0:
+            return
 
         # Get tonight's darkness window
         calc = TwilightCalculator(cfg.latitude, cfg.longitude)

@@ -83,31 +83,31 @@ class TwoMonthCalendar(ttk.Frame):
         inner_frame = ttk.Frame(self)
         inner_frame.grid(row=0, column=1, sticky="n")
 
-        # Navigation header
-        nav_frame = ttk.Frame(inner_frame)
-        nav_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        # Main horizontal container: calendar section + buttons
+        main_frame = ttk.Frame(inner_frame)
+        main_frame.grid(row=0, column=0, sticky="n")
+
+        # === Left side: Calendar with navigation ===
+        cal_container = ttk.Frame(main_frame)
+        cal_container.grid(row=0, column=0, sticky="n")
+
+        # Navigation header with arrows (inside calendar container)
+        nav_frame = ttk.Frame(cal_container)
+        nav_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         nav_frame.columnconfigure(1, weight=1)
 
-        # Navigation buttons and month labels
         self.prev_btn = ttk.Button(nav_frame, text="<", width=3, command=self._prev_month)
-        self.prev_btn.grid(row=0, column=0, padx=5)
+        self.prev_btn.grid(row=0, column=0, padx=(0, 5))
 
         self.month_label = ttk.Label(nav_frame, text="", font=("Segoe UI", 10, "bold"))
         self.month_label.grid(row=0, column=1)
 
         self.next_btn = ttk.Button(nav_frame, text=">", width=3, command=self._next_month)
-        self.next_btn.grid(row=0, column=2, padx=5)
+        self.next_btn.grid(row=0, column=2, padx=(5, 0))
 
-        # Action buttons
-        btn_frame = ttk.Frame(inner_frame)
-        btn_frame.grid(row=1, column=0, sticky="w", pady=(0, 10))
-
-        ttk.Button(btn_frame, text="Select All", command=self._select_all).pack(side="left", padx=2)
-        ttk.Button(btn_frame, text="Clear All", command=self._clear_all).pack(side="left", padx=2)
-
-        # Calendar container (two months side by side)
-        cal_frame = ttk.Frame(inner_frame)
-        cal_frame.grid(row=2, column=0, sticky="n")
+        # Calendar months (two months side by side)
+        cal_frame = ttk.Frame(cal_container)
+        cal_frame.grid(row=1, column=0, sticky="n")
 
         # Left month (current view)
         self.left_month_frame = ttk.Frame(cal_frame)
@@ -122,9 +122,18 @@ class TwoMonthCalendar(ttk.Frame):
         self.right_month_frame.grid(row=0, column=2, sticky="n", padx=(10, 0))
         self._create_month_grid(self.right_month_frame, 1)
 
-        # Legend
+        # === Right side: Action buttons ===
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.grid(row=0, column=1, sticky="ns", padx=(20, 0))
+
+        # Spacer to push buttons down (align with calendar middle)
+        ttk.Frame(btn_frame).pack(pady=(40, 0))
+        ttk.Button(btn_frame, text="Select All", width=10, command=self._select_all).pack(pady=(0, 5))
+        ttk.Button(btn_frame, text="Clear All", width=10, command=self._clear_all).pack()
+
+        # Legend (below everything)
         legend_frame = ttk.Frame(inner_frame)
-        legend_frame.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        legend_frame.grid(row=1, column=0, sticky="w", pady=(10, 0))
 
         self._create_legend_item(legend_frame, self.COLORS["captured"], "Captured")
         self._create_legend_item(legend_frame, self.COLORS["scheduled"], "Scheduled")

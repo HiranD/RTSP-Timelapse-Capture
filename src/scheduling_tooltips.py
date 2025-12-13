@@ -4,6 +4,28 @@ Provides helpful tooltip messages for the astronomical scheduling interface.
 """
 
 SCHEDULING_TOOLTIPS = {
+    # Time mode settings
+    "time_mode_twilight": (
+        "Use astronomical twilight calculations\n"
+        "to automatically determine capture window.\n"
+        "Requires location (latitude/longitude) to be set."
+    ),
+    "time_mode_manual": (
+        "Use fixed start/end times for capture window.\n"
+        "Does not require location settings.\n"
+        "Supports overnight spans (e.g., 22:00 - 06:00)."
+    ),
+    "manual_start_time": (
+        "Capture start time in HH:MM format.\n"
+        "Example: 22:00 for 10 PM\n"
+        "For overnight captures, use evening time."
+    ),
+    "manual_end_time": (
+        "Capture end time in HH:MM format.\n"
+        "Example: 06:00 for 6 AM\n"
+        "Can be earlier than start time for overnight captures."
+    ),
+
     # Location settings
     "latitude": (
         "Latitude of your observation location.\n"

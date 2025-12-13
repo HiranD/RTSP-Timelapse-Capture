@@ -66,6 +66,10 @@ class AstroScheduleConfig:
     video_preset: str = "Standard 24fps"  # Preset name for auto video creation
     video_output_folder: str = "videos"  # Output folder for auto-created videos
     delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
+    # Manual time mode settings
+    use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
+    manual_start_time: str = "22:00"  # HH:MM format - capture start time
+    manual_end_time: str = "06:00"  # HH:MM format - capture end time
 
 
 class ConfigManager:
@@ -330,10 +334,12 @@ class ConfigManager:
             f"  Auto-start: {self.ui.auto_start}",
             "",
             "Astro Schedule:",
+            f"  Time Mode: {'Manual' if self.astro_schedule.use_manual_times else 'Twilight-based'}",
             f"  Location: {self.astro_schedule.latitude}, {self.astro_schedule.longitude}",
             f"  Twilight Type: {self.astro_schedule.twilight_type}",
             f"  Start Offset: {self.astro_schedule.start_offset_minutes} min",
             f"  End Offset: {self.astro_schedule.end_offset_minutes} min",
+            f"  Manual Times: {self.astro_schedule.manual_start_time} - {self.astro_schedule.manual_end_time}",
             f"  Scheduled Dates: {len(self.astro_schedule.scheduled_dates)} dates",
             f"  Auto Video: {'enabled' if self.astro_schedule.auto_create_video else 'disabled'}",
             f"  Video Preset: {self.astro_schedule.video_preset}",

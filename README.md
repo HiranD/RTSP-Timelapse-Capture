@@ -2,7 +2,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -32,8 +32,18 @@
 - Real-time progress, ETA, and output size estimates.
 - Optional frame counter overlay.
 
+### Astronomical Scheduling (NEW in v3.0)
+- **Long-term capture planning** with calendar-based date selection.
+- **Twilight calculations** for automatic darkness detection (civil, nautical, astronomical).
+- **Manual time mode** as alternative to twilight-based scheduling.
+- **Two-month calendar view** showing captured dates, scheduled dates, and today.
+- **Auto video creation** after each night's capture session completes.
+- **Auto delete snapshots** option to free up disk space after video creation.
+- **Color-coded scheduler log** for monitoring automated capture activity.
+- Start/end time offsets to fine-tune the darkness window.
+
 ### User Experience
-- Two-tab interface: **Capture** and **Video Export**.
+- Three-tab interface: **Capture**, **Video Export**, and **Scheduling**.
 - **Comprehensive tooltip system** with 37 hover tooltips explaining every control.
 - Keyboard shortcuts for common actions.
 - Auto-save of UI preferences.
@@ -177,6 +187,78 @@ Fast Motion:
 Ultra Speed:
   30 fps, 16x speed → 2.5 s video, ~1 MB
 ```
+
+---
+
+## Using the Scheduling Tab (NEW in v3.0)
+
+The Scheduling tab enables **automated long-term capture planning** based on astronomical twilight times or manual schedules.
+
+### Time Mode Selection
+
+Choose between two scheduling modes:
+
+**Twilight-based Mode** (Default):
+- Set your location (latitude/longitude)
+- Select twilight type: Civil (-6°), Nautical (-12°), or Astronomical (-18°)
+- The app calculates darkness windows automatically
+- Optionally add start/end offsets to fine-tune the window
+
+**Manual Mode**:
+- Set fixed start and end times (HH:MM format)
+- Supports overnight spans (e.g., 22:00 - 06:00)
+- No location settings required
+
+### Setting Up Automated Captures
+
+1. **Configure Time Settings**
+   ```
+   Twilight-based:
+     Latitude:  42.0 (Northern Hemisphere)
+     Longitude: -7.0
+     Twilight:  Astronomical (true darkness)
+     Offsets:   Start +0 min, End +0 min
+
+   OR Manual:
+     Start Time: 22:00
+     End Time:   06:00
+   ```
+
+2. **Select Dates on Calendar**
+   - Click dates to toggle selection (blue = scheduled)
+   - Green dates = past dates with captured images
+   - Gray dates = past dates without captures
+   - Red border = today
+   - Use **Select All** / **Clear All** buttons for bulk operations
+   - Navigate months with **<** and **>** buttons
+
+3. **Configure Auto Video (Optional)**
+   ```
+   [✓] Create video after each night's session
+   Preset: Standard 24fps
+   Output: videos/
+   [ ] Delete snapshots after (use with caution!)
+   ```
+
+4. **Enable Scheduler**
+   - Check "Enable automatic scheduling"
+   - The scheduler monitors twilight/manual times
+   - Capture starts automatically when darkness begins
+   - Capture stops automatically when darkness ends
+   - Videos are created automatically if enabled
+
+### Scheduler Status
+
+- **Scheduler: Inactive** - Scheduler is disabled
+- **Scheduler: Active (waiting)** - Waiting for darkness window
+- **Scheduler: Capturing** - Currently capturing frames
+
+### Scheduler Log
+
+Monitor scheduler activity in the color-coded log:
+- **INFO** (black): Normal operations
+- **WARNING** (orange): Non-critical issues
+- **ERROR** (red): Problems requiring attention
 
 ---
 
@@ -397,6 +479,7 @@ RTSP/
 ├── run_gui.py                    # Application launcher
 ├── requirements.txt              # Python dependencies
 ├── README.md                     # This file
+├── LICENSE                       # MIT License
 ├── .gitignore                    # Git ignore rules
 │
 ├── src/                          # Source code
@@ -409,7 +492,12 @@ RTSP/
 │   ├── preset_manager.py        # Preset management
 │   ├── tooltip.py               # Tooltip helper class
 │   ├── video_export_tooltips.py # Video export tooltip messages
-│   └── capture_tooltips.py      # Capture tab tooltip messages
+│   ├── capture_tooltips.py      # Capture tab tooltip messages
+│   ├── scheduling_panel.py      # Astronomical scheduling GUI (NEW v3.0)
+│   ├── scheduling_tooltips.py   # Scheduling tab tooltip messages (NEW v3.0)
+│   ├── calendar_widget.py       # Two-month calendar widget (NEW v3.0)
+│   ├── twilight_calculator.py   # Twilight time calculations (NEW v3.0)
+│   └── astro_scheduler.py       # Automated scheduling engine (NEW v3.0)
 │
 ├── tests/                        # Test files
 │   ├── test_backend.py          # Interactive backend tests
@@ -518,7 +606,38 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v2.3.0 (2025-10-20) - Latest
+### v3.0.0 (2025-12-13) - Latest
+**Major Release: Astronomical Scheduling**
+
+New third tab for automated long-term capture planning based on twilight times or manual schedules.
+
+**New Features:**
+- **Scheduling Tab**: Complete astronomical scheduling interface
+- **Twilight Calculations**: Automatic darkness window detection (civil/nautical/astronomical)
+- **Manual Time Mode**: Fixed start/end times as alternative to twilight-based scheduling
+- **Two-Month Calendar**: Visual date selection with capture history indicators
+- **Auto Video Creation**: Automatically create timelapse videos after each night's session
+- **Auto Delete Snapshots**: Option to free disk space after video creation
+- **Scheduler Log**: Color-coded activity monitoring (INFO/WARNING/ERROR)
+- **Location Settings**: Latitude/longitude with hemisphere indicator
+
+**UI Improvements:**
+- Three-tab interface (Capture | Video Export | Scheduling)
+- Two-column layout for Twilight vs Manual time settings
+- Radio buttons to switch between time modes
+- Calendar buttons moved to dedicated column
+- Compact layout with all settings visible
+
+**Technical:**
+- New `AstroScheduler` class for background schedule monitoring
+- `TwilightCalculator` for accurate sun position calculations
+- `TwoMonthCalendar` custom widget with date status indicators
+- New config fields: `use_manual_times`, `manual_start_time`, `manual_end_time`
+- Scheduler integrates with existing capture engine
+
+---
+
+### v2.3.0 (2025-10-20)
 **Major Release: Multi-Threaded Bufferless Capture**
 - **Revolutionary timestamp accuracy**: ±5 seconds throughout entire capture session (96% improvement over baseline)
 - **Multi-threaded capture engine**: Background thread continuously reads frames, discards stale ones

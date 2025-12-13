@@ -73,117 +73,182 @@ class SchedulingPanel(ttk.Frame):
         """Create all panel widgets"""
         # Main container with padding
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=1)  # Calendar row expands
-        self.rowconfigure(5, weight=1)  # Log row also expands
+        self.rowconfigure(1, weight=1)  # Calendar row expands
+        self.rowconfigure(3, weight=1)  # Log row also expands
 
-        # === Location Section ===
-        location_frame = ttk.LabelFrame(self, text="Location", padding=10)
-        location_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        self._create_location_section(location_frame)
-
-        # === Twilight Settings Section ===
-        twilight_frame = ttk.LabelFrame(self, text="Twilight Settings", padding=10)
-        twilight_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        self._create_twilight_section(twilight_frame)
-
-        # === Scheduler Control Section ===
-        scheduler_frame = ttk.LabelFrame(self, text="Scheduler Control", padding=10)
-        scheduler_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
-        self._create_scheduler_section(scheduler_frame)
+        # === Capture Time Settings Section (merged Location + Twilight) ===
+        time_settings_frame = ttk.LabelFrame(self, text="Capture Time Settings", padding=10)
+        time_settings_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        self._create_time_settings_section(time_settings_frame)
 
         # === Calendar Section ===
         calendar_frame = ttk.LabelFrame(self, text="Schedule Calendar", padding=10)
-        calendar_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=5)
+        calendar_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         self._create_calendar_section(calendar_frame)
 
         # === Auto Video Section ===
         video_frame = ttk.LabelFrame(self, text="Auto Video Creation", padding=10)
-        video_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=5)
+        video_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         self._create_video_section(video_frame)
 
-        # === Log Section ===
-        log_frame = ttk.LabelFrame(self, text="Scheduler Log", padding=10)
-        log_frame.grid(row=5, column=0, sticky="nsew", padx=10, pady=(5, 10))
+        # === Scheduler Control / Log Section (merged) ===
+        log_frame = ttk.LabelFrame(self, text="Scheduler Control / Log", padding=10)
+        log_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=(5, 10))
         self._create_log_section(log_frame)
 
-    def _create_location_section(self, parent: ttk.LabelFrame):
-        """Create location settings widgets"""
+    def _create_time_settings_section(self, parent: ttk.LabelFrame):
+        """Create combined time settings with radio buttons for twilight vs manual mode"""
+        parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=1)
-        parent.columnconfigure(3, weight=1)
 
-        # Latitude
-        ttk.Label(parent, text="Latitude:").grid(row=0, column=0, sticky="w", padx=(0, 5))
+        # === Row 0: Time Mode Radio Buttons ===
+        mode_frame = ttk.Frame(parent)
+        mode_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        ttk.Label(mode_frame, text="Time Mode:", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 15))
+
+        self.time_mode_var = tk.StringVar(value="twilight")
+        self.twilight_radio = ttk.Radiobutton(
+            mode_frame,
+            text="Twilight-based",
+            variable=self.time_mode_var,
+            value="twilight",
+            command=self._on_time_mode_change
+        )
+        self.twilight_radio.pack(side="left", padx=(0, 20))
+        ToolTip(self.twilight_radio, SCHEDULING_TOOLTIPS["time_mode_twilight"])
+
+        self.manual_radio = ttk.Radiobutton(
+            mode_frame,
+            text="Manual",
+            variable=self.time_mode_var,
+            value="manual",
+            command=self._on_time_mode_change
+        )
+        self.manual_radio.pack(side="left")
+        ToolTip(self.manual_radio, SCHEDULING_TOOLTIPS["time_mode_manual"])
+
+        # === Row 1: Two-column layout ===
+        columns_frame = ttk.Frame(parent)
+        columns_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        columns_frame.columnconfigure(0, weight=3)  # Twilight column takes more space
+        columns_frame.columnconfigure(1, weight=0)  # Manual column stays fixed width
+
+        # --- Left Column: Twilight Settings ---
+        self.twilight_frame = ttk.LabelFrame(columns_frame, text="Twilight Settings", padding=10)
+        self.twilight_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+
+        # Row 0: Latitude and Longitude in a frame to keep them together
+        location_frame = ttk.Frame(self.twilight_frame)
+        location_frame.grid(row=0, column=0, columnspan=7, sticky="w")
+
+        ttk.Label(location_frame, text="Latitude:").pack(side="left")
         self.latitude_var = tk.StringVar(value="0.0")
-        self.latitude_entry = ttk.Entry(parent, textvariable=self.latitude_var, width=15)
-        self.latitude_entry.grid(row=0, column=1, sticky="w", padx=(0, 20))
+        self.latitude_entry = ttk.Entry(location_frame, textvariable=self.latitude_var, width=10)
+        self.latitude_entry.pack(side="left", padx=(2, 15))
         self.latitude_entry.bind("<FocusOut>", self._on_location_change)
         self.latitude_entry.bind("<Return>", self._on_location_change)
         ToolTip(self.latitude_entry, SCHEDULING_TOOLTIPS["latitude"])
 
-        # Longitude
-        ttk.Label(parent, text="Longitude:").grid(row=0, column=2, sticky="w", padx=(0, 5))
+        ttk.Label(location_frame, text="Longitude:").pack(side="left")
         self.longitude_var = tk.StringVar(value="0.0")
-        self.longitude_entry = ttk.Entry(parent, textvariable=self.longitude_var, width=15)
-        self.longitude_entry.grid(row=0, column=3, sticky="w")
+        self.longitude_entry = ttk.Entry(location_frame, textvariable=self.longitude_var, width=10)
+        self.longitude_entry.pack(side="left", padx=(2, 10))
         self.longitude_entry.bind("<FocusOut>", self._on_location_change)
         self.longitude_entry.bind("<Return>", self._on_location_change)
         ToolTip(self.longitude_entry, SCHEDULING_TOOLTIPS["longitude"])
 
         # Hemisphere indicator
-        self.hemisphere_label = ttk.Label(parent, text="", font=("Segoe UI", 8))
-        self.hemisphere_label.grid(row=0, column=4, sticky="w", padx=(20, 0))
+        self.hemisphere_label = ttk.Label(location_frame, text="", font=("Segoe UI", 8), foreground="gray")
+        self.hemisphere_label.pack(side="left")
 
-    def _create_twilight_section(self, parent: ttk.LabelFrame):
-        """Create twilight settings widgets"""
-        # Row 0: Twilight type
-        ttk.Label(parent, text="Twilight Type:").grid(row=0, column=0, sticky="w", padx=(0, 5))
+        # Row 1: Twilight type and offsets in a frame
+        twilight_row_frame = ttk.Frame(self.twilight_frame)
+        twilight_row_frame.grid(row=1, column=0, columnspan=7, sticky="w", pady=(10, 0))
 
+        ttk.Label(twilight_row_frame, text="Twilight:").pack(side="left")
         self.twilight_type_var = tk.StringVar(value="astronomical")
-        twilight_combo = ttk.Combobox(
-            parent,
+        self.twilight_combo = ttk.Combobox(
+            twilight_row_frame,
             textvariable=self.twilight_type_var,
             values=["civil", "nautical", "astronomical"],
             state="readonly",
-            width=15
+            width=12
         )
-        twilight_combo.grid(row=0, column=1, sticky="w", padx=(0, 20))
-        twilight_combo.bind("<<ComboboxSelected>>", self._on_twilight_change)
-        ToolTip(twilight_combo, SCHEDULING_TOOLTIPS["twilight_type"])
+        self.twilight_combo.pack(side="left", padx=(2, 15))
+        self.twilight_combo.bind("<<ComboboxSelected>>", self._on_twilight_change)
+        ToolTip(self.twilight_combo, SCHEDULING_TOOLTIPS["twilight_type"])
 
-        # Twilight description
+        ttk.Label(twilight_row_frame, text="Start Offset:").pack(side="left")
+        self.start_offset_var = tk.StringVar(value="0")
+        self.start_offset_entry = ttk.Entry(twilight_row_frame, textvariable=self.start_offset_var, width=4)
+        self.start_offset_entry.pack(side="left", padx=(2, 8))
+        self.start_offset_entry.bind("<FocusOut>", self._on_offset_change)
+        self.start_offset_entry.bind("<Return>", self._on_offset_change)
+        ToolTip(self.start_offset_entry, SCHEDULING_TOOLTIPS["start_offset"])
+
+        ttk.Label(twilight_row_frame, text="End Offset:").pack(side="left")
+        self.end_offset_var = tk.StringVar(value="0")
+        self.end_offset_entry = ttk.Entry(twilight_row_frame, textvariable=self.end_offset_var, width=4)
+        self.end_offset_entry.pack(side="left", padx=(2, 2))
+        self.end_offset_entry.bind("<FocusOut>", self._on_offset_change)
+        self.end_offset_entry.bind("<Return>", self._on_offset_change)
+        ToolTip(self.end_offset_entry, SCHEDULING_TOOLTIPS["end_offset"])
+
+        ttk.Label(twilight_row_frame, text="min", font=("Segoe UI", 8), foreground="gray").pack(side="left")
+
+        # Row 2: Twilight description
         self.twilight_desc_label = ttk.Label(
-            parent,
+            self.twilight_frame,
             text="Sun 18° below horizon - true darkness",
             font=("Segoe UI", 8),
             foreground="gray"
         )
-        self.twilight_desc_label.grid(row=0, column=2, columnspan=3, sticky="w")
+        self.twilight_desc_label.grid(row=2, column=0, columnspan=7, sticky="w", pady=(5, 0))
 
-        # Row 1: Offsets - use frames to keep input and "min" together
-        start_offset_frame = ttk.Frame(parent)
-        start_offset_frame.grid(row=1, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        # Store twilight widgets for enable/disable
+        self.twilight_widgets = [
+            self.latitude_entry, self.longitude_entry, self.twilight_combo,
+            self.start_offset_entry, self.end_offset_entry
+        ]
 
-        ttk.Label(start_offset_frame, text="Start Offset:").pack(side="left", padx=(0, 5))
-        self.start_offset_var = tk.StringVar(value="0")
-        start_offset_entry = ttk.Entry(start_offset_frame, textvariable=self.start_offset_var, width=6)
-        start_offset_entry.pack(side="left")
-        start_offset_entry.bind("<FocusOut>", self._on_offset_change)
-        start_offset_entry.bind("<Return>", self._on_offset_change)
-        ToolTip(start_offset_entry, SCHEDULING_TOOLTIPS["start_offset"])
-        ttk.Label(start_offset_frame, text="min").pack(side="left", padx=(3, 30))
+        # --- Right Column: Manual Settings ---
+        self.manual_frame = ttk.LabelFrame(columns_frame, text="Manual Settings", padding=10)
+        self.manual_frame.grid(row=0, column=1, sticky="ns", padx=(5, 0))
 
-        ttk.Label(start_offset_frame, text="End Offset:").pack(side="left", padx=(0, 5))
-        self.end_offset_var = tk.StringVar(value="0")
-        end_offset_entry = ttk.Entry(start_offset_frame, textvariable=self.end_offset_var, width=6)
-        end_offset_entry.pack(side="left")
-        end_offset_entry.bind("<FocusOut>", self._on_offset_change)
-        end_offset_entry.bind("<Return>", self._on_offset_change)
-        ToolTip(end_offset_entry, SCHEDULING_TOOLTIPS["end_offset"])
-        ttk.Label(start_offset_frame, text="min").pack(side="left", padx=(3, 0))
+        # Manual start time
+        ttk.Label(self.manual_frame, text="Start (HH:MM):").grid(row=0, column=0, sticky="w", padx=(0, 10))
+        self.manual_start_var = tk.StringVar(value="22:00")
+        self.manual_start_entry = ttk.Entry(self.manual_frame, textvariable=self.manual_start_var, width=15)
+        self.manual_start_entry.grid(row=0, column=1, sticky="w")
+        self.manual_start_entry.bind("<FocusOut>", self._on_manual_time_change)
+        self.manual_start_entry.bind("<Return>", self._on_manual_time_change)
+        ToolTip(self.manual_start_entry, SCHEDULING_TOOLTIPS["manual_start_time"])
 
-        # Row 2: Tonight's window display
+        # Manual end time
+        ttk.Label(self.manual_frame, text="End (HH:MM):").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(10, 0))
+        self.manual_end_var = tk.StringVar(value="06:00")
+        self.manual_end_entry = ttk.Entry(self.manual_frame, textvariable=self.manual_end_var, width=15)
+        self.manual_end_entry.grid(row=1, column=1, sticky="w", pady=(10, 0))
+        self.manual_end_entry.bind("<FocusOut>", self._on_manual_time_change)
+        self.manual_end_entry.bind("<Return>", self._on_manual_time_change)
+        ToolTip(self.manual_end_entry, SCHEDULING_TOOLTIPS["manual_end_time"])
+
+        # Info label for manual mode
+        self.manual_info_label = ttk.Label(
+            self.manual_frame,
+            text="Overnight OK",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        self.manual_info_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+        # Store manual widgets for enable/disable
+        self.manual_widgets = [self.manual_start_entry, self.manual_end_entry]
+
+        # === Row 2: Tonight's window display ===
         tonight_frame = ttk.Frame(parent)
-        tonight_frame.grid(row=2, column=0, columnspan=6, sticky="w", pady=(15, 0))
+        tonight_frame.grid(row=2, column=0, columnspan=2, sticky="w", pady=(15, 0))
 
         ttk.Label(tonight_frame, text="Tonight:", font=("Segoe UI", 9, "bold")).pack(side="left")
         self.tonight_label = ttk.Label(
@@ -194,35 +259,6 @@ class SchedulingPanel(ttk.Frame):
         )
         self.tonight_label.pack(side="left", padx=(10, 0))
         ToolTip(self.tonight_label, SCHEDULING_TOOLTIPS["tonight_display"])
-
-    def _create_scheduler_section(self, parent: ttk.LabelFrame):
-        """Create scheduler control widgets"""
-        # Enable scheduler checkbox and start/stop button
-        control_frame = ttk.Frame(parent)
-        control_frame.pack(fill="x")
-
-        self.scheduler_enabled_var = tk.BooleanVar(value=False)
-        self.scheduler_checkbox = ttk.Checkbutton(
-            control_frame,
-            text="Enable automatic scheduling",
-            variable=self.scheduler_enabled_var,
-            command=self._on_scheduler_toggle
-        )
-        self.scheduler_checkbox.pack(side="left")
-        ToolTip(self.scheduler_checkbox,
-            "Enable automatic capture scheduling.\n"
-            "When enabled, capture will automatically start\n"
-            "at darkness and stop at dawn for scheduled dates."
-        )
-
-        # Status indicator
-        self.scheduler_status_label = ttk.Label(
-            control_frame,
-            text="Scheduler: Inactive",
-            font=("Segoe UI", 9),
-            foreground="gray"
-        )
-        self.scheduler_status_label.pack(side="right", padx=(20, 0))
 
     def _create_calendar_section(self, parent: ttk.LabelFrame):
         """Create calendar widget"""
@@ -268,7 +304,7 @@ class SchedulingPanel(ttk.Frame):
         self.preset_combo.grid(row=1, column=1, sticky="w", pady=(5, 0))
         ToolTip(self.preset_combo, SCHEDULING_TOOLTIPS["video_preset"])
 
-        # Row 2: Output folder
+        # Row 2: Output folder with delete checkbox on same row
         self.output_label = ttk.Label(parent, text="Output:")
         self.output_label.grid(row=2, column=0, sticky="w", padx=(20, 5), pady=(5, 0))
 
@@ -276,22 +312,22 @@ class SchedulingPanel(ttk.Frame):
         output_frame.grid(row=2, column=1, columnspan=3, sticky="ew", pady=(5, 0))
 
         self.output_var = tk.StringVar(value="videos")
-        self.output_entry = ttk.Entry(output_frame, textvariable=self.output_var, width=35)
+        self.output_entry = ttk.Entry(output_frame, textvariable=self.output_var, width=50)
         self.output_entry.pack(side="left", padx=(0, 5))
         ToolTip(self.output_entry, SCHEDULING_TOOLTIPS["video_output"])
 
         self.browse_btn = ttk.Button(output_frame, text="Browse", command=self._browse_output_folder)
-        self.browse_btn.pack(side="left")
+        self.browse_btn.pack(side="left", padx=(0, 15))
 
-        # Row 3: Delete snapshots after video creation
+        # Delete snapshots checkbox on same row
         self.delete_snapshots_var = tk.BooleanVar(value=False)
         self.delete_snapshots_check = ttk.Checkbutton(
-            parent,
-            text="Delete snapshot folder after video creation",
+            output_frame,
+            text="Delete snapshots after",
             variable=self.delete_snapshots_var,
             command=self._on_auto_video_toggle
         )
-        self.delete_snapshots_check.grid(row=3, column=0, columnspan=4, sticky="w", padx=(20, 0), pady=(5, 0))
+        self.delete_snapshots_check.pack(side="left")
         ToolTip(self.delete_snapshots_check,
             "Automatically delete the snapshot folder after\n"
             "successfully creating the video.\n\n"
@@ -303,19 +339,49 @@ class SchedulingPanel(ttk.Frame):
         self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
-        """Create scheduler log display"""
+        """Create scheduler control and log display"""
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
 
-        # Create scrolled text widget for log
+        # === Scheduler Control Row ===
+        control_frame = ttk.Frame(parent)
+        control_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+
+        self.scheduler_enabled_var = tk.BooleanVar(value=False)
+        self.scheduler_checkbox = ttk.Checkbutton(
+            control_frame,
+            text="Enable automatic scheduling",
+            variable=self.scheduler_enabled_var,
+            command=self._on_scheduler_toggle
+        )
+        self.scheduler_checkbox.pack(side="left")
+        ToolTip(self.scheduler_checkbox,
+            "Enable automatic capture scheduling.\n"
+            "When enabled, capture will automatically start\n"
+            "at darkness and stop at dawn for scheduled dates."
+        )
+
+        # Status indicator
+        self.scheduler_status_label = ttk.Label(
+            control_frame,
+            text="Scheduler: Inactive",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        )
+        self.scheduler_status_label.pack(side="right", padx=(20, 0))
+
+        # Separator
+        ttk.Separator(parent, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=5)
+
+        # === Log Display ===
         self.log_text = scrolledtext.ScrolledText(
             parent,
-            height=6,
+            height=10,
             wrap=tk.WORD,
             font=("Consolas", 9),
             state=tk.DISABLED
         )
-        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_text.grid(row=2, column=0, sticky="nsew")
 
         # Configure tags for log levels
         self.log_text.tag_configure("INFO", foreground="#000000")
@@ -325,7 +391,10 @@ class SchedulingPanel(ttk.Frame):
 
         # Clear button
         clear_btn = ttk.Button(parent, text="Clear Log", command=self._clear_log)
-        clear_btn.grid(row=1, column=0, sticky="e", pady=(5, 0))
+        clear_btn.grid(row=3, column=0, sticky="e", pady=(5, 0))
+
+        # Update row weight for log area
+        parent.rowconfigure(2, weight=1)
 
     def _clear_log(self):
         """Clear the log text widget"""
@@ -348,11 +417,21 @@ class SchedulingPanel(ttk.Frame):
         """Load settings from config manager"""
         cfg = self.config_manager.astro_schedule
 
+        # Time mode
+        self.time_mode_var.set("manual" if cfg.use_manual_times else "twilight")
+
+        # Twilight settings
         self.latitude_var.set(str(cfg.latitude))
         self.longitude_var.set(str(cfg.longitude))
         self.twilight_type_var.set(cfg.twilight_type)
         self.start_offset_var.set(str(cfg.start_offset_minutes))
         self.end_offset_var.set(str(cfg.end_offset_minutes))
+
+        # Manual time settings
+        self.manual_start_var.set(cfg.manual_start_time)
+        self.manual_end_var.set(cfg.manual_end_time)
+
+        # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
         self.preset_var.set(cfg.video_preset)
         self.output_var.set(cfg.video_output_folder)
@@ -367,11 +446,16 @@ class SchedulingPanel(ttk.Frame):
         self._update_hemisphere_display()
         self._update_twilight_description()
         self._update_video_widgets_state()
+        self._update_time_mode_widgets()
 
     def _save_to_config(self):
         """Save current settings to config manager"""
         cfg = self.config_manager.astro_schedule
 
+        # Time mode
+        cfg.use_manual_times = (self.time_mode_var.get() == "manual")
+
+        # Twilight settings
         try:
             cfg.latitude = float(self.latitude_var.get())
         except ValueError:
@@ -394,6 +478,11 @@ class SchedulingPanel(ttk.Frame):
         except ValueError:
             cfg.end_offset_minutes = 0
 
+        # Manual time settings
+        cfg.manual_start_time = self.manual_start_var.get()
+        cfg.manual_end_time = self.manual_end_var.get()
+
+        # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
         cfg.video_preset = self.preset_var.get()
         cfg.video_output_folder = self.output_var.get()
@@ -414,6 +503,32 @@ class SchedulingPanel(ttk.Frame):
 
     def _update_tonight_display(self):
         """Update the tonight's window display"""
+        # Check if in manual mode
+        if self.time_mode_var.get() == "manual":
+            start_time = self.manual_start_var.get()
+            end_time = self.manual_end_var.get()
+
+            # Calculate duration for manual times
+            try:
+                start_parts = start_time.split(":")
+                end_parts = end_time.split(":")
+                start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
+                end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
+
+                # Handle overnight (e.g., 22:00 - 06:00)
+                if end_mins < start_mins:
+                    duration_mins = (24 * 60 - start_mins) + end_mins
+                else:
+                    duration_mins = end_mins - start_mins
+
+                hours = duration_mins // 60
+                mins = duration_mins % 60
+                self.tonight_label.config(text=f"{start_time} - {end_time} ({hours}h {mins}m)")
+            except (ValueError, IndexError):
+                self.tonight_label.config(text=f"{start_time} - {end_time}")
+            return
+
+        # Twilight-based mode
         if self.twilight_calc is None:
             self.tonight_label.config(text="--:-- - --:-- (--h --m)")
             return
@@ -472,6 +587,23 @@ class SchedulingPanel(ttk.Frame):
         self.delete_snapshots_check.config(state=state)
         self.browse_btn.config(state=state)
 
+    def _update_time_mode_widgets(self):
+        """Enable/disable twilight or manual widgets based on selected mode"""
+        is_manual = (self.time_mode_var.get() == "manual")
+
+        # Twilight widgets - disabled when in manual mode
+        twilight_state = "disabled" if is_manual else "normal"
+        for widget in self.twilight_widgets:
+            if isinstance(widget, ttk.Combobox):
+                widget.config(state="disabled" if is_manual else "readonly")
+            else:
+                widget.config(state=twilight_state)
+
+        # Manual widgets - disabled when in twilight mode
+        manual_state = "normal" if is_manual else "disabled"
+        for widget in self.manual_widgets:
+            widget.config(state=manual_state)
+
     # Event handlers
 
     def _on_location_change(self, event=None):
@@ -489,6 +621,17 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_offset_change(self, event=None):
         """Handle offset change"""
+        self._update_tonight_display()
+        self._save_to_config()
+
+    def _on_time_mode_change(self):
+        """Handle time mode radio button change"""
+        self._update_time_mode_widgets()
+        self._update_tonight_display()
+        self._save_to_config()
+
+    def _on_manual_time_change(self, event=None):
+        """Handle manual time entry change"""
         self._update_tonight_display()
         self._save_to_config()
 
