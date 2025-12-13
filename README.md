@@ -56,12 +56,16 @@
 ## Screenshots
 
 ### Capture Tab
-![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)  
+![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)
 *Live capture interface showing camera configuration, real-time preview, session statistics, and activity logging.*
 
 ### Video Export Tab
-![Video Export Interface](screenshots/Video_export.jpg)  
+![Video Export Interface](screenshots/Video_export.jpg)
 *Video export interface with input selection, customizable settings, presets management, and real-time encoding progress.*
+
+### Scheduling Tab (NEW in v3.0)
+![Scheduling Interface](screenshots/Scheduling_tab.jpg)
+*Astronomical scheduling interface with twilight/manual time modes, two-month calendar, auto video creation, and scheduler log.*
 
 ---
 
