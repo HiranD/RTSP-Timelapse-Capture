@@ -131,9 +131,9 @@ class TwoMonthCalendar(ttk.Frame):
         ttk.Button(btn_frame, text="Select All", width=10, command=self._select_all).pack(pady=(0, 5))
         ttk.Button(btn_frame, text="Clear All", width=10, command=self._clear_all).pack()
 
-        # Legend (below everything)
-        legend_frame = ttk.Frame(inner_frame)
-        legend_frame.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        # Legend (below buttons as vertical list)
+        legend_frame = ttk.Frame(btn_frame)
+        legend_frame.pack(pady=(15, 0))
 
         self._create_legend_item(legend_frame, self.COLORS["captured"], "Captured")
         self._create_legend_item(legend_frame, self.COLORS["scheduled"], "Scheduled")
@@ -186,9 +186,9 @@ class TwoMonthCalendar(ttk.Frame):
     def _create_legend_item(self, parent: ttk.Frame, color: str, text: str):
         """Create a legend item with color box and label"""
         item_frame = ttk.Frame(parent)
-        item_frame.pack(side="left", padx=10)
+        item_frame.pack(anchor="w", pady=2)
 
-        color_box = tk.Frame(item_frame, width=16, height=16, bg=color, relief="solid", borderwidth=1)
+        color_box = tk.Frame(item_frame, width=12, height=12, bg=color, relief="solid", borderwidth=1)
         color_box.pack(side="left", padx=(0, 4))
 
         ttk.Label(item_frame, text=text, font=("Segoe UI", 8)).pack(side="left")
