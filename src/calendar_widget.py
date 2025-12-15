@@ -72,6 +72,9 @@ class TwoMonthCalendar(ttk.Frame):
         self._create_widgets()
         self._update_display()
 
+        # Schedule another update after widget is fully rendered
+        self.after_idle(self._update_display)
+
     def _create_widgets(self):
         """Create all calendar widgets"""
         # Main container - center content horizontally

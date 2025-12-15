@@ -265,12 +265,12 @@ class SchedulingPanel(ttk.Frame):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        # Get snapshots directory from config
-        snapshots_dir = self.config_manager.capture.output_folder
+        # Get snapshots directory from config (resolve to absolute path)
+        snapshots_dir = Path(self.config_manager.capture.output_folder).resolve()
 
         self.calendar = TwoMonthCalendar(
             parent,
-            snapshots_dir=snapshots_dir,
+            snapshots_dir=str(snapshots_dir),
             on_selection_change=self._on_calendar_selection_change
         )
         self.calendar.grid(row=0, column=0, sticky="nsew")
