@@ -88,16 +88,8 @@ SCHEDULING_TOOLTIPS = {
     # Auto video
     "auto_video": (
         "Automatically create a timelapse video after each\n"
-        "night's capture session completes.\n"
-        "Uses the selected preset and output folder."
-    ),
-    "video_preset": (
-        "Video export preset to use for auto-created videos.\n"
-        "Presets define framerate, quality, and other settings.\n"
-        "Configure presets in the Video Export tab."
-    ),
-    "video_output": (
-        "Folder where auto-created videos will be saved.\n"
-        "Click Browse to select a different location."
+        "night's capture session completes.\n\n"
+        "Uses the preset and output folder configured in\n"
+        "the Video Export tab."
     ),
 }

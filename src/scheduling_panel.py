@@ -278,56 +278,28 @@ class SchedulingPanel(ttk.Frame):
 
     def _create_video_section(self, parent: ttk.LabelFrame):
         """Create auto video settings widgets"""
-        # Row 0: Enable checkbox
+        # Row 0: Enable checkbox and delete checkbox
+        row_frame = ttk.Frame(parent)
+        row_frame.grid(row=0, column=0, sticky="w")
+
         self.auto_video_var = tk.BooleanVar(value=False)
         auto_video_check = ttk.Checkbutton(
-            parent,
+            row_frame,
             text="Create video after each night's session",
             variable=self.auto_video_var,
             command=self._on_auto_video_toggle
         )
-        auto_video_check.grid(row=0, column=0, columnspan=4, sticky="w")
+        auto_video_check.pack(side="left")
         ToolTip(auto_video_check, SCHEDULING_TOOLTIPS["auto_video"])
 
-        # Row 1: Preset selection
-        self.preset_label = ttk.Label(parent, text="Preset:")
-        self.preset_label.grid(row=1, column=0, sticky="w", padx=(20, 5), pady=(5, 0))
-
-        self.preset_var = tk.StringVar(value="Standard 24fps")
-        self.preset_combo = ttk.Combobox(
-            parent,
-            textvariable=self.preset_var,
-            values=self.preset_manager.list_presets(),
-            state="readonly",
-            width=25
-        )
-        self.preset_combo.grid(row=1, column=1, sticky="w", pady=(5, 0))
-        ToolTip(self.preset_combo, SCHEDULING_TOOLTIPS["video_preset"])
-
-        # Row 2: Output folder with delete checkbox on same row
-        self.output_label = ttk.Label(parent, text="Output:")
-        self.output_label.grid(row=2, column=0, sticky="w", padx=(20, 5), pady=(5, 0))
-
-        output_frame = ttk.Frame(parent)
-        output_frame.grid(row=2, column=1, columnspan=3, sticky="ew", pady=(5, 0))
-
-        self.output_var = tk.StringVar(value="videos")
-        self.output_entry = ttk.Entry(output_frame, textvariable=self.output_var, width=50)
-        self.output_entry.pack(side="left", padx=(0, 5))
-        ToolTip(self.output_entry, SCHEDULING_TOOLTIPS["video_output"])
-
-        self.browse_btn = ttk.Button(output_frame, text="Browse", command=self._browse_output_folder)
-        self.browse_btn.pack(side="left", padx=(0, 15))
-
-        # Delete snapshots checkbox on same row
+        # Delete snapshots checkbox
         self.delete_snapshots_var = tk.BooleanVar(value=False)
         self.delete_snapshots_check = ttk.Checkbutton(
-            output_frame,
+            row_frame,
             text="Delete snapshots after",
-            variable=self.delete_snapshots_var,
-            command=self._on_auto_video_toggle
+            variable=self.delete_snapshots_var
         )
-        self.delete_snapshots_check.pack(side="left")
+        self.delete_snapshots_check.pack(side="left", padx=(20, 0))
         ToolTip(self.delete_snapshots_check,
             "Automatically delete the snapshot folder after\n"
             "successfully creating the video.\n\n"
@@ -335,7 +307,7 @@ class SchedulingPanel(ttk.Frame):
             "images for that date. Use with caution!"
         )
 
-        # Initially disable preset/output if auto video is off
+        # Initially disable delete checkbox if auto video is off
         self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
@@ -433,8 +405,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
-        self.preset_var.set(cfg.video_preset)
-        self.output_var.set(cfg.video_output_folder)
         self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
 
         # Load scheduled dates into calendar
@@ -484,8 +454,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
-        cfg.video_preset = self.preset_var.get()
-        cfg.video_output_folder = self.output_var.get()
         cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
@@ -582,10 +550,7 @@ class SchedulingPanel(ttk.Frame):
     def _update_video_widgets_state(self):
         """Enable/disable video widgets based on checkbox"""
         state = "normal" if self.auto_video_var.get() else "disabled"
-        self.preset_combo.config(state="readonly" if self.auto_video_var.get() else "disabled")
-        self.output_entry.config(state=state)
         self.delete_snapshots_check.config(state=state)
-        self.browse_btn.config(state=state)
 
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""
@@ -769,20 +734,6 @@ class SchedulingPanel(ttk.Frame):
         if self.scheduler:
             self.scheduler.stop()
             self.scheduler = None
-
-    def _browse_output_folder(self):
-        """Open folder browser for output directory"""
-        current = self.output_var.get()
-        initial_dir = current if Path(current).exists() else "."
-
-        folder = filedialog.askdirectory(
-            title="Select Video Output Folder",
-            initialdir=initial_dir
-        )
-
-        if folder:
-            self.output_var.set(folder)
-            self._save_to_config()
 
 
 def test_scheduling_panel():

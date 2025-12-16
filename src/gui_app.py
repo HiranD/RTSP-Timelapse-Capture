@@ -884,10 +884,17 @@ class RTSPTimelapseGUI:
                 self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
                 return
 
-            # Get video settings from scheduling panel config
-            astro_cfg = self.config_manager.astro_schedule
-            preset_name = astro_cfg.video_preset
-            video_output_folder = astro_cfg.video_output_folder
+            # Get video settings from Video Export tab
+            preset_name = self.video_export_panel.preset_var.get()
+            if not preset_name:
+                preset_name = "Standard 24fps"  # Default fallback
+
+            # Get output folder from Video Export tab's output file path
+            video_output_path = self.video_export_panel.output_file_entry.get()
+            if video_output_path:
+                video_output_folder = str(Path(video_output_path).parent)
+            else:
+                video_output_folder = "videos"  # Default fallback
 
             # Initialize preset manager and get preset
             preset_manager = PresetManager()

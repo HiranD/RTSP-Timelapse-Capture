@@ -198,6 +198,26 @@ Ultra Speed:
 
 The Scheduling tab enables **automated long-term capture planning** based on astronomical twilight times or manual schedules.
 
+### Important: Configure Other Tabs First
+
+Before using the Scheduling tab, **configure the Capture and Video Export tabs**:
+
+1. **Capture Tab** - Set up and save these settings:
+   - RTSP URL for your camera
+   - Capture interval (recommended: 30 seconds)
+   - Output folder for snapshots
+   - JPEG quality
+   - Click **Save Configuration** or use **File → Save Configuration**
+
+2. **Video Export Tab** - Set up these settings:
+   - Select a video preset (or create a custom one)
+   - Set your preferred output location
+   - These settings are used by auto video creation
+
+3. **Scheduling Tab** - Now configure automated scheduling:
+   - The scheduler uses Capture tab settings for image capture
+   - Auto video creation uses Video Export tab settings
+
 ### Time Mode Selection
 
 Choose between two scheduling modes:
@@ -239,10 +259,9 @@ Choose between two scheduling modes:
 3. **Configure Auto Video (Optional)**
    ```
    [✓] Create video after each night's session
-   Preset: Standard 24fps
-   Output: videos/
    [ ] Delete snapshots after (use with caution!)
    ```
+   *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
    - Check "Enable automatic scheduling"
