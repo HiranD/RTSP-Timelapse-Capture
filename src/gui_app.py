@@ -23,6 +23,7 @@ from video_export_controller import VideoExportController
 from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
+from capture_history import get_capture_history
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -955,6 +956,13 @@ class RTSPTimelapseGUI:
 
                 if result.success:
                     self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
+
+                    # Update capture history to mark video as created
+                    try:
+                        capture_history = get_capture_history()
+                        capture_history.update_video_created(date_str, True)
+                    except Exception as e:
+                        self.log_message("WARNING", f"[Auto Video] Could not update capture history: {e}")
 
                     # Delete snapshot folder if enabled
                     if delete_snapshots:

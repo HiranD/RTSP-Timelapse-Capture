@@ -24,6 +24,7 @@ try:
     from src.astro_scheduler import AstroScheduler
     from src.tooltip import ToolTip
     from src.scheduling_tooltips import SCHEDULING_TOOLTIPS
+    from src.capture_history import get_capture_history
 except ImportError:
     from calendar_widget import TwoMonthCalendar
     from twilight_calculator import TwilightCalculator
@@ -32,6 +33,7 @@ except ImportError:
     from astro_scheduler import AstroScheduler
     from tooltip import ToolTip
     from scheduling_tooltips import SCHEDULING_TOOLTIPS
+    from capture_history import get_capture_history
 
 
 class SchedulingPanel(ttk.Frame):
@@ -63,6 +65,10 @@ class SchedulingPanel(ttk.Frame):
         self.stop_capture_callback = None
         self.create_video_callback = None
         self.log_callback = None
+
+        # Session tracking for capture history
+        self.session_start_time: Optional[datetime] = None
+        self.capture_history = get_capture_history()
 
         # Create UI
         self._create_widgets()
@@ -679,6 +685,8 @@ class SchedulingPanel(ttk.Frame):
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
         self._update_scheduler_status()
+        # Track session start time for capture history
+        self.session_start_time = datetime.now()
         if self.start_capture_callback:
             # Use after() to call on main thread
             self.after(0, self.start_capture_callback)
@@ -694,12 +702,47 @@ class SchedulingPanel(ttk.Frame):
         """Called by scheduler when a capture session completes"""
         self._log("INFO", f"Session complete for {date_str}")
 
+        # Record session to capture history
+        self._record_capture_session(date_str)
+
         # Check if auto video creation is enabled
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
                 # Pass the date string so the callback can find the right folder
                 self.after(0, lambda: self.create_video_callback(date_str))
+
+    def _record_capture_session(self, date_str: str):
+        """Record a completed capture session to history"""
+        try:
+            # Count images in the snapshot folder
+            snapshots_dir = Path(self.config_manager.capture.output_folder).resolve()
+            date_folder = snapshots_dir / date_str
+            image_count = 0
+            if date_folder.exists():
+                image_count = len(list(date_folder.glob("*.jpg"))) + len(list(date_folder.glob("*.jpeg")))
+
+            # Get session times
+            end_time = datetime.now()
+            start_time = self.session_start_time or end_time
+
+            # Record to history
+            self.capture_history.record_session(
+                date=date_str,
+                start_time=start_time,
+                end_time=end_time,
+                image_count=image_count,
+                video_created=False  # Will be updated after video creation
+            )
+
+            self._log("INFO", f"Recorded session: {image_count} images captured")
+
+            # Refresh calendar to show new captured date
+            if hasattr(self, 'calendar'):
+                self.after(100, self.calendar._update_display)
+
+        except Exception as e:
+            self._log("WARNING", f"Could not record session to history: {e}")
 
     def _log(self, level: str, message: str):
         """Log a message to both panel log and main GUI log"""

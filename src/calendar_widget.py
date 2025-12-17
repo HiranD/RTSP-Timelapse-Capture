@@ -16,6 +16,11 @@ from typing import Set, Callable, Optional
 from pathlib import Path
 import calendar
 
+try:
+    from src.capture_history import get_capture_history, CaptureHistoryManager
+except ImportError:
+    from capture_history import get_capture_history, CaptureHistoryManager
+
 
 class TwoMonthCalendar(ttk.Frame):
     """
@@ -58,6 +63,7 @@ class TwoMonthCalendar(ttk.Frame):
 
         self.snapshots_dir = Path(snapshots_dir)
         self.on_selection_change = on_selection_change
+        self.capture_history = get_capture_history()
 
         # Selected dates (future dates user wants to capture)
         self.selected_dates: Set[str] = set()  # Format: "YYYY-MM-DD"
@@ -298,14 +304,19 @@ class TwoMonthCalendar(ttk.Frame):
         return color_map.get(status, self.COLORS["future"])
 
     def _has_captures(self, check_date: date) -> bool:
-        """Check if a date has captured images in the snapshots folder"""
-        date_folder = self.snapshots_dir / check_date.strftime("%Y%m%d")
+        """Check if a date has captured images (via history or folder check)"""
+        date_str = check_date.strftime("%Y%m%d")
 
-        if not date_folder.exists():
-            return False
+        # Check capture history first (persists even after snapshots deleted)
+        if self.capture_history and self.capture_history.has_capture(date_str):
+            return True
 
-        # Check for any jpg files
-        return any(date_folder.glob("*.jpg")) or any(date_folder.glob("*.jpeg"))
+        # Fallback: check folder for legacy/untracked captures
+        date_folder = self.snapshots_dir / date_str
+        if date_folder.exists():
+            return any(date_folder.glob("*.jpg")) or any(date_folder.glob("*.jpeg"))
+
+        return False
 
     def _on_day_click(self, month_offset: int, row: int, col: int):
         """Handle click on a day cell"""
