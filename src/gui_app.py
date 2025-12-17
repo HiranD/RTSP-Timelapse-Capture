@@ -943,7 +943,7 @@ class RTSPTimelapseGUI:
                     self.log_message("INFO", f"[Auto Video] {status}: {progress:.0f}%")
 
             # Check if we should delete snapshots after video creation
-            delete_snapshots = astro_cfg.delete_snapshots_after_video
+            delete_snapshots = self.config_manager.astro_schedule.delete_snapshots_after_video
 
             # Run export (this runs in current thread, called via after() so it's safe)
             def run_export():
