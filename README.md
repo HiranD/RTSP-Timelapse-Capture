@@ -488,12 +488,18 @@ Example: 20s interval for 8 hours
 
 ## System Requirements
 
-**Minimum:**
-- Windows 10/11 (64-bit) or Linux/macOS
-- Python 3.8 or higher
+**For built executable (.exe):**
+- Windows 10/11 (64-bit)
 - 4 GB RAM
-- 2 GB free disk space
+- 2 GB free disk space (plus additional storage for captures and videos)
 - Network connection to RTSP camera
+- FFmpeg (for video export)
+
+**For running from source:**
+- Windows 10/11, Linux, or macOS
+- Python 3.9 or higher
+- Dependencies from requirements.txt
+- FFmpeg (for video export)
 
 ## Project Structure
 
