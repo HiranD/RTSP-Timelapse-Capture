@@ -111,6 +111,11 @@ class RTSPTimelapseGUI:
             log=self.log_message
         )
 
+        # Set up video export panel callback to get current snapshots dir from Capture tab
+        self.video_export_panel.set_snapshots_dir_callback(
+            lambda: self.output_entry.get()
+        )
+
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
         # Main container
@@ -449,7 +454,7 @@ class RTSPTimelapseGUI:
 
     def load_config(self):
         """Load configuration from default file"""
-        config_file = Path("camera_config.json")
+        config_file = Path("config/app_config.json")
         if config_file.exists():
             success, message = self.config_manager.load_from_file(str(config_file))
             if not success:
@@ -493,7 +498,7 @@ class RTSPTimelapseGUI:
             title="Save Configuration",
             defaultextension=".json",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-            initialfile="camera_config.json"
+            initialfile="app_config.json"
         )
         if filename:
             success, message = self.config_manager.save_to_file(filename)
@@ -990,7 +995,7 @@ class RTSPTimelapseGUI:
 
         # Save UI preferences
         self.config_manager.ui.preview_enabled = self.preview_enabled.get()
-        self.config_manager.save_to_file("camera_config.json")
+        self.config_manager.save_to_file("config/app_config.json")
 
         if self.is_capturing:
             if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):
