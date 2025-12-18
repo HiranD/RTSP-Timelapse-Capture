@@ -40,11 +40,10 @@ class CaptureHistoryManager:
         Initialize capture history manager.
 
         Args:
-            config_dir: Directory to store history file. Defaults to 'config' folder.
+            config_dir: Directory to store history file. Defaults to 'user_data' folder.
         """
         if config_dir is None:
-            # Use same pattern as preset_manager.py
-            config_dir = Path.cwd() / 'config'
+            config_dir = Path.cwd() / 'user_data'
 
         self.config_dir = Path(config_dir)
         self.history_file = self.config_dir / 'capture_history.json'

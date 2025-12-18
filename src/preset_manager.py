@@ -22,7 +22,7 @@ class VideoExportSettings:
     codec: str = 'libx264'
     add_timestamp: bool = False
     preserve_originals: bool = True
-    open_when_done: bool = True
+    open_when_done: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary"""
@@ -48,7 +48,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
         'High Quality 30fps': VideoExportSettings(
             framerate=30,
@@ -59,7 +59,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
         'Fast Motion 60fps': VideoExportSettings(
             framerate=60,
@@ -70,7 +70,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
         'Web Optimized': VideoExportSettings(
             framerate=30,
@@ -81,7 +81,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
         'Storage Saver': VideoExportSettings(
             framerate=20,
@@ -92,7 +92,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
         'Ultra Speed 16x': VideoExportSettings(
             framerate=30,
@@ -103,7 +103,7 @@ class PresetManager:
             codec='libx264',
             add_timestamp=False,
             preserve_originals=True,
-            open_when_done=True
+            open_when_done=False
         ),
     }
 
@@ -112,10 +112,10 @@ class PresetManager:
         Initialize preset manager
 
         Args:
-            config_dir: Directory to store custom presets (defaults to user config dir)
+            config_dir: Directory to store custom presets (defaults to user_data folder)
         """
         if config_dir is None:
-            config_dir = Path.home() / '.rtsp_timelapse'
+            config_dir = Path.cwd() / 'user_data'
 
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)

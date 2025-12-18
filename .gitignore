@@ -40,13 +40,11 @@ snapshots/
 test_output/
 exports/
 videos/
+user_data/
 
 # Project-specific - Configuration
-config/camera_config.json
 config/*.json
-!config/camera_config_example.json
-camera_config.json
-capture_config.json
+!config/app_config_example.json
 
 # Logs
 *.log
