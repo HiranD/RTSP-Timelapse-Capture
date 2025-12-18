@@ -79,7 +79,7 @@ class ConfigManager:
     Handles loading, saving, validation, and provides default values.
     """
 
-    DEFAULT_CONFIG_FILE = "capture_config.json"
+    DEFAULT_CONFIG_FILE = "config/app_config.json"
 
     def __init__(self):
         """Initialize with default configuration."""
