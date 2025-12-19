@@ -335,7 +335,7 @@ Overnight windows (start later than end) are handled automatically.
 - **Prefer TCP**: Many consumer IP cameras are unreliable over UDP; keep **Force TCP** enabled unless the camera vendor recommends otherwise.
 - **Mind network latency**: For remote cameras, increase `buffer_frames` (e.g., to 6-8) if you frequently see reconnect messages.
 - **Deal with overnight lighting**: Configure the camera's own exposure or IR settings; the app captures whatever the RTSP feed delivers.
-- **Multiple cameras**: Copy `config/camera_config_example.json` per device and load them through the GUI to swap configurations quickly.
+- **Multiple cameras**: Copy `config/app_config_example.json` per device and load them through the GUI to swap configurations quickly.
 - **Security**: Store configs in a protected location if the RTSP password is sensitive; the app saves the password in plain text JSON.
 - **Prevent camera timeouts**: Enable **Proactive Reconnect** to maintain 100% capture success rate. Most IP cameras have firmware timeouts (typically 5-10 minutes). Set the reconnect interval to ~40 seconds before your camera's timeout for uninterrupted captures.
 
@@ -534,7 +534,11 @@ RTSP/
 │   └── test_video_export.py     # Video export tests
 │
 ├── config/                       # Configuration files
-│   └── camera_config_example.json # Template
+│   └── app_config_example.json  # Template
+│
+├── user_data/                    # User-generated data (gitignored)
+│   ├── capture_history.json     # Session history for calendar
+│   └── video_export_presets.json # Custom video presets
 │
 └── snapshots/                    # Captured images (gitignored)
     └── YYYYMMDD/                # Date-organized folders
@@ -635,7 +639,7 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.0.0 (2025-12-13) - Latest
+### v3.0.0 (2025-12-19) - Latest
 **Major Release: Astronomical Scheduling**
 
 New third tab for automated long-term capture planning based on twilight times or manual schedules.
@@ -645,22 +649,33 @@ New third tab for automated long-term capture planning based on twilight times o
 - **Twilight Calculations**: Automatic darkness window detection (civil/nautical/astronomical)
 - **Manual Time Mode**: Fixed start/end times as alternative to twilight-based scheduling
 - **Two-Month Calendar**: Visual date selection with capture history indicators
-- **Auto Video Creation**: Automatically create timelapse videos after each night's session
+- **Auto Video Creation**: Automatically create timelapse videos (uses Video Export tab settings)
 - **Auto Delete Snapshots**: Option to free disk space after video creation
 - **Scheduler Log**: Color-coded activity monitoring (INFO/WARNING/ERROR)
 - **Location Settings**: Latitude/longitude with hemisphere indicator
+- **Capture History**: Calendar shows captured dates even after snapshots are deleted
+- **Preset Memory**: Last selected video preset is remembered across sessions
+
+**Improvements:**
+- Video Export Quick Select now uses Capture tab's output folder
+- Relative paths resolve correctly when running as bundled executable
+- Scheduler correctly uses calculated twilight times
+- Default "Open video when complete" to unchecked
+- Config consolidated to `config/app_config.json`
+- User data (capture history, presets) moved to `user_data/` folder
 
 **UI Improvements:**
 - Three-tab interface (Capture | Video Export | Scheduling)
 - Two-column layout for Twilight vs Manual time settings
 - Radio buttons to switch between time modes
-- Calendar buttons moved to dedicated column
+- Calendar legend on right side under buttons
 - Compact layout with all settings visible
 
 **Technical:**
 - New `AstroScheduler` class for background schedule monitoring
 - `TwilightCalculator` for accurate sun position calculations
 - `TwoMonthCalendar` custom widget with date status indicators
+- `CaptureHistoryManager` for persistent session tracking
 - New config fields: `use_manual_times`, `manual_start_time`, `manual_end_time`
 - Scheduler integrates with existing capture engine
 
