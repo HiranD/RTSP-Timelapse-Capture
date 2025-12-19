@@ -509,16 +509,22 @@ class RTSPTimelapseGUI:
                 self.log_message("ERROR", f"Failed to save config: {message}")
                 messagebox.showerror("Error", message)
 
-    def update_config_from_ui(self):
-        """Update ConfigManager from UI inputs"""
+    def update_config_from_ui(self, skip_schedule_times: bool = False):
+        """Update ConfigManager from UI inputs
+
+        Args:
+            skip_schedule_times: If True, don't update schedule times (used when
+                               astronomical scheduler has already set the times)
+        """
         self.config_manager.camera.ip_address = self.ip_entry.get()
         self.config_manager.camera.username = self.username_entry.get()
         self.config_manager.camera.password = self.password_entry.get()
         self.config_manager.camera.stream_path = self.stream_path_entry.get()
         self.config_manager.camera.force_tcp = self.force_tcp_var.get()
 
-        self.config_manager.schedule.start_time = self.start_time_entry.get()
-        self.config_manager.schedule.end_time = self.end_time_entry.get()
+        if not skip_schedule_times:
+            self.config_manager.schedule.start_time = self.start_time_entry.get()
+            self.config_manager.schedule.end_time = self.end_time_entry.get()
 
         self.config_manager.capture.interval_seconds = int(self.interval_entry.get())
         self.config_manager.capture.output_folder = self.output_entry.get()
@@ -600,10 +606,14 @@ class RTSPTimelapseGUI:
         else:
             self.stop_capture()
 
-    def start_capture(self):
-        """Start the capture process"""
-        # Update config from UI
-        self.update_config_from_ui()
+    def start_capture(self, from_scheduler: bool = False):
+        """Start the capture process
+
+        Args:
+            from_scheduler: If True, called from astronomical scheduler (don't override schedule times)
+        """
+        # Update config from UI (skip schedule times if from scheduler)
+        self.update_config_from_ui(skip_schedule_times=from_scheduler)
 
         # Validate
         valid, errors = self.config_manager.validate()

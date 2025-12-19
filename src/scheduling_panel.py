@@ -688,8 +688,9 @@ class SchedulingPanel(ttk.Frame):
         # Track session start time for capture history
         self.session_start_time = datetime.now()
         if self.start_capture_callback:
-            # Use after() to call on main thread
-            self.after(0, self.start_capture_callback)
+            # Use after() to call on main thread with from_scheduler=True
+            # This tells start_capture to use the scheduler's times, not the UI times
+            self.after(0, lambda: self.start_capture_callback(from_scheduler=True))
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
