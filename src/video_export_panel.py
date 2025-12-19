@@ -516,6 +516,11 @@ class VideoExportPanel(ttk.Frame):
             self.log_message(f"Loaded preset: {preset_name}")
             self.update_estimates()
 
+            # Save as last used preset
+            if self.config_manager:
+                self.config_manager.ui.last_video_preset = preset_name
+                self.config_manager.save_to_file()
+
     def save_as_preset(self):
         """Save current settings as preset"""
         # Ask for preset name
@@ -794,7 +799,10 @@ class VideoExportPanel(ttk.Frame):
         self.log_text.configure(state=tk.DISABLED)
 
     def load_last_settings(self):
-        """Load last used settings (if any)"""
-        # For now, just use defaults
-        # Could be extended to save/load last settings from config file
-        pass
+        """Load last used settings from config"""
+        if self.config_manager:
+            # Load last used preset
+            last_preset = self.config_manager.ui.last_video_preset
+            if last_preset and last_preset in self.preset_manager.list_presets():
+                self.preset_var.set(last_preset)
+                self.load_preset()

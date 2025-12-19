@@ -51,6 +51,7 @@ class UIConfig:
     preview_enabled: bool = True
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
+    last_video_preset: str = "Standard 24fps"  # Last selected video export preset
 
 
 @dataclass
