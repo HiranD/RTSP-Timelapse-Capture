@@ -7,6 +7,7 @@ and video export capabilities.
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -14,6 +15,21 @@ from datetime import datetime
 from pathlib import Path
 from PIL import Image, ImageTk
 import numpy as np
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def get_config_path() -> Path:
+    """Get the path to the config file."""
+    return get_app_base_dir() / "config" / "app_config.json"
 
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
@@ -102,6 +118,9 @@ class RTSPTimelapseGUI:
             config_manager=self.config_manager
         )
         self.notebook.add(self.scheduling_panel, text="  Scheduling  ")
+
+        # Bind tab change event for auto-save
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         # Set up scheduling panel callbacks
         self.scheduling_panel.set_callbacks(
@@ -234,7 +253,7 @@ class RTSPTimelapseGUI:
 
         self.output_entry = ttk.Entry(output_frame)
         self.output_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
-        self.output_entry.insert(0, self.config_manager.capture.output_folder)
+        self.output_entry.insert(0, self._resolve_output_path(self.config_manager.capture.output_folder))
         ToolTip(self.output_entry, CAPTURE_TOOLTIPS["output_folder"])
 
         browse_btn = ttk.Button(output_frame, text="...", width=3, command=self.browse_output_dir)
@@ -255,18 +274,6 @@ class RTSPTimelapseGUI:
         self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
         ToolTip(self.proactive_reconnect_entry, CAPTURE_TOOLTIPS["proactive_reconnect"])
         row += 1
-
-        # Config buttons
-        button_frame = ttk.Frame(config_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, pady=(10, 0))
-
-        save_config_btn = ttk.Button(button_frame, text="Save Config", command=self.save_config_ui)
-        save_config_btn.pack(side=tk.LEFT, padx=2)
-        ToolTip(save_config_btn, CAPTURE_TOOLTIPS["save_config"])
-
-        load_config_btn = ttk.Button(button_frame, text="Load Config", command=self.load_config_ui)
-        load_config_btn.pack(side=tk.LEFT, padx=2)
-        ToolTip(load_config_btn, CAPTURE_TOOLTIPS["load_config"])
 
         config_frame.columnconfigure(1, weight=1)
 
@@ -423,8 +430,6 @@ class RTSPTimelapseGUI:
 
     def setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts"""
-        self.root.bind('<Control-s>', lambda e: self.save_config_ui())
-        self.root.bind('<Control-o>', lambda e: self.load_config_ui())
         self.root.bind('<Control-t>', lambda e: self.test_connection())
         self.root.bind('<space>', lambda e: self.toggle_capture() if not self.is_capturing else None)
         self.root.bind('<Escape>', lambda e: self.stop_capture() if self.is_capturing else None)
@@ -452,9 +457,17 @@ class RTSPTimelapseGUI:
             self.output_entry.delete(0, tk.END)
             self.output_entry.insert(0, directory)
 
+    def _resolve_output_path(self, path_str: str) -> str:
+        """Resolve output path - if relative, resolve from app base directory."""
+        path = Path(path_str)
+        if path.is_absolute():
+            return str(path)
+        else:
+            return str((get_app_base_dir() / path).resolve())
+
     def load_config(self):
         """Load configuration from default file"""
-        config_file = Path("config/app_config.json")
+        config_file = get_config_path()
         if config_file.exists():
             success, message = self.config_manager.load_from_file(str(config_file))
             if not success:
@@ -464,50 +477,17 @@ class RTSPTimelapseGUI:
             # Try migrating from old config.py
             self.config_manager.migrate_from_old_config()
 
-    def load_config_ui(self):
-        """Load configuration from file (user initiated)"""
-        filename = filedialog.askopenfilename(
-            title="Load Configuration",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        if filename:
-            success, message = self.config_manager.load_from_file(filename)
-            if success:
-                self.update_config_ui()
-                self.log_message("SUCCESS", f"Configuration loaded from {filename}")
-                messagebox.showinfo("Success", message)
-            else:
-                self.log_message("ERROR", f"Failed to load config: {message}")
-                messagebox.showerror("Error", message)
-
-    def save_config_ui(self):
-        """Save current configuration to file"""
-        # Update config from UI
+    def save_config(self):
+        """Auto-save configuration to default file"""
         self.update_config_from_ui()
+        config_file = get_config_path()
+        # Ensure config directory exists
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.config_manager.save_to_file(str(config_file))
 
-        # Validate
-        valid, errors = self.config_manager.validate()
-        if not valid:
-            error_msg = "\n".join(errors)
-            self.log_message("ERROR", f"Invalid configuration: {error_msg}")
-            messagebox.showerror("Invalid Configuration", error_msg)
-            return
-
-        # Save
-        filename = filedialog.asksaveasfilename(
-            title="Save Configuration",
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-            initialfile="app_config.json"
-        )
-        if filename:
-            success, message = self.config_manager.save_to_file(filename)
-            if success:
-                self.log_message("SUCCESS", f"Configuration saved to {filename}")
-                messagebox.showinfo("Success", message)
-            else:
-                self.log_message("ERROR", f"Failed to save config: {message}")
-                messagebox.showerror("Error", message)
+    def _on_tab_changed(self, event=None):
+        """Auto-save when switching tabs"""
+        self.save_config()
 
     def update_config_from_ui(self, skip_schedule_times: bool = False):
         """Update ConfigManager from UI inputs
@@ -557,7 +537,7 @@ class RTSPTimelapseGUI:
         self.interval_entry.insert(0, str(self.config_manager.capture.interval_seconds))
 
         self.output_entry.delete(0, tk.END)
-        self.output_entry.insert(0, self.config_manager.capture.output_folder)
+        self.output_entry.insert(0, self._resolve_output_path(self.config_manager.capture.output_folder))
 
         self.jpeg_quality_entry.delete(0, tk.END)
         self.jpeg_quality_entry.insert(0, str(self.config_manager.capture.jpeg_quality))
@@ -1003,9 +983,8 @@ class RTSPTimelapseGUI:
         if hasattr(self, 'scheduling_panel'):
             self.scheduling_panel.cleanup()
 
-        # Save UI preferences
-        self.config_manager.ui.preview_enabled = self.preview_enabled.get()
-        self.config_manager.save_to_file("config/app_config.json")
+        # Auto-save all settings before closing
+        self.save_config()
 
         if self.is_capturing:
             if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):
