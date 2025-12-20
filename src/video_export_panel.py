@@ -65,7 +65,6 @@ class VideoExportPanel(ttk.Frame):
         self.current_job: Optional[ExportJob] = None
         self.is_exporting = False
         self._get_snapshots_dir_callback = None  # Callback to get current snapshots dir from Capture tab
-        self._session_browse_dir = None  # Session-only: user's manual folder selection (not saved)
 
         # Create UI
         self.create_widgets()
@@ -351,15 +350,13 @@ class VideoExportPanel(ttk.Frame):
 
     def browse_source_folder(self):
         """Browse for source folder"""
-        # Always start at output folder from Capture tab
-        initial_dir = str(self._get_current_snapshots_dir())
+        # Always open at exe location for general browsing
+        initial_dir = str(get_app_base_dir())
         folder = filedialog.askdirectory(title="Select Image Folder", initialdir=initial_dir)
 
         if folder:
             self.source_folder_entry.delete(0, tk.END)
             self.source_folder_entry.insert(0, folder)
-            # Remember this selection for session (for Quick Select to use)
-            self._session_browse_dir = folder
             self.scan_source_folder()
 
     def set_snapshots_dir_callback(self, callback):
@@ -377,16 +374,20 @@ class VideoExportPanel(ttk.Frame):
 
     def quick_select_folder(self):
         """Quick select from available date folders"""
-        # Use session browse dir if user manually selected a location, otherwise use output folder
-        if self._session_browse_dir and Path(self._session_browse_dir).exists():
-            snapshots_dir = Path(self._session_browse_dir)
-        else:
-            snapshots_dir = self._get_current_snapshots_dir()
+        # Use configured snapshots location from Capture tab
+        snapshots_dir = self._get_current_snapshots_dir()
+
+        # Create folder if it doesn't exist
+        if not snapshots_dir.exists():
+            try:
+                snapshots_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
 
         date_folders = self.controller.get_available_date_folders(snapshots_dir)
 
         if not date_folders:
-            messagebox.showinfo("No Folders", f"No date folders found in {snapshots_dir}")
+            messagebox.showinfo("No Folders", f"No date folders found. Start capturing first.\n\nLocation: {snapshots_dir}")
             return
 
         # Create selection dialog

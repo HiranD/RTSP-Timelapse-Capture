@@ -452,7 +452,16 @@ class RTSPTimelapseGUI:
 
     def browse_output_dir(self):
         """Browse for output directory"""
-        directory = filedialog.askdirectory(initialdir=self.output_entry.get())
+        # Get current path and create if it doesn't exist
+        current_path = self.output_entry.get()
+        if current_path:
+            path = Path(current_path)
+            if not path.exists():
+                try:
+                    path.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass  # If creation fails, dialog will use default
+        directory = filedialog.askdirectory(initialdir=current_path)
         if directory:
             self.output_entry.delete(0, tk.END)
             self.output_entry.insert(0, directory)
