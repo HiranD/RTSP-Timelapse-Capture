@@ -17,7 +17,7 @@
 - RTSP stream capture with optional TCP forcing for stability.
 - **Multi-threaded bufferless capture** for accurate timestamps (±5 second precision).
 - **Proactive reconnection** to prevent camera firmware timeouts (100% capture success rate).
-- Smart scheduling that supports overnight windows (e.g., 22:40 → 07:00).
+- Smart scheduling that supports overnight windows (e.g., 20:00 → 08:00).
 - Automatic interval capture from 1 to 3600 seconds.
 - Automatic date-based folder structure for snapshots.
 - Adjustable JPEG output quality (1–100%).
@@ -46,7 +46,7 @@
 - Three-tab interface: **Capture**, **Video Export**, and **Scheduling**.
 - **Comprehensive tooltip system** with 37 hover tooltips explaining every control.
 - Keyboard shortcuts for common actions.
-- Auto-save of UI preferences.
+- Auto-save configuration when switching tabs and on app close.
 - Thread-safe capture engine keeps the UI responsive.
 - Color-coded activity log with timestamps.
 - Cross-platform Python source (Windows-focused release builds).
@@ -133,9 +133,9 @@
 2. **Set Schedule**
    ```
    Schedule:
-     Start Time:  22:40  (10:40 PM)
-     End Time:    07:00  (7:00 AM)
-     Interval:    20     (seconds)
+     Start Time:  20:00  (8:00 PM)
+     End Time:    08:00  (8:00 AM)
+     Interval:    30     (seconds)
    ```
 
 3. **Start Capture**
@@ -202,12 +202,12 @@ The Scheduling tab enables **automated long-term capture planning** based on ast
 
 Before using the Scheduling tab, **configure the Capture and Video Export tabs**:
 
-1. **Capture Tab** - Set up and save these settings:
+1. **Capture Tab** - Set up these settings:
    - RTSP URL for your camera
    - Capture interval (recommended: 30 seconds)
    - Output folder for snapshots
    - JPEG quality
-   - Click **Save Configuration** or use **File → Save Configuration**
+   - Settings are auto-saved when you switch tabs
 
 2. **Video Export Tab** - Set up these settings:
    - Select a video preset (or create a custom one)
@@ -389,11 +389,11 @@ Based on extensive testing with Annke I81EM IP cameras, two configurations are r
 
 | Shortcut | Action                |
 |----------|-----------------------|
-| `Ctrl+S` | Save configuration    |
-| `Ctrl+O` | Load configuration    |
 | `Ctrl+T` | Test camera connection|
 | `Space`  | Start capture         |
 | `Esc`    | Stop capture          |
+
+*Note: Configuration is auto-saved when switching tabs and before closing the app.*
 
 ### Video Export Tab
 
@@ -548,7 +548,7 @@ RTSP/
 ## Q&A
 
 **Q: Can I use multiple cameras?**
-A: Currently supports one camera per instance. Run multiple instances for multiple cameras. Save different configs and load them via **File → Load Configuration**.
+A: Currently supports one camera per instance. Run multiple instances for multiple cameras with separate config folders.
 
 **Q: Does it work on Linux/macOS?**
 A: Yes! The Python source is cross-platform. Install dependencies and FFmpeg for your OS. Windows releases include pre-built executables.
@@ -657,12 +657,15 @@ New third tab for automated long-term capture planning based on twilight times o
 - **Preset Memory**: Last selected video preset is remembered across sessions
 
 **Improvements:**
+- **Auto-save configuration** when switching tabs and before closing app (no manual save/load needed)
 - Video Export Quick Select now uses Capture tab's output folder
 - Relative paths resolve correctly when running as bundled executable
 - Scheduler correctly uses calculated twilight times
 - Default "Open video when complete" to unchecked
+- Default schedule times changed to 20:00-08:00
 - Config consolidated to `config/app_config.json`
 - User data (capture history, presets) moved to `user_data/` folder
+- Removed unused config fields for cleaner configuration
 
 **UI Improvements:**
 - Three-tab interface (Capture | Video Export | Scheduling)
