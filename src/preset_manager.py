@@ -5,10 +5,21 @@ Phase 3.5: Video Export Feature
 Manages built-in and custom video export presets.
 """
 
+import sys
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
 
 
 @dataclass
@@ -115,7 +126,7 @@ class PresetManager:
             config_dir: Directory to store custom presets (defaults to user_data folder)
         """
         if config_dir is None:
-            config_dir = Path.cwd() / 'user_data'
+            config_dir = get_app_base_dir() / 'user_data'
 
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)

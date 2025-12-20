@@ -5,11 +5,28 @@ Handles all configuration operations including JSON serialization,
 validation, and migration from the old config.py format.
 """
 
+import sys
 import json
 import os
+from pathlib import Path
 from typing import Optional, Any
 from dataclasses import dataclass, asdict, field
 from typing import List
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def get_config_path() -> Path:
+    """Get the path to the config file."""
+    return get_app_base_dir() / "config" / "app_config.json"
 
 
 @dataclass
@@ -25,8 +42,8 @@ class CameraConfig:
 @dataclass
 class ScheduleConfig:
     """Capture scheduling settings"""
-    start_time: str = "22:40"  # HH:MM format
-    end_time: str = "07:00"     # HH:MM format
+    start_time: str = "20:00"  # HH:MM format
+    end_time: str = "08:00"     # HH:MM format
     folder_rollover_hour: int = 12  # 0-23
 
 
@@ -64,13 +81,11 @@ class AstroScheduleConfig:
     end_offset_minutes: int = 0  # Minutes before darkness ends (can be negative)
     scheduled_dates: List[str] = field(default_factory=list)  # ["2025-12-15", "2025-12-16"]
     auto_create_video: bool = False  # Automatically create video after each night
-    video_preset: str = "Standard 24fps"  # Preset name for auto video creation
-    video_output_folder: str = "videos"  # Output folder for auto-created videos
     delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
-    manual_start_time: str = "22:00"  # HH:MM format - capture start time
-    manual_end_time: str = "06:00"  # HH:MM format - capture end time
+    manual_start_time: str = "20:00"  # HH:MM format - capture start time
+    manual_end_time: str = "08:00"  # HH:MM format - capture end time
 
 
 class ConfigManager:
@@ -138,7 +153,10 @@ class ConfigManager:
             Tuple of (success: bool, message: str)
         """
         if filepath is None:
-            filepath = self.DEFAULT_CONFIG_FILE
+            config_path = get_config_path()
+            # Ensure config directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            filepath = str(config_path)
 
         try:
             with open(filepath, 'w') as f:
@@ -160,7 +178,7 @@ class ConfigManager:
             Tuple of (success: bool, message: str)
         """
         if filepath is None:
-            filepath = self.DEFAULT_CONFIG_FILE
+            filepath = str(get_config_path())
 
         if not os.path.exists(filepath):
             return False, f"Configuration file not found: {filepath}"
@@ -343,8 +361,6 @@ class ConfigManager:
             f"  Manual Times: {self.astro_schedule.manual_start_time} - {self.astro_schedule.manual_end_time}",
             f"  Scheduled Dates: {len(self.astro_schedule.scheduled_dates)} dates",
             f"  Auto Video: {'enabled' if self.astro_schedule.auto_create_video else 'disabled'}",
-            f"  Video Preset: {self.astro_schedule.video_preset}",
-            f"  Video Output: {self.astro_schedule.video_output_folder}",
         ]
 
         return "\n".join(lines)

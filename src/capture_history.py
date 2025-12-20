@@ -5,11 +5,22 @@ Stores session data in capture_history.json to persist captured dates even after
 snapshots are deleted (e.g., after auto video creation).
 """
 
+import sys
 import json
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
 
 
 @dataclass
@@ -43,7 +54,7 @@ class CaptureHistoryManager:
             config_dir: Directory to store history file. Defaults to 'user_data' folder.
         """
         if config_dir is None:
-            config_dir = Path.cwd() / 'user_data'
+            config_dir = get_app_base_dir() / 'user_data'
 
         self.config_dir = Path(config_dir)
         self.history_file = self.config_dir / 'capture_history.json'
