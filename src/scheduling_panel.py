@@ -303,7 +303,8 @@ class SchedulingPanel(ttk.Frame):
         self.delete_snapshots_check = ttk.Checkbutton(
             row_frame,
             text="Delete snapshots after",
-            variable=self.delete_snapshots_var
+            variable=self.delete_snapshots_var,
+            command=self._on_delete_snapshots_toggle
         )
         self.delete_snapshots_check.pack(side="left", padx=(20, 0))
         ToolTip(self.delete_snapshots_check,
@@ -613,6 +614,10 @@ class SchedulingPanel(ttk.Frame):
     def _on_auto_video_toggle(self):
         """Handle auto video checkbox toggle"""
         self._update_video_widgets_state()
+        self._save_to_config()
+
+    def _on_delete_snapshots_toggle(self):
+        """Handle delete snapshots checkbox toggle"""
         self._save_to_config()
 
     def _on_scheduler_toggle(self):
