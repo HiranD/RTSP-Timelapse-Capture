@@ -658,8 +658,9 @@ New third tab for automated long-term capture planning based on twilight times o
 
 **Improvements:**
 - **Auto-save configuration** when switching tabs and before closing app (no manual save/load needed)
-- Video Export Quick Select now uses Capture tab's output folder
-- Relative paths resolve correctly when running as bundled executable
+- **Smart folder creation**: Browse buttons auto-create folders if they don't exist
+- Output folder paths saved as full absolute paths for clarity
+- Video Export Browse opens at exe location, Quick Select opens at configured snapshots folder
 - Scheduler correctly uses calculated twilight times
 - Default "Open video when complete" to unchecked
 - Default schedule times changed to 20:00-08:00
