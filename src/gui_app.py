@@ -465,6 +465,21 @@ class RTSPTimelapseGUI:
         else:
             return str((get_app_base_dir() / path).resolve())
 
+    def _make_path_relative(self, path_str: str) -> str:
+        """Convert absolute path to relative if it's within app base directory."""
+        path = Path(path_str)
+        if not path.is_absolute():
+            return path_str  # Already relative
+
+        base_dir = get_app_base_dir()
+        try:
+            # Check if path is within base directory
+            rel_path = path.relative_to(base_dir)
+            return str(rel_path)
+        except ValueError:
+            # Path is not within base directory, keep absolute
+            return path_str
+
     def load_config(self):
         """Load configuration from default file"""
         config_file = get_config_path()
@@ -507,6 +522,7 @@ class RTSPTimelapseGUI:
             self.config_manager.schedule.end_time = self.end_time_entry.get()
 
         self.config_manager.capture.interval_seconds = int(self.interval_entry.get())
+        # Save the full path as shown in UI
         self.config_manager.capture.output_folder = self.output_entry.get()
         self.config_manager.capture.jpeg_quality = int(self.jpeg_quality_entry.get())
         self.config_manager.capture.proactive_reconnect_seconds = int(self.proactive_reconnect_entry.get())

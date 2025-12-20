@@ -64,6 +64,7 @@ echo   * Two-month calendar with capture history indicators
 echo   * Auto video creation after each night's session
 echo   * Capture history tracking ^(shows past captures on calendar^)
 echo   * Last selected preset remembered across sessions
+echo   * Auto-save config on tab switch and app close ^(no manual save needed^)
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
@@ -81,10 +82,11 @@ echo    ^> Enable "Force TCP" for stability
 echo    ^> Click "Test Connection" to verify
 echo.
 echo 3. SET SCHEDULE
-echo    ^> Start Time: When to begin capturing ^(e.g., 22:40^)
-echo    ^> End Time: When to stop ^(e.g., 07:00^)
-echo    ^> Interval: Seconds between captures ^(e.g., 20 or 30^)
+echo    ^> Start Time: When to begin capturing ^(e.g., 20:00^)
+echo    ^> End Time: When to stop ^(e.g., 08:00^)
+echo    ^> Interval: Seconds between captures ^(e.g., 30^)
 echo    ^> Proactive Reconnect: 300s ^(prevents camera timeouts^)
+echo    ^> Settings auto-save when you switch tabs!
 echo.
 echo 4. START CAPTURING
 echo    ^> Click "Start Capture" or press Space
@@ -97,6 +99,14 @@ echo    ^> Click "Quick Select" to choose date folder
 echo    ^> Select preset ^(Standard 24fps, High Quality, etc.^)
 echo    ^> Click "Create Video" and wait for encoding
 echo    ^> Video opens automatically when complete
+echo.
+echo 6. AUTOMATED SCHEDULING ^(Scheduling Tab - NEW!^)
+echo    ^> Choose time mode: Twilight-based or Manual
+echo    ^> For Twilight: Enter lat/long, select twilight type
+echo    ^> For Manual: Set fixed start/end times ^(e.g., 20:00 - 08:00^)
+echo    ^> Click dates on calendar to schedule captures
+echo    ^> Enable "Create video after each night" for auto export
+echo    ^> Check "Enable automatic scheduling" to start!
 echo.
 echo ================================================================================
 echo KEY FEATURES
@@ -149,7 +159,8 @@ echo * TEST FIRST: Always click "Test Connection" before starting capture
 echo * TCP MODE: Keep "Force TCP" enabled for most IP cameras
 echo * DISK SPACE: At 30s interval, expect ~400KB per image ^(~1.4MB/min^)
 echo * VIDEO PRESETS: Try "Standard 24fps" first, then experiment
-echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+S=Save Config
+echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+T=Test Connection
+echo * AUTO-SAVE: Config saves automatically when switching tabs or closing app
 echo.
 echo ================================================================================
 echo TROUBLESHOOTING
