@@ -108,6 +108,22 @@ echo    ^> Click dates on calendar to schedule captures
 echo    ^> Enable "Create video after each night" for auto export
 echo    ^> Check "Enable automatic scheduling" to start!
 echo.
+echo    IMPORTANT - For scheduler to work properly:
+echo    -----------------------------------------------
+echo    1. CAPTURE TAB ^(Required^):
+echo       - Camera must be configured and "Test Connection" must pass
+echo       - Output folder must be set
+echo       - Capture interval must be set
+echo.
+echo    2. VIDEO EXPORT TAB ^(Required if auto video enabled^):
+echo       - Select a video preset
+echo       - Set output folder for videos
+echo.
+echo    3. SCHEDULING TAB:
+echo       - Set location ^(twilight mode^) OR start/end times ^(manual mode^)
+echo       - Select at least one date on calendar
+echo       - Check "Enable automatic scheduling"
+echo.
 echo ================================================================================
 echo KEY FEATURES
 echo ================================================================================
