@@ -10,6 +10,26 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 from pathlib import Path
 from typing import Optional
 import os
+import sys
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def resolve_path(path_str: str) -> Path:
+    """Resolve a path - if relative, resolve from app base directory."""
+    path = Path(path_str)
+    if path.is_absolute():
+        return path
+    else:
+        return (get_app_base_dir() / path).resolve()
 
 from video_export_controller import VideoExportController, ImageCollection, ExportJob, ExportResult
 from preset_manager import PresetManager, VideoExportSettings
@@ -32,7 +52,7 @@ class VideoExportPanel(ttk.Frame):
         """
         super().__init__(parent, padding="10")
 
-        self.default_snapshots_dir = Path(default_snapshots_dir)
+        self.default_snapshots_dir = resolve_path(default_snapshots_dir)
         self.config_manager = config_manager
 
         # Initialize components
@@ -44,6 +64,7 @@ class VideoExportPanel(ttk.Frame):
         self.current_collection: Optional[ImageCollection] = None
         self.current_job: Optional[ExportJob] = None
         self.is_exporting = False
+        self._get_snapshots_dir_callback = None  # Callback to get current snapshots dir from Capture tab
 
         # Create UI
         self.create_widgets()
@@ -240,7 +261,7 @@ class VideoExportPanel(ttk.Frame):
         timestamp_check.pack(side=tk.LEFT, padx=(0, 15))
         ToolTip(timestamp_check, VIDEO_EXPORT_TOOLTIPS["frame_counter"])
 
-        self.open_when_done_var = tk.BooleanVar(value=True)
+        self.open_when_done_var = tk.BooleanVar(value=False)
         open_check = ttk.Checkbutton(options_frame, text="Open video when complete",
                         variable=self.open_when_done_var)
         open_check.pack(side=tk.LEFT)
@@ -329,7 +350,8 @@ class VideoExportPanel(ttk.Frame):
 
     def browse_source_folder(self):
         """Browse for source folder"""
-        initial_dir = self.source_folder_entry.get() or str(self.default_snapshots_dir)
+        # Always open at exe location for general browsing
+        initial_dir = str(get_app_base_dir())
         folder = filedialog.askdirectory(title="Select Image Folder", initialdir=initial_dir)
 
         if folder:
@@ -337,12 +359,35 @@ class VideoExportPanel(ttk.Frame):
             self.source_folder_entry.insert(0, folder)
             self.scan_source_folder()
 
+    def set_snapshots_dir_callback(self, callback):
+        """Set callback to get current snapshots directory from Capture tab."""
+        self._get_snapshots_dir_callback = callback
+
+    def _get_current_snapshots_dir(self) -> Path:
+        """Get current snapshots directory from Capture tab or config."""
+        if self._get_snapshots_dir_callback:
+            return resolve_path(self._get_snapshots_dir_callback())
+        elif self.config_manager:
+            return resolve_path(self.config_manager.capture.output_folder)
+        else:
+            return self.default_snapshots_dir
+
     def quick_select_folder(self):
         """Quick select from available date folders"""
-        date_folders = self.controller.get_available_date_folders(self.default_snapshots_dir)
+        # Use configured snapshots location from Capture tab
+        snapshots_dir = self._get_current_snapshots_dir()
+
+        # Create folder if it doesn't exist
+        if not snapshots_dir.exists():
+            try:
+                snapshots_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+        date_folders = self.controller.get_available_date_folders(snapshots_dir)
 
         if not date_folders:
-            messagebox.showinfo("No Folders", f"No date folders found in {self.default_snapshots_dir}")
+            messagebox.showinfo("No Folders", f"No date folders found. Start capturing first.\n\nLocation: {snapshots_dir}")
             return
 
         # Create selection dialog
@@ -479,6 +524,11 @@ class VideoExportPanel(ttk.Frame):
 
             self.log_message(f"Loaded preset: {preset_name}")
             self.update_estimates()
+
+            # Save as last used preset
+            if self.config_manager:
+                self.config_manager.ui.last_video_preset = preset_name
+                self.config_manager.save_to_file()
 
     def save_as_preset(self):
         """Save current settings as preset"""
@@ -758,7 +808,10 @@ class VideoExportPanel(ttk.Frame):
         self.log_text.configure(state=tk.DISABLED)
 
     def load_last_settings(self):
-        """Load last used settings (if any)"""
-        # For now, just use defaults
-        # Could be extended to save/load last settings from config file
-        pass
+        """Load last used settings from config"""
+        if self.config_manager:
+            # Load last used preset
+            last_preset = self.config_manager.ui.last_video_preset
+            if last_preset and last_preset in self.preset_manager.list_presets():
+                self.preset_var.set(last_preset)
+                self.load_preset()

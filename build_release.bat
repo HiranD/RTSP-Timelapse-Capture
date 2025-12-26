@@ -30,17 +30,17 @@ if %ERRORLEVEL% NEQ 0 (
 REM Create release folder
 echo [4/5] Creating release package...
 if not exist "release" mkdir "release"
-if exist "release\RTSP_Timelapse_v2.3.0_Windows" rmdir /s /q "release\RTSP_Timelapse_v2.3.0_Windows"
-mkdir "release\RTSP_Timelapse_v2.3.0_Windows"
+if exist "release\RTSP_Timelapse_v3.0.0_Windows" rmdir /s /q "release\RTSP_Timelapse_v3.0.0_Windows"
+mkdir "release\RTSP_Timelapse_v3.0.0_Windows"
 
 REM Copy files to release folder
-copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v2.3.0_Windows\"
-copy "README.md" "release\RTSP_Timelapse_v2.3.0_Windows\"
+copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v3.0.0_Windows\"
+copy "README.md" "release\RTSP_Timelapse_v3.0.0_Windows\"
 
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
-if not exist "release\RTSP_Timelapse_v2.3.0_Windows\bin" mkdir "release\RTSP_Timelapse_v2.3.0_Windows\bin"
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v2.3.0_Windows\bin\" >nul 2>&1
+if not exist "release\RTSP_Timelapse_v3.0.0_Windows\bin" mkdir "release\RTSP_Timelapse_v3.0.0_Windows\bin"
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v3.0.0_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
     echo   - Users don't need to install anything!
@@ -52,15 +52,19 @@ REM Create user guide
 echo [5/5] Creating user guide...
 (
 echo ================================================================================
-echo    RTSP Timelapse Capture System v2.3.0
-echo    Multi-Threaded Bufferless Capture - Revolutionary Timestamp Accuracy
+echo    RTSP Timelapse Capture System v3.0.0
+echo    Astronomical Scheduling - Automated Long-Term Capture Planning
 echo ================================================================================
 echo.
-echo WHAT'S NEW IN v2.3.0:
-echo   * Multi-threaded bufferless capture engine
-echo   * ±5 second timestamp accuracy ^(96%% improvement^)
-echo   * Zero drift accumulation across capture sessions
-echo   * 100%% capture success rate with proactive reconnection
+echo WHAT'S NEW IN v3.0.0:
+echo   * NEW Scheduling Tab for automated multi-night captures
+echo   * Twilight-based scheduling ^(civil/nautical/astronomical^)
+echo   * Manual time mode as alternative to twilight calculations
+echo   * Two-month calendar with capture history indicators
+echo   * Auto video creation after each night's session
+echo   * Capture history tracking ^(shows past captures on calendar^)
+echo   * Last selected preset remembered across sessions
+echo   * Auto-save config on tab switch and app close ^(no manual save needed^)
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
@@ -78,10 +82,11 @@ echo    ^> Enable "Force TCP" for stability
 echo    ^> Click "Test Connection" to verify
 echo.
 echo 3. SET SCHEDULE
-echo    ^> Start Time: When to begin capturing ^(e.g., 22:40^)
-echo    ^> End Time: When to stop ^(e.g., 07:00^)
-echo    ^> Interval: Seconds between captures ^(e.g., 20 or 30^)
+echo    ^> Start Time: When to begin capturing ^(e.g., 20:00^)
+echo    ^> End Time: When to stop ^(e.g., 08:00^)
+echo    ^> Interval: Seconds between captures ^(e.g., 30^)
 echo    ^> Proactive Reconnect: 300s ^(prevents camera timeouts^)
+echo    ^> Settings auto-save when you switch tabs!
 echo.
 echo 4. START CAPTURING
 echo    ^> Click "Start Capture" or press Space
@@ -94,6 +99,30 @@ echo    ^> Click "Quick Select" to choose date folder
 echo    ^> Select preset ^(Standard 24fps, High Quality, etc.^)
 echo    ^> Click "Create Video" and wait for encoding
 echo    ^> Video opens automatically when complete
+echo.
+echo 6. AUTOMATED SCHEDULING ^(Scheduling Tab - NEW!^)
+echo    ^> Choose time mode: Twilight-based or Manual
+echo    ^> For Twilight: Enter lat/long, select twilight type
+echo    ^> For Manual: Set fixed start/end times ^(e.g., 20:00 - 08:00^)
+echo    ^> Click dates on calendar to schedule captures
+echo    ^> Enable "Create video after each night" for auto export
+echo    ^> Check "Enable automatic scheduling" to start!
+echo.
+echo    IMPORTANT - For scheduler to work properly:
+echo    -----------------------------------------------
+echo    1. CAPTURE TAB ^(Required^):
+echo       - Camera must be configured and "Test Connection" must pass
+echo       - Output folder must be set
+echo       - Capture interval must be set
+echo.
+echo    2. VIDEO EXPORT TAB ^(Required if auto video enabled^):
+echo       - Select a video preset
+echo       - Set output folder for videos
+echo.
+echo    3. SCHEDULING TAB:
+echo       - Set location ^(twilight mode^) OR start/end times ^(manual mode^)
+echo       - Select at least one date on calendar
+echo       - Check "Enable automatic scheduling"
 echo.
 echo ================================================================================
 echo KEY FEATURES
@@ -146,7 +175,8 @@ echo * TEST FIRST: Always click "Test Connection" before starting capture
 echo * TCP MODE: Keep "Force TCP" enabled for most IP cameras
 echo * DISK SPACE: At 30s interval, expect ~400KB per image ^(~1.4MB/min^)
 echo * VIDEO PRESETS: Try "Standard 24fps" first, then experiment
-echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+S=Save Config
+echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+T=Test Connection
+echo * AUTO-SAVE: Config saves automatically when switching tabs or closing app
 echo.
 echo ================================================================================
 echo TROUBLESHOOTING
@@ -187,12 +217,16 @@ echo.
 echo Thank you for using RTSP Timelapse Capture System!
 echo For the best timestamp accuracy, use the recommended settings above.
 echo.
-) > "release\RTSP_Timelapse_v2.3.0_Windows\QUICKSTART.txt"
+) > "release\RTSP_Timelapse_v3.0.0_Windows\QUICKSTART.txt"
+
+REM Copy release notes
+echo Copying release notes...
+copy "release\RELEASE_NOTES_v3.0.0.md" "release\RTSP_Timelapse_v3.0.0_Windows\"
 
 REM Create ZIP archive
 echo Creating ZIP archive...
 cd release
-powershell Compress-Archive -Path "RTSP_Timelapse_v2.3.0_Windows" -DestinationPath "RTSP_Timelapse_v2.3.0_Windows.zip" -Force
+powershell Compress-Archive -Path "RTSP_Timelapse_v3.0.0_Windows" -DestinationPath "RTSP_Timelapse_v3.0.0_Windows.zip" -Force
 cd ..
 
 echo.
@@ -201,8 +235,8 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Executable: dist\RTSP_Timelapse.exe
-echo Release Package: release\RTSP_Timelapse_v2.3.0_Windows\
-echo ZIP Archive: release\RTSP_Timelapse_v2.3.0_Windows.zip
+echo Release Package: release\RTSP_Timelapse_v3.0.0_Windows\
+echo ZIP Archive: release\RTSP_Timelapse_v3.0.0_Windows.zip
 echo.
 echo Ready for GitHub release!
 echo.

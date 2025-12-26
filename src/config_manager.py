@@ -5,10 +5,28 @@ Handles all configuration operations including JSON serialization,
 validation, and migration from the old config.py format.
 """
 
+import sys
 import json
 import os
+from pathlib import Path
 from typing import Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from typing import List
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def get_config_path() -> Path:
+    """Get the path to the config file."""
+    return get_app_base_dir() / "config" / "app_config.json"
 
 
 @dataclass
@@ -24,8 +42,8 @@ class CameraConfig:
 @dataclass
 class ScheduleConfig:
     """Capture scheduling settings"""
-    start_time: str = "22:40"  # HH:MM format
-    end_time: str = "07:00"     # HH:MM format
+    start_time: str = "20:00"  # HH:MM format
+    end_time: str = "08:00"     # HH:MM format
     folder_rollover_hour: int = 12  # 0-23
 
 
@@ -50,6 +68,24 @@ class UIConfig:
     preview_enabled: bool = True
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
+    last_video_preset: str = "Standard 24fps"  # Last selected video export preset
+
+
+@dataclass
+class AstroScheduleConfig:
+    """Astronomical scheduling settings for long-term capture planning"""
+    latitude: float = 0.0  # -90 to 90, negative = southern hemisphere
+    longitude: float = 0.0  # -180 to 180, negative = west
+    twilight_type: str = "astronomical"  # civil, nautical, astronomical
+    start_offset_minutes: int = 0  # Minutes after darkness begins (can be negative)
+    end_offset_minutes: int = 0  # Minutes before darkness ends (can be negative)
+    scheduled_dates: List[str] = field(default_factory=list)  # ["2025-12-15", "2025-12-16"]
+    auto_create_video: bool = False  # Automatically create video after each night
+    delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
+    # Manual time mode settings
+    use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
+    manual_start_time: str = "20:00"  # HH:MM format - capture start time
+    manual_end_time: str = "08:00"  # HH:MM format - capture end time
 
 
 class ConfigManager:
@@ -59,7 +95,7 @@ class ConfigManager:
     Handles loading, saving, validation, and provides default values.
     """
 
-    DEFAULT_CONFIG_FILE = "capture_config.json"
+    DEFAULT_CONFIG_FILE = "config/app_config.json"
 
     def __init__(self):
         """Initialize with default configuration."""
@@ -67,6 +103,7 @@ class ConfigManager:
         self.schedule = ScheduleConfig()
         self.capture = CaptureConfig()
         self.ui = UIConfig()
+        self.astro_schedule = AstroScheduleConfig()
 
     def to_dict(self) -> dict:
         """
@@ -79,7 +116,8 @@ class ConfigManager:
             "camera": asdict(self.camera),
             "schedule": asdict(self.schedule),
             "capture": asdict(self.capture),
-            "ui": asdict(self.ui)
+            "ui": asdict(self.ui),
+            "astro_schedule": asdict(self.astro_schedule)
         }
 
     def from_dict(self, config_dict: dict):
@@ -101,6 +139,9 @@ class ConfigManager:
         if "ui" in config_dict:
             self.ui = UIConfig(**config_dict["ui"])
 
+        if "astro_schedule" in config_dict:
+            self.astro_schedule = AstroScheduleConfig(**config_dict["astro_schedule"])
+
     def save_to_file(self, filepath: Optional[str] = None) -> tuple[bool, str]:
         """
         Save configuration to JSON file.
@@ -112,7 +153,10 @@ class ConfigManager:
             Tuple of (success: bool, message: str)
         """
         if filepath is None:
-            filepath = self.DEFAULT_CONFIG_FILE
+            config_path = get_config_path()
+            # Ensure config directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            filepath = str(config_path)
 
         try:
             with open(filepath, 'w') as f:
@@ -134,7 +178,7 @@ class ConfigManager:
             Tuple of (success: bool, message: str)
         """
         if filepath is None:
-            filepath = self.DEFAULT_CONFIG_FILE
+            filepath = str(get_config_path())
 
         if not os.path.exists(filepath):
             return False, f"Configuration file not found: {filepath}"
@@ -239,6 +283,18 @@ class ConfigManager:
         if self.ui.preview_size not in ["small", "medium", "large"]:
             errors.append(f"Preview size must be small/medium/large, got {self.ui.preview_size}")
 
+        # Validate astro_schedule
+        if not -90 <= self.astro_schedule.latitude <= 90:
+            errors.append(f"Latitude must be -90 to 90, got {self.astro_schedule.latitude}")
+        if not -180 <= self.astro_schedule.longitude <= 180:
+            errors.append(f"Longitude must be -180 to 180, got {self.astro_schedule.longitude}")
+        if self.astro_schedule.twilight_type not in ["civil", "nautical", "astronomical"]:
+            errors.append(f"Twilight type must be civil/nautical/astronomical, got {self.astro_schedule.twilight_type}")
+        if not -120 <= self.astro_schedule.start_offset_minutes <= 120:
+            errors.append(f"Start offset must be -120 to 120 minutes, got {self.astro_schedule.start_offset_minutes}")
+        if not -120 <= self.astro_schedule.end_offset_minutes <= 120:
+            errors.append(f"End offset must be -120 to 120 minutes, got {self.astro_schedule.end_offset_minutes}")
+
         return len(errors) == 0, errors
 
     def _is_valid_time(self, time_str: str) -> bool:
@@ -295,6 +351,16 @@ class ConfigManager:
             f"  Window Size: {self.ui.window_width}x{self.ui.window_height}",
             f"  Preview: {self.ui.preview_size} ({'enabled' if self.ui.preview_enabled else 'disabled'})",
             f"  Auto-start: {self.ui.auto_start}",
+            "",
+            "Astro Schedule:",
+            f"  Time Mode: {'Manual' if self.astro_schedule.use_manual_times else 'Twilight-based'}",
+            f"  Location: {self.astro_schedule.latitude}, {self.astro_schedule.longitude}",
+            f"  Twilight Type: {self.astro_schedule.twilight_type}",
+            f"  Start Offset: {self.astro_schedule.start_offset_minutes} min",
+            f"  End Offset: {self.astro_schedule.end_offset_minutes} min",
+            f"  Manual Times: {self.astro_schedule.manual_start_time} - {self.astro_schedule.manual_end_time}",
+            f"  Scheduled Dates: {len(self.astro_schedule.scheduled_dates)} dates",
+            f"  Auto Video: {'enabled' if self.astro_schedule.auto_create_video else 'disabled'}",
         ]
 
         return "\n".join(lines)

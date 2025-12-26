@@ -2,7 +2,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -17,7 +17,7 @@
 - RTSP stream capture with optional TCP forcing for stability.
 - **Multi-threaded bufferless capture** for accurate timestamps (±5 second precision).
 - **Proactive reconnection** to prevent camera firmware timeouts (100% capture success rate).
-- Smart scheduling that supports overnight windows (e.g., 22:40 → 07:00).
+- Smart scheduling that supports overnight windows (e.g., 20:00 → 08:00).
 - Automatic interval capture from 1 to 3600 seconds.
 - Automatic date-based folder structure for snapshots.
 - Adjustable JPEG output quality (1–100%).
@@ -32,11 +32,21 @@
 - Real-time progress, ETA, and output size estimates.
 - Optional frame counter overlay.
 
+### Astronomical Scheduling (NEW in v3.0)
+- **Long-term capture planning** with calendar-based date selection.
+- **Twilight calculations** for automatic darkness detection (civil, nautical, astronomical).
+- **Manual time mode** as alternative to twilight-based scheduling.
+- **Two-month calendar view** showing captured dates, scheduled dates, and today.
+- **Auto video creation** after each night's capture session completes.
+- **Auto delete snapshots** option to free up disk space after video creation.
+- **Color-coded scheduler log** for monitoring automated capture activity.
+- Start/end time offsets to fine-tune the darkness window.
+
 ### User Experience
-- Two-tab interface: **Capture** and **Video Export**.
+- Three-tab interface: **Capture**, **Video Export**, and **Scheduling**.
 - **Comprehensive tooltip system** with 37 hover tooltips explaining every control.
 - Keyboard shortcuts for common actions.
-- Auto-save of UI preferences.
+- Auto-save configuration when switching tabs and on app close.
 - Thread-safe capture engine keeps the UI responsive.
 - Color-coded activity log with timestamps.
 - Cross-platform Python source (Windows-focused release builds).
@@ -46,12 +56,16 @@
 ## Screenshots
 
 ### Capture Tab
-![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)  
+![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)
 *Live capture interface showing camera configuration, real-time preview, session statistics, and activity logging.*
 
 ### Video Export Tab
-![Video Export Interface](screenshots/Video_export.jpg)  
+![Video Export Interface](screenshots/Video_export.jpg)
 *Video export interface with input selection, customizable settings, presets management, and real-time encoding progress.*
+
+### Scheduling Tab (NEW in v3.0)
+![Scheduling Interface](screenshots/Scheduling_tab.jpg)
+*Astronomical scheduling interface with twilight/manual time modes, two-month calendar, auto video creation, and scheduler log.*
 
 ---
 
@@ -119,9 +133,9 @@
 2. **Set Schedule**
    ```
    Schedule:
-     Start Time:  22:40  (10:40 PM)
-     End Time:    07:00  (7:00 AM)
-     Interval:    20     (seconds)
+     Start Time:  20:00  (8:00 PM)
+     End Time:    08:00  (8:00 AM)
+     Interval:    30     (seconds)
    ```
 
 3. **Start Capture**
@@ -180,6 +194,97 @@ Ultra Speed:
 
 ---
 
+## Using the Scheduling Tab (NEW in v3.0)
+
+The Scheduling tab enables **automated long-term capture planning** based on astronomical twilight times or manual schedules.
+
+### Important: Configure Other Tabs First
+
+Before using the Scheduling tab, **configure the Capture and Video Export tabs**:
+
+1. **Capture Tab** - Set up these settings:
+   - RTSP URL for your camera
+   - Capture interval (recommended: 30 seconds)
+   - Output folder for snapshots
+   - JPEG quality
+   - Settings are auto-saved when you switch tabs
+
+2. **Video Export Tab** - Set up these settings:
+   - Select a video preset (or create a custom one)
+   - Set your preferred output location
+   - These settings are used by auto video creation
+
+3. **Scheduling Tab** - Now configure automated scheduling:
+   - The scheduler uses Capture tab settings for image capture
+   - Auto video creation uses Video Export tab settings
+
+### Time Mode Selection
+
+Choose between two scheduling modes:
+
+**Twilight-based Mode** (Default):
+- Set your location (latitude/longitude)
+- Select twilight type: Civil (-6°), Nautical (-12°), or Astronomical (-18°)
+- The app calculates darkness windows automatically
+- Optionally add start/end offsets to fine-tune the window
+
+**Manual Mode**:
+- Set fixed start and end times (HH:MM format)
+- Supports overnight spans (e.g., 22:00 - 06:00)
+- No location settings required
+
+### Setting Up Automated Captures
+
+1. **Configure Time Settings**
+   ```
+   Twilight-based:
+     Latitude:  42.0 (Northern Hemisphere)
+     Longitude: -7.0
+     Twilight:  Astronomical (true darkness)
+     Offsets:   Start +0 min, End +0 min
+
+   OR Manual:
+     Start Time: 22:00
+     End Time:   06:00
+   ```
+
+2. **Select Dates on Calendar**
+   - Click dates to toggle selection (blue = scheduled)
+   - Green dates = past dates with captured images
+   - Gray dates = past dates without captures
+   - Red border = today
+   - Use **Select All** / **Clear All** buttons for bulk operations
+   - Navigate months with **<** and **>** buttons
+
+3. **Configure Auto Video (Optional)**
+   ```
+   [✓] Create video after each night's session
+   [ ] Delete snapshots after (use with caution!)
+   ```
+   *Note: Uses preset and output folder from Video Export tab*
+
+4. **Enable Scheduler**
+   - Check "Enable automatic scheduling"
+   - The scheduler monitors twilight/manual times
+   - Capture starts automatically when darkness begins
+   - Capture stops automatically when darkness ends
+   - Videos are created automatically if enabled
+
+### Scheduler Status
+
+- **Scheduler: Inactive** - Scheduler is disabled
+- **Scheduler: Active (waiting)** - Waiting for darkness window
+- **Scheduler: Capturing** - Currently capturing frames
+
+### Scheduler Log
+
+Monitor scheduler activity in the color-coded log:
+- **INFO** (black): Normal operations
+- **WARNING** (orange): Non-critical issues
+- **ERROR** (red): Problems requiring attention
+
+---
+
 ## Configuration Reference
 
 ### Camera Settings
@@ -230,7 +335,7 @@ Overnight windows (start later than end) are handled automatically.
 - **Prefer TCP**: Many consumer IP cameras are unreliable over UDP; keep **Force TCP** enabled unless the camera vendor recommends otherwise.
 - **Mind network latency**: For remote cameras, increase `buffer_frames` (e.g., to 6-8) if you frequently see reconnect messages.
 - **Deal with overnight lighting**: Configure the camera's own exposure or IR settings; the app captures whatever the RTSP feed delivers.
-- **Multiple cameras**: Copy `config/camera_config_example.json` per device and load them through the GUI to swap configurations quickly.
+- **Multiple cameras**: Copy `config/app_config_example.json` per device and load them through the GUI to swap configurations quickly.
 - **Security**: Store configs in a protected location if the RTSP password is sensitive; the app saves the password in plain text JSON.
 - **Prevent camera timeouts**: Enable **Proactive Reconnect** to maintain 100% capture success rate. Most IP cameras have firmware timeouts (typically 5-10 minutes). Set the reconnect interval to ~40 seconds before your camera's timeout for uninterrupted captures.
 
@@ -284,11 +389,11 @@ Based on extensive testing with Annke I81EM IP cameras, two configurations are r
 
 | Shortcut | Action                |
 |----------|-----------------------|
-| `Ctrl+S` | Save configuration    |
-| `Ctrl+O` | Load configuration    |
 | `Ctrl+T` | Test camera connection|
 | `Space`  | Start capture         |
 | `Esc`    | Stop capture          |
+
+*Note: Configuration is auto-saved when switching tabs and before closing the app.*
 
 ### Video Export Tab
 
@@ -383,12 +488,18 @@ Example: 20s interval for 8 hours
 
 ## System Requirements
 
-**Minimum:**
-- Windows 10/11 (64-bit) or Linux/macOS
-- Python 3.8 or higher
+**For built executable (.exe):**
+- Windows 10/11 (64-bit)
 - 4 GB RAM
-- 2 GB free disk space
+- 2 GB free disk space (plus additional storage for captures and videos)
 - Network connection to RTSP camera
+- FFmpeg (for video export)
+
+**For running from source:**
+- Windows 10/11, Linux, or macOS
+- Python 3.9 or higher
+- Dependencies from requirements.txt
+- FFmpeg (for video export)
 
 ## Project Structure
 
@@ -397,6 +508,7 @@ RTSP/
 ├── run_gui.py                    # Application launcher
 ├── requirements.txt              # Python dependencies
 ├── README.md                     # This file
+├── LICENSE                       # MIT License
 ├── .gitignore                    # Git ignore rules
 │
 ├── src/                          # Source code
@@ -409,7 +521,12 @@ RTSP/
 │   ├── preset_manager.py        # Preset management
 │   ├── tooltip.py               # Tooltip helper class
 │   ├── video_export_tooltips.py # Video export tooltip messages
-│   └── capture_tooltips.py      # Capture tab tooltip messages
+│   ├── capture_tooltips.py      # Capture tab tooltip messages
+│   ├── scheduling_panel.py      # Astronomical scheduling GUI (NEW v3.0)
+│   ├── scheduling_tooltips.py   # Scheduling tab tooltip messages (NEW v3.0)
+│   ├── calendar_widget.py       # Two-month calendar widget (NEW v3.0)
+│   ├── twilight_calculator.py   # Twilight time calculations (NEW v3.0)
+│   └── astro_scheduler.py       # Automated scheduling engine (NEW v3.0)
 │
 ├── tests/                        # Test files
 │   ├── test_backend.py          # Interactive backend tests
@@ -417,7 +534,11 @@ RTSP/
 │   └── test_video_export.py     # Video export tests
 │
 ├── config/                       # Configuration files
-│   └── camera_config_example.json # Template
+│   └── app_config_example.json  # Template
+│
+├── user_data/                    # User-generated data (gitignored)
+│   ├── capture_history.json     # Session history for calendar
+│   └── video_export_presets.json # Custom video presets
 │
 └── snapshots/                    # Captured images (gitignored)
     └── YYYYMMDD/                # Date-organized folders
@@ -427,7 +548,7 @@ RTSP/
 ## Q&A
 
 **Q: Can I use multiple cameras?**
-A: Currently supports one camera per instance. Run multiple instances for multiple cameras. Save different configs and load them via **File → Load Configuration**.
+A: Currently supports one camera per instance. Run multiple instances for multiple cameras with separate config folders.
 
 **Q: Does it work on Linux/macOS?**
 A: Yes! The Python source is cross-platform. Install dependencies and FFmpeg for your OS. Windows releases include pre-built executables.
@@ -518,7 +639,53 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v2.3.0 (2025-10-20) - Latest
+### v3.0.0 (2025-12-19) - Latest
+**Major Release: Astronomical Scheduling**
+
+New third tab for automated long-term capture planning based on twilight times or manual schedules.
+
+**New Features:**
+- **Scheduling Tab**: Complete astronomical scheduling interface
+- **Twilight Calculations**: Automatic darkness window detection (civil/nautical/astronomical)
+- **Manual Time Mode**: Fixed start/end times as alternative to twilight-based scheduling
+- **Two-Month Calendar**: Visual date selection with capture history indicators
+- **Auto Video Creation**: Automatically create timelapse videos (uses Video Export tab settings)
+- **Auto Delete Snapshots**: Option to free disk space after video creation
+- **Scheduler Log**: Color-coded activity monitoring (INFO/WARNING/ERROR)
+- **Location Settings**: Latitude/longitude with hemisphere indicator
+- **Capture History**: Calendar shows captured dates even after snapshots are deleted
+- **Preset Memory**: Last selected video preset is remembered across sessions
+
+**Improvements:**
+- **Auto-save configuration** when switching tabs and before closing app (no manual save/load needed)
+- **Smart folder creation**: Browse buttons auto-create folders if they don't exist
+- Output folder paths saved as full absolute paths for clarity
+- Video Export Browse opens at exe location, Quick Select opens at configured snapshots folder
+- Scheduler correctly uses calculated twilight times
+- Default "Open video when complete" to unchecked
+- Default schedule times changed to 20:00-08:00
+- Config consolidated to `config/app_config.json`
+- User data (capture history, presets) moved to `user_data/` folder
+- Removed unused config fields for cleaner configuration
+
+**UI Improvements:**
+- Three-tab interface (Capture | Video Export | Scheduling)
+- Two-column layout for Twilight vs Manual time settings
+- Radio buttons to switch between time modes
+- Calendar legend on right side under buttons
+- Compact layout with all settings visible
+
+**Technical:**
+- New `AstroScheduler` class for background schedule monitoring
+- `TwilightCalculator` for accurate sun position calculations
+- `TwoMonthCalendar` custom widget with date status indicators
+- `CaptureHistoryManager` for persistent session tracking
+- New config fields: `use_manual_times`, `manual_start_time`, `manual_end_time`
+- Scheduler integrates with existing capture engine
+
+---
+
+### v2.3.0 (2025-10-20)
 **Major Release: Multi-Threaded Bufferless Capture**
 - **Revolutionary timestamp accuracy**: ±5 seconds throughout entire capture session (96% improvement over baseline)
 - **Multi-threaded capture engine**: Background thread continuously reads frames, discards stale ones

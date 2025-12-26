@@ -7,6 +7,7 @@ and video export capabilities.
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -15,11 +16,30 @@ from pathlib import Path
 from PIL import Image, ImageTk
 import numpy as np
 
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def get_config_path() -> Path:
+    """Get the path to the config file."""
+    return get_app_base_dir() / "config" / "app_config.json"
+
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
 from video_export_panel import VideoExportPanel
+from scheduling_panel import SchedulingPanel
+from video_export_controller import VideoExportController
+from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
+from capture_history import get_capture_history
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -84,13 +104,36 @@ class RTSPTimelapseGUI:
         self.notebook.add(self.capture_tab, text="  Capture  ")
         self.create_capture_tab()
 
-        # Tab 2: Video Export (NEW)
+        # Tab 2: Video Export
         self.video_export_panel = VideoExportPanel(
             self.notebook,
             default_snapshots_dir=self.config_manager.capture.output_folder,
             config_manager=self.config_manager
         )
         self.notebook.add(self.video_export_panel, text="  Video Export  ")
+
+        # Tab 3: Scheduling
+        self.scheduling_panel = SchedulingPanel(
+            self.notebook,
+            config_manager=self.config_manager
+        )
+        self.notebook.add(self.scheduling_panel, text="  Scheduling  ")
+
+        # Bind tab change event for auto-save
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+        # Set up scheduling panel callbacks
+        self.scheduling_panel.set_callbacks(
+            start_capture=self.start_capture,
+            stop_capture=self.stop_capture,
+            create_video=self._auto_create_video_for_date,
+            log=self.log_message
+        )
+
+        # Set up video export panel callback to get current snapshots dir from Capture tab
+        self.video_export_panel.set_snapshots_dir_callback(
+            lambda: self.output_entry.get()
+        )
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -210,7 +253,7 @@ class RTSPTimelapseGUI:
 
         self.output_entry = ttk.Entry(output_frame)
         self.output_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
-        self.output_entry.insert(0, self.config_manager.capture.output_folder)
+        self.output_entry.insert(0, self._resolve_output_path(self.config_manager.capture.output_folder))
         ToolTip(self.output_entry, CAPTURE_TOOLTIPS["output_folder"])
 
         browse_btn = ttk.Button(output_frame, text="...", width=3, command=self.browse_output_dir)
@@ -231,18 +274,6 @@ class RTSPTimelapseGUI:
         self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
         ToolTip(self.proactive_reconnect_entry, CAPTURE_TOOLTIPS["proactive_reconnect"])
         row += 1
-
-        # Config buttons
-        button_frame = ttk.Frame(config_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, pady=(10, 0))
-
-        save_config_btn = ttk.Button(button_frame, text="Save Config", command=self.save_config_ui)
-        save_config_btn.pack(side=tk.LEFT, padx=2)
-        ToolTip(save_config_btn, CAPTURE_TOOLTIPS["save_config"])
-
-        load_config_btn = ttk.Button(button_frame, text="Load Config", command=self.load_config_ui)
-        load_config_btn.pack(side=tk.LEFT, padx=2)
-        ToolTip(load_config_btn, CAPTURE_TOOLTIPS["load_config"])
 
         config_frame.columnconfigure(1, weight=1)
 
@@ -399,8 +430,6 @@ class RTSPTimelapseGUI:
 
     def setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts"""
-        self.root.bind('<Control-s>', lambda e: self.save_config_ui())
-        self.root.bind('<Control-o>', lambda e: self.load_config_ui())
         self.root.bind('<Control-t>', lambda e: self.test_connection())
         self.root.bind('<space>', lambda e: self.toggle_capture() if not self.is_capturing else None)
         self.root.bind('<Escape>', lambda e: self.stop_capture() if self.is_capturing else None)
@@ -423,14 +452,46 @@ class RTSPTimelapseGUI:
 
     def browse_output_dir(self):
         """Browse for output directory"""
-        directory = filedialog.askdirectory(initialdir=self.output_entry.get())
+        # Get current path and create if it doesn't exist
+        current_path = self.output_entry.get()
+        if current_path:
+            path = Path(current_path)
+            if not path.exists():
+                try:
+                    path.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass  # If creation fails, dialog will use default
+        directory = filedialog.askdirectory(initialdir=current_path)
         if directory:
             self.output_entry.delete(0, tk.END)
             self.output_entry.insert(0, directory)
 
+    def _resolve_output_path(self, path_str: str) -> str:
+        """Resolve output path - if relative, resolve from app base directory."""
+        path = Path(path_str)
+        if path.is_absolute():
+            return str(path)
+        else:
+            return str((get_app_base_dir() / path).resolve())
+
+    def _make_path_relative(self, path_str: str) -> str:
+        """Convert absolute path to relative if it's within app base directory."""
+        path = Path(path_str)
+        if not path.is_absolute():
+            return path_str  # Already relative
+
+        base_dir = get_app_base_dir()
+        try:
+            # Check if path is within base directory
+            rel_path = path.relative_to(base_dir)
+            return str(rel_path)
+        except ValueError:
+            # Path is not within base directory, keep absolute
+            return path_str
+
     def load_config(self):
         """Load configuration from default file"""
-        config_file = Path("camera_config.json")
+        config_file = get_config_path()
         if config_file.exists():
             success, message = self.config_manager.load_from_file(str(config_file))
             if not success:
@@ -440,63 +501,37 @@ class RTSPTimelapseGUI:
             # Try migrating from old config.py
             self.config_manager.migrate_from_old_config()
 
-    def load_config_ui(self):
-        """Load configuration from file (user initiated)"""
-        filename = filedialog.askopenfilename(
-            title="Load Configuration",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        if filename:
-            success, message = self.config_manager.load_from_file(filename)
-            if success:
-                self.update_config_ui()
-                self.log_message("SUCCESS", f"Configuration loaded from {filename}")
-                messagebox.showinfo("Success", message)
-            else:
-                self.log_message("ERROR", f"Failed to load config: {message}")
-                messagebox.showerror("Error", message)
-
-    def save_config_ui(self):
-        """Save current configuration to file"""
-        # Update config from UI
+    def save_config(self):
+        """Auto-save configuration to default file"""
         self.update_config_from_ui()
+        config_file = get_config_path()
+        # Ensure config directory exists
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.config_manager.save_to_file(str(config_file))
 
-        # Validate
-        valid, errors = self.config_manager.validate()
-        if not valid:
-            error_msg = "\n".join(errors)
-            self.log_message("ERROR", f"Invalid configuration: {error_msg}")
-            messagebox.showerror("Invalid Configuration", error_msg)
-            return
+    def _on_tab_changed(self, event=None):
+        """Auto-save when switching tabs"""
+        self.save_config()
 
-        # Save
-        filename = filedialog.asksaveasfilename(
-            title="Save Configuration",
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-            initialfile="camera_config.json"
-        )
-        if filename:
-            success, message = self.config_manager.save_to_file(filename)
-            if success:
-                self.log_message("SUCCESS", f"Configuration saved to {filename}")
-                messagebox.showinfo("Success", message)
-            else:
-                self.log_message("ERROR", f"Failed to save config: {message}")
-                messagebox.showerror("Error", message)
+    def update_config_from_ui(self, skip_schedule_times: bool = False):
+        """Update ConfigManager from UI inputs
 
-    def update_config_from_ui(self):
-        """Update ConfigManager from UI inputs"""
+        Args:
+            skip_schedule_times: If True, don't update schedule times (used when
+                               astronomical scheduler has already set the times)
+        """
         self.config_manager.camera.ip_address = self.ip_entry.get()
         self.config_manager.camera.username = self.username_entry.get()
         self.config_manager.camera.password = self.password_entry.get()
         self.config_manager.camera.stream_path = self.stream_path_entry.get()
         self.config_manager.camera.force_tcp = self.force_tcp_var.get()
 
-        self.config_manager.schedule.start_time = self.start_time_entry.get()
-        self.config_manager.schedule.end_time = self.end_time_entry.get()
+        if not skip_schedule_times:
+            self.config_manager.schedule.start_time = self.start_time_entry.get()
+            self.config_manager.schedule.end_time = self.end_time_entry.get()
 
         self.config_manager.capture.interval_seconds = int(self.interval_entry.get())
+        # Save the full path as shown in UI
         self.config_manager.capture.output_folder = self.output_entry.get()
         self.config_manager.capture.jpeg_quality = int(self.jpeg_quality_entry.get())
         self.config_manager.capture.proactive_reconnect_seconds = int(self.proactive_reconnect_entry.get())
@@ -527,7 +562,7 @@ class RTSPTimelapseGUI:
         self.interval_entry.insert(0, str(self.config_manager.capture.interval_seconds))
 
         self.output_entry.delete(0, tk.END)
-        self.output_entry.insert(0, self.config_manager.capture.output_folder)
+        self.output_entry.insert(0, self._resolve_output_path(self.config_manager.capture.output_folder))
 
         self.jpeg_quality_entry.delete(0, tk.END)
         self.jpeg_quality_entry.insert(0, str(self.config_manager.capture.jpeg_quality))
@@ -576,10 +611,14 @@ class RTSPTimelapseGUI:
         else:
             self.stop_capture()
 
-    def start_capture(self):
-        """Start the capture process"""
-        # Update config from UI
-        self.update_config_from_ui()
+    def start_capture(self, from_scheduler: bool = False):
+        """Start the capture process
+
+        Args:
+            from_scheduler: If True, called from astronomical scheduler (don't override schedule times)
+        """
+        # Update config from UI (skip schedule times if from scheduler)
+        self.update_config_from_ui(skip_schedule_times=from_scheduler)
 
         # Validate
         valid, errors = self.config_manager.validate()
@@ -848,11 +887,129 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
+    def _auto_create_video_for_date(self, date_str: str):
+        """
+        Automatically create a timelapse video for a specific date's captures.
+
+        Args:
+            date_str: Date string in YYYYMMDD format
+        """
+        self.log_message("INFO", f"[Auto Video] Starting video creation for {date_str}")
+
+        try:
+            # Get the snapshots folder for this date
+            output_folder = Path(self.config_manager.capture.output_folder)
+            date_folder = output_folder / date_str
+
+            if not date_folder.exists():
+                self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
+                return
+
+            # Get video settings from Video Export tab
+            preset_name = self.video_export_panel.preset_var.get()
+            if not preset_name:
+                preset_name = "Standard 24fps"  # Default fallback
+
+            # Get output folder from Video Export tab's output file path
+            video_output_path = self.video_export_panel.output_file_entry.get()
+            if video_output_path:
+                video_output_folder = str(Path(video_output_path).parent)
+            else:
+                video_output_folder = "videos"  # Default fallback
+
+            # Initialize preset manager and get preset
+            preset_manager = PresetManager()
+            settings = preset_manager.get_preset(preset_name)
+            if not settings:
+                self.log_message("ERROR", f"[Auto Video] Preset not found: {preset_name}")
+                return
+
+            # Don't open video automatically when creating via scheduler
+            settings.open_when_done = False
+
+            # Create video export controller
+            controller = VideoExportController()
+
+            # Check FFmpeg
+            ffmpeg_ok, ffmpeg_msg = controller.check_ffmpeg()
+            if not ffmpeg_ok:
+                self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
+                return
+
+            # Scan folder for images
+            success, collection, msg = controller.scan_folder(date_folder)
+            if not success:
+                self.log_message("ERROR", f"[Auto Video] {msg}")
+                return
+
+            self.log_message("INFO", f"[Auto Video] Found {collection.total_count} images")
+
+            # Prepare output path
+            output_path = Path(video_output_folder)
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            output_file = output_path / f"timelapse_{date_str}.{settings.format}"
+
+            # Prepare and run export
+            success, job, msg = controller.prepare_export(settings, collection, output_file)
+            if not success:
+                self.log_message("ERROR", f"[Auto Video] {msg}")
+                return
+
+            # Progress callback for logging
+            def progress_callback(status: str, progress: float, info):
+                if progress > 0:
+                    self.log_message("INFO", f"[Auto Video] {status}: {progress:.0f}%")
+
+            # Check if we should delete snapshots after video creation
+            delete_snapshots = self.config_manager.astro_schedule.delete_snapshots_after_video
+
+            # Run export (this runs in current thread, called via after() so it's safe)
+            def run_export():
+                result = controller.export_video(
+                    job,
+                    progress_callback=progress_callback,
+                    log_callback=lambda msg: self.log_message("INFO", f"[Auto Video] {msg}")
+                )
+
+                if result.success:
+                    self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
+
+                    # Update capture history to mark video as created
+                    try:
+                        capture_history = get_capture_history()
+                        capture_history.update_video_created(date_str, True)
+                    except Exception as e:
+                        self.log_message("WARNING", f"[Auto Video] Could not update capture history: {e}")
+
+                    # Delete snapshot folder if enabled
+                    if delete_snapshots:
+                        try:
+                            import shutil
+                            self.log_message("INFO", f"[Auto Video] Deleting snapshot folder: {date_folder}")
+                            shutil.rmtree(date_folder)
+                            self.log_message("INFO", f"[Auto Video] Snapshot folder deleted successfully")
+                        except Exception as e:
+                            self.log_message("ERROR", f"[Auto Video] Failed to delete snapshot folder: {e}")
+                else:
+                    self.log_message("ERROR", f"[Auto Video] Export failed: {result.message}")
+
+            # Run in a thread to avoid blocking UI
+            threading.Thread(target=run_export, daemon=True).start()
+
+        except Exception as e:
+            self.log_message("ERROR", f"[Auto Video] Failed: {e}")
+
     def on_closing(self):
         """Handle window close event"""
-        # Save UI preferences
-        self.config_manager.ui.preview_enabled = self.preview_enabled.get()
-        self.config_manager.save_to_file("camera_config.json")
+        # Clean up scheduler
+        if hasattr(self, 'scheduling_panel'):
+            self.scheduling_panel.cleanup()
+
+        # Auto-save all settings before closing
+        self.save_config()
 
         if self.is_capturing:
             if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):

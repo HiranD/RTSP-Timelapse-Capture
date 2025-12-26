@@ -7,6 +7,28 @@ the GUI through callbacks.
 """
 
 import os
+import sys
+from pathlib import Path
+
+
+def get_app_base_dir() -> Path:
+    """Get the application's base directory (where exe or main script is located)."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle - use exe's directory
+        return Path(sys.executable).parent
+    else:
+        # Running from source - use src's parent directory
+        return Path(__file__).parent.parent
+
+
+def resolve_path(path_str: str) -> Path:
+    """Resolve a path - if relative, resolve from app base directory."""
+    path = Path(path_str)
+    if path.is_absolute():
+        return path
+    else:
+        return (get_app_base_dir() / path).resolve()
+
 
 # OPTIMIZATION: Configure FFmpeg for low-latency RTSP streaming
 # Must be set BEFORE importing cv2 to take effect
@@ -643,7 +665,7 @@ class CaptureEngine:
         Returns:
             Path to date-specific directory
         """
-        base_dir = self.config["capture"]["output_folder"]
+        base_dir = resolve_path(self.config["capture"]["output_folder"])
         now = datetime.now()
         rollover_hour = self.config["schedule"]["folder_rollover_hour"]
 
@@ -652,10 +674,10 @@ class CaptureEngine:
         else:
             effective_date = now.date()
 
-        path = os.path.join(base_dir, effective_date.strftime("%Y%m%d"))
-        os.makedirs(path, exist_ok=True)
+        path = base_dir / effective_date.strftime("%Y%m%d")
+        path.mkdir(parents=True, exist_ok=True)
 
-        return path
+        return str(path)
 
     def _calculate_end_time(self) -> datetime:
         """

@@ -86,19 +86,6 @@ CAPTURE_TOOLTIPS = {
     ),
 
     # ========================================
-    # Configuration Buttons
-    # ========================================
-    "save_config": (
-        "Save current camera, schedule, and capture settings to a JSON file. "
-        "Keyboard shortcut: Ctrl+S"
-    ),
-
-    "load_config": (
-        "Load previously saved settings from a JSON configuration file. "
-        "Keyboard shortcut: Ctrl+O"
-    ),
-
-    # ========================================
     # Control Buttons
     # ========================================
     "test_connection": (
