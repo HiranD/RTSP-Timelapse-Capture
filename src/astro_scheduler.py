@@ -150,10 +150,15 @@ class AstroScheduler:
             # Also check yesterday (for overnight sessions that started yesterday)
             yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
             if yesterday not in cfg.scheduled_dates:
-                # Not scheduled
+                # Neither today nor yesterday is scheduled
                 if self.capture_active:
                     self._stop_capture_session()
                 return
+            else:
+                # Yesterday was scheduled - only continue if session is already active
+                # Don't start a NEW session for today if today isn't scheduled
+                if not self.capture_active:
+                    return  # Yesterday's session already ended, don't start new one
 
         # Check which mode we're using
         if cfg.use_manual_times:
