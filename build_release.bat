@@ -30,17 +30,17 @@ if %ERRORLEVEL% NEQ 0 (
 REM Create release folder
 echo [4/5] Creating release package...
 if not exist "release" mkdir "release"
-if exist "release\RTSP_Timelapse_v3.0.0_Windows" rmdir /s /q "release\RTSP_Timelapse_v3.0.0_Windows"
-mkdir "release\RTSP_Timelapse_v3.0.0_Windows"
+if exist "release\RTSP_Timelapse_v3.0.1_Windows" rmdir /s /q "release\RTSP_Timelapse_v3.0.1_Windows"
+mkdir "release\RTSP_Timelapse_v3.0.1_Windows"
 
 REM Copy files to release folder
-copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v3.0.0_Windows\"
-copy "README.md" "release\RTSP_Timelapse_v3.0.0_Windows\"
+copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v3.0.1_Windows\"
+copy "README.md" "release\RTSP_Timelapse_v3.0.1_Windows\"
 
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
-if not exist "release\RTSP_Timelapse_v3.0.0_Windows\bin" mkdir "release\RTSP_Timelapse_v3.0.0_Windows\bin"
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v3.0.0_Windows\bin\" >nul 2>&1
+if not exist "release\RTSP_Timelapse_v3.0.1_Windows\bin" mkdir "release\RTSP_Timelapse_v3.0.1_Windows\bin"
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v3.0.1_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
     echo   - Users don't need to install anything!
@@ -52,11 +52,11 @@ REM Create user guide
 echo [5/5] Creating user guide...
 (
 echo ================================================================================
-echo    RTSP Timelapse Capture System v3.0.0
+echo    RTSP Timelapse Capture System v3.0.1
 echo    Astronomical Scheduling - Automated Long-Term Capture Planning
 echo ================================================================================
 echo.
-echo WHAT'S NEW IN v3.0.0:
+echo WHAT'S NEW IN v3.0.1:
 echo   * NEW Scheduling Tab for automated multi-night captures
 echo   * Twilight-based scheduling ^(civil/nautical/astronomical^)
 echo   * Manual time mode as alternative to twilight calculations
@@ -217,16 +217,16 @@ echo.
 echo Thank you for using RTSP Timelapse Capture System!
 echo For the best timestamp accuracy, use the recommended settings above.
 echo.
-) > "release\RTSP_Timelapse_v3.0.0_Windows\QUICKSTART.txt"
+) > "release\RTSP_Timelapse_v3.0.1_Windows\QUICKSTART.txt"
 
 REM Copy release notes
 echo Copying release notes...
-copy "release\RELEASE_NOTES_v3.0.0.md" "release\RTSP_Timelapse_v3.0.0_Windows\"
+copy "release\RELEASE_NOTES_v3.0.1.md" "release\RTSP_Timelapse_v3.0.1_Windows\"
 
 REM Create ZIP archive
 echo Creating ZIP archive...
 cd release
-powershell Compress-Archive -Path "RTSP_Timelapse_v3.0.0_Windows" -DestinationPath "RTSP_Timelapse_v3.0.0_Windows.zip" -Force
+powershell Compress-Archive -Path "RTSP_Timelapse_v3.0.1_Windows" -DestinationPath "RTSP_Timelapse_v3.0.1_Windows.zip" -Force
 cd ..
 
 echo.
@@ -235,8 +235,8 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Executable: dist\RTSP_Timelapse.exe
-echo Release Package: release\RTSP_Timelapse_v3.0.0_Windows\
-echo ZIP Archive: release\RTSP_Timelapse_v3.0.0_Windows.zip
+echo Release Package: release\RTSP_Timelapse_v3.0.1_Windows\
+echo ZIP Archive: release\RTSP_Timelapse_v3.0.1_Windows.zip
 echo.
 echo Ready for GitHub release!
 echo.
