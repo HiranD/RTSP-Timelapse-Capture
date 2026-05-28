@@ -86,6 +86,7 @@ class AstroScheduleConfig:
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time
     manual_end_time: str = "08:00"  # HH:MM format - capture end time
+    scheduler_enabled: bool = False  # Persist "Enable automatic scheduling" toggle state
 
 
 class ConfigManager:

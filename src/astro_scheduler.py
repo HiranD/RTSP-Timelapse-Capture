@@ -30,7 +30,7 @@ class AstroScheduler:
     """
 
     # Check interval in seconds
-    CHECK_INTERVAL = 60  # Check every minute
+    CHECK_INTERVAL = 15  # Check every 15 seconds for responsive start/stop
 
     def __init__(
         self,
@@ -138,8 +138,11 @@ class AstroScheduler:
         """Check if we should start or stop capture based on schedule."""
         cfg = self.config_manager.astro_schedule
 
-        # Skip if no scheduled dates
+        # No scheduled dates: stop any active session, then bail.
+        # (e.g. user cleared the calendar mid-capture)
         if not cfg.scheduled_dates:
+            if self.capture_active:
+                self._stop_capture_session()
             return
 
         now = datetime.now()
