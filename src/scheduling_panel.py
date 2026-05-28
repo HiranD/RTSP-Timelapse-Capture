@@ -418,6 +418,9 @@ class SchedulingPanel(ttk.Frame):
         if cfg.scheduled_dates:
             self.calendar.set_selected_dates(set(cfg.scheduled_dates))
 
+        # Scheduler enabled state (UI only — actual restart happens via restore_scheduler_state)
+        self.scheduler_enabled_var.set(cfg.scheduler_enabled)
+
         # Update twilight calculator
         self._update_twilight_calculator()
         self._update_hemisphere_display()
@@ -463,6 +466,9 @@ class SchedulingPanel(ttk.Frame):
         cfg.auto_create_video = self.auto_video_var.get()
         cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
+
+        # Scheduler enabled state
+        cfg.scheduler_enabled = self.scheduler_enabled_var.get()
 
         # Save to file
         self.config_manager.save_to_file()
@@ -626,6 +632,7 @@ class SchedulingPanel(ttk.Frame):
             self._start_scheduler()
         else:
             self._stop_scheduler()
+        self._save_to_config()
 
     def _start_scheduler(self):
         """Start the astronomical scheduler"""
@@ -777,6 +784,15 @@ class SchedulingPanel(ttk.Frame):
         self.stop_capture_callback = stop_capture
         self.create_video_callback = create_video
         self.log_callback = log
+
+    def restore_scheduler_state(self):
+        """Re-arm AstroScheduler if it was enabled at last shutdown.
+
+        Must be called by the main GUI after set_callbacks(), because
+        _start_scheduler() depends on capture-control callbacks being wired.
+        """
+        if self.config_manager.astro_schedule.scheduler_enabled:
+            self._start_scheduler()
 
     def cleanup(self):
         """Clean up resources when panel is destroyed"""

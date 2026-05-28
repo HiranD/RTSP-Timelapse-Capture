@@ -130,6 +130,9 @@ class RTSPTimelapseGUI:
             log=self.log_message
         )
 
+        # Restore scheduler enabled state from last session (must be after set_callbacks)
+        self.scheduling_panel.restore_scheduler_state()
+
         # Set up video export panel callback to get current snapshots dir from Capture tab
         self.video_export_panel.set_snapshots_dir_callback(
             lambda: self.output_entry.get()
