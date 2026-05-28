@@ -793,6 +793,11 @@ class SchedulingPanel(ttk.Frame):
         """
         if self.config_manager.astro_schedule.scheduler_enabled:
             self._start_scheduler()
+            # _start_scheduler() unchecks the box if it fails (e.g. invalid
+            # location); persist that so we don't retry the same failing
+            # restore on every launch.
+            if not self.scheduler_enabled_var.get():
+                self._save_to_config()
 
     def cleanup(self):
         """Clean up resources when panel is destroyed"""
