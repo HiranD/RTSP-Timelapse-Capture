@@ -2,7 +2,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)
+![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -639,7 +639,17 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.0.1 (2026-01-01) - Latest
+### v3.1.0 (2026-05-29) - Latest
+**Persistent Scheduling**
+
+- **New**: "Enable automatic scheduling" now persists across restarts and re-arms the scheduler on launch — ideal for unattended/headless rigs (closes #3)
+- **Improved**: Scheduler now checks every 15 seconds instead of 60, so it reacts faster to calendar changes and twilight/manual window boundaries
+- **Fixed**: Clearing the calendar while a capture is running now stops the session cleanly (and runs post-processing) instead of orphaning it
+- **Fixed**: If a startup restore fails (e.g. invalid location), the disabled state is now saved so it doesn't retry the same failing restore every launch
+
+---
+
+### v3.0.1 (2026-01-01)
 **Bug Fix Release**
 
 - **Fixed**: Scheduler no longer starts capture on unscheduled dates

@@ -2,8 +2,11 @@
 REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
+REM === Release version (update this one line per release) ===
+set "VERSION=3.1.0"
+
 echo ========================================
-echo RTSP Timelapse - Windows Release Build
+echo RTSP Timelapse - Windows Release Build v%VERSION%
 echo ========================================
 echo.
 
@@ -30,17 +33,17 @@ if %ERRORLEVEL% NEQ 0 (
 REM Create release folder
 echo [4/5] Creating release package...
 if not exist "release" mkdir "release"
-if exist "release\RTSP_Timelapse_v3.0.1_Windows" rmdir /s /q "release\RTSP_Timelapse_v3.0.1_Windows"
-mkdir "release\RTSP_Timelapse_v3.0.1_Windows"
+if exist "release\RTSP_Timelapse_v%VERSION%_Windows" rmdir /s /q "release\RTSP_Timelapse_v%VERSION%_Windows"
+mkdir "release\RTSP_Timelapse_v%VERSION%_Windows"
 
 REM Copy files to release folder
-copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v3.0.1_Windows\"
-copy "README.md" "release\RTSP_Timelapse_v3.0.1_Windows\"
+copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v%VERSION%_Windows\"
+copy "README.md" "release\RTSP_Timelapse_v%VERSION%_Windows\"
 
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
-if not exist "release\RTSP_Timelapse_v3.0.1_Windows\bin" mkdir "release\RTSP_Timelapse_v3.0.1_Windows\bin"
-copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v3.0.1_Windows\bin\" >nul 2>&1
+if not exist "release\RTSP_Timelapse_v%VERSION%_Windows\bin" mkdir "release\RTSP_Timelapse_v%VERSION%_Windows\bin"
+copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v%VERSION%_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
     echo   - Users don't need to install anything!
@@ -52,19 +55,16 @@ REM Create user guide
 echo [5/5] Creating user guide...
 (
 echo ================================================================================
-echo    RTSP Timelapse Capture System v3.0.1
+echo    RTSP Timelapse Capture System v%VERSION%
 echo    Astronomical Scheduling - Automated Long-Term Capture Planning
 echo ================================================================================
 echo.
-echo WHAT'S NEW IN v3.0.1:
-echo   * NEW Scheduling Tab for automated multi-night captures
-echo   * Twilight-based scheduling ^(civil/nautical/astronomical^)
-echo   * Manual time mode as alternative to twilight calculations
-echo   * Two-month calendar with capture history indicators
-echo   * Auto video creation after each night's session
-echo   * Capture history tracking ^(shows past captures on calendar^)
-echo   * Last selected preset remembered across sessions
-echo   * Auto-save config on tab switch and app close ^(no manual save needed^)
+echo WHAT'S NEW IN v%VERSION%:
+echo   * Persistent scheduling: "Enable automatic scheduling" now stays ON across restarts
+echo   * Scheduler auto-re-arms on launch - ideal for unattended/headless rigs
+echo   * More responsive scheduler ^(checks every 15s instead of 60s^)
+echo   * Fixed: clearing the calendar mid-capture now stops the session cleanly
+echo   * Fixed: disabled state is saved if a startup restore fails
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
@@ -217,16 +217,16 @@ echo.
 echo Thank you for using RTSP Timelapse Capture System!
 echo For the best timestamp accuracy, use the recommended settings above.
 echo.
-) > "release\RTSP_Timelapse_v3.0.1_Windows\QUICKSTART.txt"
+) > "release\RTSP_Timelapse_v%VERSION%_Windows\QUICKSTART.txt"
 
 REM Copy release notes
 echo Copying release notes...
-copy "release\RELEASE_NOTES_v3.0.1.md" "release\RTSP_Timelapse_v3.0.1_Windows\"
+copy "release\RELEASE_NOTES_v%VERSION%.md" "release\RTSP_Timelapse_v%VERSION%_Windows\"
 
 REM Create ZIP archive
 echo Creating ZIP archive...
 cd release
-powershell Compress-Archive -Path "RTSP_Timelapse_v3.0.1_Windows" -DestinationPath "RTSP_Timelapse_v3.0.1_Windows.zip" -Force
+powershell Compress-Archive -Path "RTSP_Timelapse_v%VERSION%_Windows" -DestinationPath "RTSP_Timelapse_v%VERSION%_Windows.zip" -Force
 cd ..
 
 echo.
@@ -235,8 +235,8 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Executable: dist\RTSP_Timelapse.exe
-echo Release Package: release\RTSP_Timelapse_v3.0.1_Windows\
-echo ZIP Archive: release\RTSP_Timelapse_v3.0.1_Windows.zip
+echo Release Package: release\RTSP_Timelapse_v%VERSION%_Windows\
+echo ZIP Archive: release\RTSP_Timelapse_v%VERSION%_Windows.zip
 echo.
 echo Ready for GitHub release!
 echo.

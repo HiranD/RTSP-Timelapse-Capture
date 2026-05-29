@@ -72,23 +72,33 @@ class AstroScheduler:
             return
 
         self.running = True
-        self.stop_event.clear()
+        # Fresh event per run so a previous (stopping) thread keeps its own
+        # signalled event and exits, even though stop() no longer joins it.
+        self.stop_event = threading.Event()
 
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread = threading.Thread(
+            target=self._monitor_loop, args=(self.stop_event,), daemon=True
+        )
         self.monitor_thread.start()
 
         self._log("INFO", "Astronomical scheduler started")
 
     def stop(self):
-        """Stop the scheduler monitoring thread."""
+        """Stop the scheduler monitoring thread.
+
+        Signals the monitor thread and returns immediately — we deliberately do
+        NOT join here. stop() is called from the GUI thread (the "Enable
+        automatic scheduling" toggle), and joining would freeze the UI until the
+        daemon thread unwinds, visible as a lag before the checkbox clears. The
+        thread is a daemon and exits on its own once its stop_event is set; each
+        run owns its event (see start()), so this can't race a later restart.
+        """
         if not self.running:
             return
 
         self.running = False
         self.stop_event.set()
-
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=5.0)
+        self.monitor_thread = None
 
         self._log("INFO", "Astronomical scheduler stopped")
 
@@ -119,18 +129,23 @@ class AstroScheduler:
             end_offset_minutes=cfg.end_offset_minutes
         )
 
-    def _monitor_loop(self):
-        """Main monitoring loop - checks schedule and controls capture."""
+    def _monitor_loop(self, stop_event: threading.Event):
+        """Main monitoring loop - checks schedule and controls capture.
+
+        Uses the per-run ``stop_event`` passed in by start() (not
+        ``self.stop_event``) so a stopping thread always watches its own event
+        and exits cleanly even after a new run has begun.
+        """
         self._log("INFO", "Scheduler monitor loop started")
 
-        while not self.stop_event.is_set():
+        while not stop_event.is_set():
             try:
                 self._check_schedule()
             except Exception as e:
                 self._log("ERROR", f"Scheduler error: {e}")
 
             # Wait for next check interval
-            self.stop_event.wait(timeout=self.CHECK_INTERVAL)
+            stop_event.wait(timeout=self.CHECK_INTERVAL)
 
         self._log("INFO", "Scheduler monitor loop ended")
 
