@@ -2,7 +2,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -639,7 +639,15 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.1.0 (2026-05-29) - Latest
+### v3.2.0 (2026-05-29) - Latest
+**Unattended Startup**
+
+- **New**: "Start automatically when Windows starts" toggle on the Scheduling tab. Registers the app to launch at user logon (per-user Windows startup, no admin). Paired with persistent automatic scheduling, the rig resumes capture on its own after a reboot — boot → login → app launches → scheduler re-arms.
+  - Note: a GUI app needs a desktop session, so enable Windows auto-login on a headless machine.
+
+---
+
+### v3.1.0 (2026-05-29)
 **Persistent Scheduling**
 
 - **New**: "Enable automatic scheduling" now persists across restarts and re-arms the scheduler on launch — ideal for unattended/headless rigs (closes #3)

@@ -37,9 +37,17 @@ class IsEnabledTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"winreg": fake}):
             self.assertTrue(startup_manager.is_enabled())
 
-    def test_missing_value_returns_false(self):
+    def test_missing_run_key_returns_false(self):
+        # The whole Run key is absent -> OpenKey raises.
         fake = _fake_winreg()
         fake.OpenKey.side_effect = FileNotFoundError
+        with mock.patch.dict(sys.modules, {"winreg": fake}):
+            self.assertFalse(startup_manager.is_enabled())
+
+    def test_key_present_but_value_absent_returns_false(self):
+        # Run key exists but our value hasn't been written -> QueryValueEx raises.
+        fake = _fake_winreg()
+        fake.QueryValueEx.side_effect = FileNotFoundError
         with mock.patch.dict(sys.modules, {"winreg": fake}):
             self.assertFalse(startup_manager.is_enabled())
 

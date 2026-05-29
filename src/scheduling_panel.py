@@ -669,8 +669,8 @@ class SchedulingPanel(ttk.Frame):
         if success:
             self._log("INFO", message)
         else:
-            # Revert the checkbox to the actual state and report why.
-            self.start_with_windows_var.set(not want_enabled)
+            # Resync the checkbox to the registry's actual state and report why.
+            self.start_with_windows_var.set(startup_manager.is_enabled())
             self._log("ERROR", message)
 
     def _start_scheduler(self):

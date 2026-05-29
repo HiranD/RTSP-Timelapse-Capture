@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.1.0"
+set "VERSION=3.2.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -60,11 +60,11 @@ echo    Astronomical Scheduling - Automated Long-Term Capture Planning
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * Persistent scheduling: "Enable automatic scheduling" now stays ON across restarts
-echo   * Scheduler auto-re-arms on launch - ideal for unattended/headless rigs
-echo   * More responsive scheduler ^(checks every 15s instead of 60s^)
-echo   * Fixed: clearing the calendar mid-capture now stops the session cleanly
-echo   * Fixed: disabled state is saved if a startup restore fails
+echo   * NEW "Start automatically when Windows starts" toggle ^(Scheduling tab^)
+echo   * Pairs with persistent scheduling for a fully unattended rig:
+echo     boot -^> login -^> app launches -^> scheduler re-arms on its own
+echo   * Registers via the per-user Windows startup ^(no admin needed^)
+echo   * Reminder: enable Windows auto-login on a headless machine
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
