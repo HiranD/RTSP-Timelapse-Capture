@@ -47,6 +47,9 @@ def _launch_command() -> str:
         python = str(pythonw)
     # run_gui.py lives at the repo root (parent of this src/ package).
     launcher = Path(__file__).resolve().parent.parent / "run_gui.py"
+    if not launcher.exists():
+        # Don't register a command that would silently fail at every boot.
+        raise FileNotFoundError(f"Launcher not found: {launcher}")
     return f'"{python}" "{launcher}"'
 
 
@@ -75,8 +78,11 @@ def enable() -> tuple[bool, str]:
 
     import winreg
 
-    command = _launch_command()
     try:
+        # _launch_command() may raise FileNotFoundError (an OSError subclass)
+        # if the source launcher is missing — caught here so the caller can
+        # revert the checkbox rather than register a broken entry.
+        command = _launch_command()
         # Creates the key if missing, opens it for writing otherwise.
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, command)

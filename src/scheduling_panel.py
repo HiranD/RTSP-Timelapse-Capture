@@ -396,9 +396,6 @@ class SchedulingPanel(ttk.Frame):
         clear_btn = ttk.Button(parent, text="Clear Log", command=self._clear_log)
         clear_btn.grid(row=3, column=0, sticky="e", pady=(5, 0))
 
-        # Update row weight for log area
-        parent.rowconfigure(2, weight=1)
-
     def _clear_log(self):
         """Clear the log text widget"""
         self.log_text.config(state=tk.NORMAL)
