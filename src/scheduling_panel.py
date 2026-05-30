@@ -746,6 +746,15 @@ class SchedulingPanel(ttk.Frame):
 
     def _update_scheduler_status(self):
         """Update the scheduler status display"""
+        # Central teardown guard: this is dispatched via after(0, ...) from the
+        # monitor thread (start/stop capture) and from the periodic poll, so it
+        # may fire after cleanup() has destroyed the widget. Bail out instead of
+        # configuring a dead label and raising TclError.
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
         if self.scheduler and self.scheduler.is_running():
             status = self.scheduler.get_status()
             if status.get("capture_active"):
