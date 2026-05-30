@@ -65,7 +65,7 @@
 
 ### Scheduling Tab (NEW in v3.0)
 ![Scheduling Interface](screenshots/Scheduling_tab.jpg)
-*Astronomical scheduling interface with twilight/manual time modes, two-month calendar, auto video creation, and scheduler log.*
+*Astronomical scheduling interface: twilight or manual time modes, two-month capture calendar (captured / scheduled / past), auto video creation with optional snapshot cleanup, start-automatically-with-Windows, a live scheduler status indicator, and scheduler log.*
 
 ---
 
