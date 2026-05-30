@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from astro_scheduler import AstroScheduler  # noqa: E402
 
 
-class StopCaptureSessionOrderingTest(unittest.TestCase):
+class SchedulerStateOrderingTest(unittest.TestCase):
     def test_capture_active_cleared_before_on_stop_capture(self):
         seen = {}
 

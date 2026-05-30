@@ -10,7 +10,6 @@ Features:
 - Auto video creation settings
 """
 
-import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
 from typing import Optional, Set
@@ -69,13 +68,12 @@ class SchedulingPanel(ttk.Frame):
         self.create_video_callback = None
         self.log_callback = None
 
-        # Session tracking for capture history.
-        # session_start_time is written and read on the scheduler's monitor
-        # thread (_on_scheduler_start_capture / _on_session_complete ->
-        # _record_capture_session). _session_start_lock guards every access so a
-        # future main-thread reader (e.g. a UI display) can't introduce a race.
+        # Session tracking for capture history. Invariant: session_start_time is
+        # only ever written and read on the scheduler's monitor thread
+        # (_on_scheduler_start_capture writes; _on_session_complete /
+        # _record_capture_session read and clear), so it needs no lock. Add one
+        # if a main-thread reader is ever introduced.
         self.session_start_time: Optional[datetime] = None
-        self._session_start_lock = threading.Lock()
         self.capture_history = get_capture_history()
 
         # Cancellation handle for the periodic status poll (see cleanup()).
@@ -769,14 +767,12 @@ class SchedulingPanel(ttk.Frame):
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
         # Called from the scheduler's monitor thread. UI work is marshalled to
-        # the main thread via after(). session_start_time is written here on the
-        # monitor thread and read elsewhere (possibly on the main thread), so all
-        # access goes through _session_start_lock to make the contract
-        # self-enforcing.
+        # the main thread via after(). session_start_time is written here and
+        # read later in _record_capture_session, both on this same monitor
+        # thread (see __init__), so no locking is needed.
         self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
-        with self._session_start_lock:
-            self.session_start_time = datetime.now()
+        self.session_start_time = datetime.now()
         if self.start_capture_callback:
             # Use after() to call on main thread with from_scheduler=True
             # This tells start_capture to use the scheduler's times, not the UI times
@@ -807,9 +803,9 @@ class SchedulingPanel(ttk.Frame):
         self._record_capture_session(date_str)
 
         # The start time has now been consumed; clear it so a stray second
-        # on_session_complete can't silently reuse a stale value.
-        with self._session_start_lock:
-            self.session_start_time = None
+        # on_session_complete can't silently reuse a stale value. Same monitor
+        # thread as the write/read, so no lock needed (see __init__).
+        self.session_start_time = None
 
         # auto_video_var is a tk.BooleanVar - read it (and kick off the video) on
         # the main thread.
@@ -817,6 +813,13 @@ class SchedulingPanel(ttk.Frame):
 
     def _maybe_autocreate_video(self, date_str: str):
         """Runs on the main thread - safe to read auto_video_var here."""
+        # Guard against teardown between scheduling this callback and it firing:
+        # if the widget is gone, auto_video_var.get() would raise TclError.
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
@@ -833,10 +836,9 @@ class SchedulingPanel(ttk.Frame):
             if date_folder.exists():
                 image_count = len(list(date_folder.glob("*.jpg"))) + len(list(date_folder.glob("*.jpeg")))
 
-            # Get session times (read under the lock - see __init__)
+            # Get session times (monitor-thread only - see __init__)
             end_time = datetime.now()
-            with self._session_start_lock:
-                start_time = self.session_start_time or end_time
+            start_time = self.session_start_time or end_time
 
             # Record to history
             self.capture_history.record_session(
