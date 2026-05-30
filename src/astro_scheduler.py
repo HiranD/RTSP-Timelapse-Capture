@@ -299,10 +299,13 @@ class AstroScheduler:
 
         self._log("INFO", f"Stopping scheduled capture session for {session_date}")
 
+        # Clear the flag BEFORE notifying the UI: on_stop_capture() triggers the
+        # status-label refresh, which must read the post-stop state ("waiting"),
+        # not the stale "Capturing".
+        self.capture_active = False
+
         if self.on_stop_capture:
             self.on_stop_capture()
-
-        self.capture_active = False
 
         # Trigger session complete callback (for auto video creation)
         if session_date and self.on_session_complete:

@@ -77,6 +77,17 @@ class SchedulingPanel(ttk.Frame):
         self._load_from_config()
         self._update_tonight_display()
 
+        # Self-healing status refresh: keep the scheduler status label in sync
+        # with the scheduler's real state, so it can never get stuck (e.g. on
+        # "Capturing" after a session ends). Runs on the main thread.
+        self._poll_scheduler_status()
+
+    def _poll_scheduler_status(self):
+        """Periodically resync the status label to the scheduler's real state."""
+        self._update_scheduler_status()
+        # ~2s cadence is plenty for a status label and is negligible cost.
+        self.after(2000, self._poll_scheduler_status)
+
     def _create_widgets(self):
         """Create all panel widgets"""
         # Main container with padding
@@ -735,7 +746,9 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
-        self._update_scheduler_status()
+        # Called from the scheduler's monitor thread - marshal UI work to the
+        # main thread via after().
+        self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
         self.session_start_time = datetime.now()
         if self.start_capture_callback:
@@ -745,7 +758,9 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
-        self._update_scheduler_status()
+        # Called from the scheduler's monitor thread - marshal UI work to the
+        # main thread via after().
+        self.after(0, self._update_scheduler_status)
         if self.stop_capture_callback:
             # Use after() to call on main thread
             self.after(0, self.stop_capture_callback)
