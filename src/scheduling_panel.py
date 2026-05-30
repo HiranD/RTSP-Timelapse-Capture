@@ -93,6 +93,10 @@ class SchedulingPanel(ttk.Frame):
 
     def _poll_scheduler_status(self):
         """Periodically resync the status label to the scheduler's real state."""
+        # This runs on the main thread and reads scheduler.capture_active (via
+        # _update_scheduler_status -> get_status), which the monitor thread
+        # writes. Unlike session_start_time, capture_active is a single boolean
+        # flag whose read is GIL-atomic in CPython, so no lock is needed here.
         self._update_scheduler_status()
         # ~2s cadence is plenty for a status label and is negligible cost.
         # Store the handle so cleanup() can cancel the loop on teardown.
@@ -774,11 +778,11 @@ class SchedulingPanel(ttk.Frame):
         """Called by scheduler when it's time to stop capture"""
         # Called from the scheduler's monitor thread - marshal UI work to the
         # main thread via after().
-        # Ordering is intentional: the status refresh is enqueued before
-        # stop_capture_callback, so on the next main-thread tick the label flips
-        # to "Active (waiting)" while the capture engine is still winding down on
-        # that same tick. This is correct, not a race - the scheduler's
-        # capture_active flag is already False by the time we get here.
+        # Ordering is intentional: the status refresh reflects the scheduler's
+        # already-updated state (capture_active is False by now), so the label
+        # flips to "Active (waiting)" even though stop_capture_callback may still
+        # be unwinding the capture engine on the same tick. The 2s poll
+        # reconciles any transient mismatch.
         self.after(0, self._update_scheduler_status)
         if self.stop_capture_callback:
             # Use after() to call on main thread

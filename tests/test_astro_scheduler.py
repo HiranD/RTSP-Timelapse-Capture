@@ -64,6 +64,28 @@ class StopCaptureSessionOrderingTest(unittest.TestCase):
         )
         self.assertTrue(scheduler.capture_active)
 
+    def test_capture_active_set_before_on_start_capture_manual(self):
+        # Same contract for the manual-time start path, which is a parallel
+        # code path to _start_capture_session.
+        seen = {}
+
+        def on_start():
+            seen["capture_active"] = scheduler.capture_active
+
+        scheduler = AstroScheduler(
+            config_manager=mock.MagicMock(),
+            on_start_capture=on_start,
+            on_log=lambda *args: None,
+        )
+
+        scheduler._start_capture_session_manual("2026-05-29", "22:00", "05:00")
+
+        self.assertTrue(
+            seen["capture_active"],
+            "on_start_capture must observe capture_active already set (manual path)",
+        )
+        self.assertTrue(scheduler.capture_active)
+
     def test_session_complete_still_fires_after_stop(self):
         completed = []
         scheduler = AstroScheduler(
