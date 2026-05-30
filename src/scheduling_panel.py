@@ -754,7 +754,10 @@ class SchedulingPanel(ttk.Frame):
         # the main thread via after(). session_start_time below is intentionally
         # set here on the monitor thread: it is read on that same thread in
         # _record_capture_session (via _on_session_complete), so no marshalling
-        # is needed.
+        # is needed. Contract: session_start_time must ONLY be written/read on
+        # the monitor thread. If any future code needs it on the main thread
+        # (e.g. to display the start time in the UI), guard it with a lock or
+        # marshal access, otherwise that read would be a silent data race.
         self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
         self.session_start_time = datetime.now()
@@ -767,6 +770,11 @@ class SchedulingPanel(ttk.Frame):
         """Called by scheduler when it's time to stop capture"""
         # Called from the scheduler's monitor thread - marshal UI work to the
         # main thread via after().
+        # Ordering is intentional: the status refresh is enqueued before
+        # stop_capture_callback, so on the next main-thread tick the label flips
+        # to "Active (waiting)" while the capture engine is still winding down on
+        # that same tick. This is correct, not a race - the scheduler's
+        # capture_active flag is already False by the time we get here.
         self.after(0, self._update_scheduler_status)
         if self.stop_capture_callback:
             # Use after() to call on main thread
