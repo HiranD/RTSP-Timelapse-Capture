@@ -10,6 +10,7 @@ Features:
 - Auto video creation settings
 """
 
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
 from typing import Optional, Set
@@ -68,8 +69,13 @@ class SchedulingPanel(ttk.Frame):
         self.create_video_callback = None
         self.log_callback = None
 
-        # Session tracking for capture history
+        # Session tracking for capture history.
+        # session_start_time is written on the scheduler's monitor thread and
+        # read both there (_record_capture_session) and potentially on the main
+        # thread (the 2s status poll / future UI). _session_start_lock makes that
+        # contract self-enforcing rather than comment-enforced.
         self.session_start_time: Optional[datetime] = None
+        self._session_start_lock = threading.Lock()
         self.capture_history = get_capture_history()
 
         # Cancellation handle for the periodic status poll (see cleanup()).
@@ -751,16 +757,14 @@ class SchedulingPanel(ttk.Frame):
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
         # Called from the scheduler's monitor thread. UI work is marshalled to
-        # the main thread via after(). session_start_time below is intentionally
-        # set here on the monitor thread: it is read on that same thread in
-        # _record_capture_session (via _on_session_complete), so no marshalling
-        # is needed. Contract: session_start_time must ONLY be written/read on
-        # the monitor thread. If any future code needs it on the main thread
-        # (e.g. to display the start time in the UI), guard it with a lock or
-        # marshal access, otherwise that read would be a silent data race.
+        # the main thread via after(). session_start_time is written here on the
+        # monitor thread and read elsewhere (possibly on the main thread), so all
+        # access goes through _session_start_lock to make the contract
+        # self-enforcing.
         self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
-        self.session_start_time = datetime.now()
+        with self._session_start_lock:
+            self.session_start_time = datetime.now()
         if self.start_capture_callback:
             # Use after() to call on main thread with from_scheduler=True
             # This tells start_capture to use the scheduler's times, not the UI times
@@ -804,9 +808,10 @@ class SchedulingPanel(ttk.Frame):
             if date_folder.exists():
                 image_count = len(list(date_folder.glob("*.jpg"))) + len(list(date_folder.glob("*.jpeg")))
 
-            # Get session times
+            # Get session times (read under the lock - see __init__)
             end_time = datetime.now()
-            start_time = self.session_start_time or end_time
+            with self._session_start_lock:
+                start_time = self.session_start_time or end_time
 
             # Record to history
             self.capture_history.record_session(

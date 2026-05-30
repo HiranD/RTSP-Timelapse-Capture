@@ -39,6 +39,31 @@ class StopCaptureSessionOrderingTest(unittest.TestCase):
         )
         self.assertFalse(scheduler.capture_active)
 
+    def test_capture_active_set_before_on_start_capture(self):
+        # Symmetric to the stop-path test: lock in that capture_active is already
+        # True when on_start_capture fires, so a UI status refresh reads
+        # "Capturing" rather than a stale "Active (waiting)".
+        seen = {}
+
+        def on_start():
+            seen["capture_active"] = scheduler.capture_active
+
+        scheduler = AstroScheduler(
+            config_manager=mock.MagicMock(),
+            on_start_capture=on_start,
+            on_log=lambda *args: None,
+        )
+        window = mock.MagicMock()
+        window.date.strftime.return_value = "20260529"
+
+        scheduler._start_capture_session(window)
+
+        self.assertTrue(
+            seen["capture_active"],
+            "on_start_capture must observe capture_active already set",
+        )
+        self.assertTrue(scheduler.capture_active)
+
     def test_session_complete_still_fires_after_stop(self):
         completed = []
         scheduler = AstroScheduler(
