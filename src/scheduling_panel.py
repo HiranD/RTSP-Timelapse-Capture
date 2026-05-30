@@ -70,10 +70,10 @@ class SchedulingPanel(ttk.Frame):
         self.log_callback = None
 
         # Session tracking for capture history.
-        # session_start_time is written on the scheduler's monitor thread and
-        # read both there (_record_capture_session) and potentially on the main
-        # thread (the 2s status poll / future UI). _session_start_lock makes that
-        # contract self-enforcing rather than comment-enforced.
+        # session_start_time is written and read on the scheduler's monitor
+        # thread (_on_scheduler_start_capture / _on_session_complete ->
+        # _record_capture_session). _session_start_lock guards every access so a
+        # future main-thread reader (e.g. a UI display) can't introduce a race.
         self.session_start_time: Optional[datetime] = None
         self._session_start_lock = threading.Lock()
         self.capture_history = get_capture_history()
@@ -797,21 +797,26 @@ class SchedulingPanel(ttk.Frame):
             self.after(0, self.stop_capture_callback)
 
     def _on_session_complete(self, date_str: str):
-        """Called by the scheduler on its monitor thread when a session completes.
-
-        Marshal the whole handler to the main thread: it reads auto_video_var
-        (a tk.BooleanVar), which is not safe to touch off the main thread.
-        """
-        self.after(0, lambda: self._handle_session_complete(date_str))
-
-    def _handle_session_complete(self, date_str: str):
-        """Runs on the main thread - see _on_session_complete."""
+        """Called by the scheduler on its monitor thread when a session completes."""
         self._log("INFO", f"Session complete for {date_str}")
 
-        # Record session to capture history
+        # Record to history on this (monitor) thread on purpose: it globs the
+        # snapshot directory (file I/O that could block the Tk event loop on a
+        # large session), and the only Tk it touches (_log, calendar refresh) is
+        # already marshalled via after() internally.
         self._record_capture_session(date_str)
 
-        # Check if auto video creation is enabled
+        # The start time has now been consumed; clear it so a stray second
+        # on_session_complete can't silently reuse a stale value.
+        with self._session_start_lock:
+            self.session_start_time = None
+
+        # auto_video_var is a tk.BooleanVar - read it (and kick off the video) on
+        # the main thread.
+        self.after(0, lambda: self._maybe_autocreate_video(date_str))
+
+    def _maybe_autocreate_video(self, date_str: str):
+        """Runs on the main thread - safe to read auto_video_var here."""
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
