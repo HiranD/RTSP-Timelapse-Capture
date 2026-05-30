@@ -93,6 +93,14 @@ class SchedulingPanel(ttk.Frame):
 
     def _poll_scheduler_status(self):
         """Periodically resync the status label to the scheduler's real state."""
+        # Guard against a callback that was already dispatched into the Tk event
+        # loop before cleanup()/after_cancel ran: if the widget is gone, bail out
+        # instead of touching a torn-down widget and raising TclError.
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
         # This runs on the main thread and reads scheduler.capture_active (via
         # _update_scheduler_status -> get_status), which the monitor thread
         # writes. Unlike session_start_time, capture_active is a single boolean
@@ -789,7 +797,15 @@ class SchedulingPanel(ttk.Frame):
             self.after(0, self.stop_capture_callback)
 
     def _on_session_complete(self, date_str: str):
-        """Called by scheduler when a capture session completes"""
+        """Called by the scheduler on its monitor thread when a session completes.
+
+        Marshal the whole handler to the main thread: it reads auto_video_var
+        (a tk.BooleanVar), which is not safe to touch off the main thread.
+        """
+        self.after(0, lambda: self._handle_session_complete(date_str))
+
+    def _handle_session_complete(self, date_str: str):
+        """Runs on the main thread - see _on_session_complete."""
         self._log("INFO", f"Session complete for {date_str}")
 
         # Record session to capture history
@@ -800,7 +816,7 @@ class SchedulingPanel(ttk.Frame):
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
                 # Pass the date string so the callback can find the right folder
-                self.after(0, lambda: self.create_video_callback(date_str))
+                self.create_video_callback(date_str)
 
     def _record_capture_session(self, date_str: str):
         """Record a completed capture session to history"""
