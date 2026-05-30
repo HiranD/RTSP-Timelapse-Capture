@@ -72,6 +72,9 @@ class SchedulingPanel(ttk.Frame):
         self.session_start_time: Optional[datetime] = None
         self.capture_history = get_capture_history()
 
+        # Cancellation handle for the periodic status poll (see cleanup()).
+        self._status_poll_id: Optional[str] = None
+
         # Create UI
         self._create_widgets()
         self._load_from_config()
@@ -86,7 +89,8 @@ class SchedulingPanel(ttk.Frame):
         """Periodically resync the status label to the scheduler's real state."""
         self._update_scheduler_status()
         # ~2s cadence is plenty for a status label and is negligible cost.
-        self.after(2000, self._poll_scheduler_status)
+        # Store the handle so cleanup() can cancel the loop on teardown.
+        self._status_poll_id = self.after(2000, self._poll_scheduler_status)
 
     def _create_widgets(self):
         """Create all panel widgets"""
@@ -855,6 +859,10 @@ class SchedulingPanel(ttk.Frame):
 
     def cleanup(self):
         """Clean up resources when panel is destroyed"""
+        # Stop the periodic status poll so it can't fire on a torn-down widget.
+        if self._status_poll_id is not None:
+            self.after_cancel(self._status_poll_id)
+            self._status_poll_id = None
         if self.scheduler:
             self.scheduler.stop()
             self.scheduler = None
