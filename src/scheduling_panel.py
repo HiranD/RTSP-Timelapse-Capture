@@ -750,8 +750,11 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
-        # Called from the scheduler's monitor thread - marshal UI work to the
-        # main thread via after().
+        # Called from the scheduler's monitor thread. UI work is marshalled to
+        # the main thread via after(). session_start_time below is intentionally
+        # set here on the monitor thread: it is read on that same thread in
+        # _record_capture_session (via _on_session_complete), so no marshalling
+        # is needed.
         self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
         self.session_start_time = datetime.now()
