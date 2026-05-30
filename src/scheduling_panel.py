@@ -89,15 +89,20 @@ class SchedulingPanel(ttk.Frame):
         # "Capturing" after a session ends). Runs on the main thread.
         self._poll_scheduler_status()
 
+    def _widget_alive(self) -> bool:
+        """True if this widget still exists. Used by after() callbacks that may
+        fire after cleanup()/destroy, to avoid touching a torn-down widget and
+        raising TclError."""
+        try:
+            return bool(self.winfo_exists())
+        except tk.TclError:
+            return False
+
     def _poll_scheduler_status(self):
         """Periodically resync the status label to the scheduler's real state."""
-        # Guard against a callback that was already dispatched into the Tk event
-        # loop before cleanup()/after_cancel ran: if the widget is gone, bail out
-        # instead of touching a torn-down widget and raising TclError.
-        try:
-            if not self.winfo_exists():
-                return
-        except tk.TclError:
+        # Guard against a callback dispatched into the Tk event loop before
+        # cleanup()/after_cancel ran (see _widget_alive).
+        if not self._widget_alive():
             return
         # This runs on the main thread and reads scheduler.capture_active (via
         # _update_scheduler_status -> get_status), which the monitor thread
@@ -748,12 +753,8 @@ class SchedulingPanel(ttk.Frame):
         """Update the scheduler status display"""
         # Central teardown guard: this is dispatched via after(0, ...) from the
         # monitor thread (start/stop capture) and from the periodic poll, so it
-        # may fire after cleanup() has destroyed the widget. Bail out instead of
-        # configuring a dead label and raising TclError.
-        try:
-            if not self.winfo_exists():
-                return
-        except tk.TclError:
+        # may fire after cleanup() has destroyed the widget (see _widget_alive).
+        if not self._widget_alive():
             return
         if self.scheduler and self.scheduler.is_running():
             status = self.scheduler.get_status()
@@ -824,10 +825,7 @@ class SchedulingPanel(ttk.Frame):
         """Runs on the main thread - safe to read auto_video_var here."""
         # Guard against teardown between scheduling this callback and it firing:
         # if the widget is gone, auto_video_var.get() would raise TclError.
-        try:
-            if not self.winfo_exists():
-                return
-        except tk.TclError:
+        if not self._widget_alive():
             return
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
