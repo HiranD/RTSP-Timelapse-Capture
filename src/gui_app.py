@@ -13,6 +13,7 @@ import mimetypes
 import uuid
 import urllib.request
 import urllib.error
+import subprocess
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -180,6 +181,139 @@ class RTSPTimelapseGUI:
         content_type = f"multipart/form-data; boundary={boundary}"
         return bytes(body), content_type
 
+    def _reencode_for_discord(self, output_file: Path, date_str: str, max_size_mb: int) -> Path:
+        """
+        Re-encode video with progressively lower quality if it exceeds Discord size limit.
+        Uses FFmpeg directly with quality degradation sequence.
+        
+        Args:
+            output_file: Original video file path
+            date_str: Date string YYYYMMDD
+            max_size_mb: Maximum allowed size in MB
+        
+        Returns:
+            Path to Discord-compatible video (original or re-encoded)
+        """
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+        if file_size_mb <= max_size_mb:
+            return output_file  # Already under limit
+
+        self.log_message(
+            "INFO",
+            f"[Discord] Video {file_size_mb:.1f} MB exceeds limit {max_size_mb} MB. Re-encoding..."
+        )
+
+        try:
+            import subprocess
+            from ffmpeg_wrapper import FFmpegWrapper
+
+            ffmpeg_wrapper = FFmpegWrapper()
+            ffmpeg_path = ffmpeg_wrapper.ffmpeg_path
+            
+            if not ffmpeg_path:
+                raise RuntimeError("FFmpeg not found")
+
+            discord_folder = output_file.parent / ".discord_encode"
+            discord_folder.mkdir(parents=True, exist_ok=True)
+
+            # Get Discord settings
+            discord_res = self.config_manager.astro_schedule.discord_export_resolution
+            resolution_map = {
+                "720p": "1280:720",
+                "480p": "854:480",
+                "360p": "640:360",
+                "original": None
+            }
+            target_scale = resolution_map.get(discord_res)
+
+            # Quality degradation sequence (CRF values: lower = better quality, larger file)
+            quality_sequence = [20, 25, 28, 32, 35, 40, 45]
+
+            for crf in quality_sequence:
+                discord_file = discord_folder / f"discord_crf{crf}.mp4"
+                
+                self.log_message(
+                    "INFO",
+                    f"[Discord] Attempting encode: CRF {crf} {target_scale or 'original resolution'}..."
+                )
+
+                # Build FFmpeg command for re-encoding
+                cmd = [ffmpeg_path, "-i", str(output_file), "-c:v", "libx264", "-preset", "fast"]
+                cmd.extend(["-crf", str(crf)])
+                
+                # Add resolution scaling if needed
+                if target_scale:
+                    cmd.extend(["-vf", f"scale={target_scale}"])
+                
+                cmd.extend(["-c:a", "aac", "-y", str(discord_file)])
+
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 minute timeout per encoding attempt
+                    )
+
+                    if result.returncode != 0:
+                        self.log_message(
+                            "WARNING",
+                            f"[Discord] CRF {crf} encode failed. Trying next quality..."
+                        )
+                        try:
+                            discord_file.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        continue
+
+                except subprocess.TimeoutExpired:
+                    self.log_message(
+                        "WARNING",
+                        f"[Discord] CRF {crf} encode timed out. Trying next quality..."
+                    )
+                    try:
+                        discord_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
+
+                # Check resulting file size
+                new_size_mb = discord_file.stat().st_size / (1024 * 1024)
+                self.log_message(
+                    "INFO",
+                    f"[Discord] CRF {crf} result: {new_size_mb:.1f} MB (limit: {max_size_mb} MB)"
+                )
+
+                if new_size_mb <= max_size_mb:
+                    self.log_message(
+                        "INFO",
+                        f"[Discord] Re-encoded successfully. Using quality level CRF {crf}"
+                    )
+                    return discord_file
+
+            # All qualities failed or still too large
+            self.log_message(
+                "WARNING",
+                f"[Discord] Could not reduce video below {max_size_mb} MB. "
+                "Attempting upload with original file..."
+            )
+            
+            # Cleanup temp folder
+            import shutil
+            try:
+                shutil.rmtree(discord_folder)
+            except Exception:
+                pass
+            
+            return output_file
+
+        except Exception as e:
+            self.log_message(
+                "ERROR",
+                f"[Discord] Re-encoding failed: {str(e)}. Using original file."
+            )
+            return output_file
+
     def _send_discord_webhook(self, output_file: Path, date_str: str) -> bool:
         """Send the generated video file to a Discord webhook."""
         webhook_url = self.config_manager.astro_schedule.discord_webhook_url.strip()
@@ -194,7 +328,15 @@ class RTSPTimelapseGUI:
             self.log_message("ERROR", f"Discord upload failed: video file not found: {output_file}")
             return False
 
+        # Check if auto quality reduction is enabled
+        auto_quality_reduce = self.config_manager.astro_schedule.discord_auto_quality_reduction
         file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
+        # If file is too large and auto-reduce is enabled, try re-encoding
+        if auto_quality_reduce and file_size_mb > max_size_mb:
+            output_file = self._reencode_for_discord(output_file, date_str, max_size_mb)
+            file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
         if file_size_mb > max_size_mb:
             self.log_message(
                 "WARNING",
@@ -1200,6 +1342,14 @@ class RTSPTimelapseGUI:
                     try:
                         if self._send_discord_webhook(result.output_file, date_str):
                             self.log_message("INFO", "[Auto Video] Discord upload completed")
+
+                            # Optionally delete the generated video after successful Discord upload
+                            try:
+                                if self.config_manager.astro_schedule.delete_video_after_discord_upload:
+                                    result.output_file.unlink()
+                                    self.log_message("INFO", f"[Auto Video] Deleted video after Discord upload: {result.output_file}")
+                            except Exception as e:
+                                self.log_message("WARNING", f"[Auto Video] Failed to delete video file: {e}")
                     except Exception as e:
                         self.log_message("ERROR", f"[Auto Video] Discord upload failed: {e}")
 

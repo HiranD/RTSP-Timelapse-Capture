@@ -343,6 +343,54 @@ class SchedulingPanel(ttk.Frame):
             "If the generated video exceeds this limit, upload will be skipped."
         )
 
+        # Row 2: Discord export resolution
+        ttk.Label(webhook_frame, text="Export resolution:").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        self.discord_resolution_var = tk.StringVar(value="original")
+        self.discord_resolution_combo = ttk.Combobox(
+            webhook_frame,
+            textvariable=self.discord_resolution_var,
+            values=["original", "720p", "480p", "360p"],
+            state="readonly",
+            width=12
+        )
+        self.discord_resolution_combo.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.discord_resolution_combo.bind("<<ComboboxSelected>>", self._on_discord_settings_change)
+        ToolTip(self.discord_resolution_combo,
+            "Resolution for Discord export.\n"
+            "Lower resolutions reduce file size significantly.\n"
+            "Original uses Video Export tab resolution."
+        )
+
+        # Row 3: Auto quality reduction checkbox
+        self.discord_auto_quality_var = tk.BooleanVar(value=False)
+        self.discord_auto_quality_check = ttk.Checkbutton(
+            webhook_frame,
+            text="Auto reduce quality if too large",
+            variable=self.discord_auto_quality_var,
+            command=self._on_discord_settings_change
+        )
+        self.discord_auto_quality_check.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ToolTip(self.discord_auto_quality_check,
+            "Automatically re-encode the video with progressively\n"
+            "lower quality (CRF) if it exceeds the size limit.\n"
+            "Stops when file is under limit or quality is unacceptable."
+        )
+
+        # Row 4: Option to delete the generated video after successful Discord upload
+        self.delete_video_after_discord_var = tk.BooleanVar(value=False)
+        self.delete_video_after_discord_check = ttk.Checkbutton(
+            webhook_frame,
+            text="Delete video after successful Discord upload",
+            variable=self.delete_video_after_discord_var,
+            command=self._on_discord_settings_change
+        )
+        self.delete_video_after_discord_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ToolTip(self.delete_video_after_discord_check,
+            "Automatically delete the exported video file after a\n"
+            "successful upload to the configured Discord webhook.\n"
+            "Use with caution: this removes the generated video permanently."
+        )
+
         # Initially disable delete checkbox and Discord settings if auto video is off
         self._update_video_widgets_state()
 
@@ -476,6 +524,12 @@ class SchedulingPanel(ttk.Frame):
         self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
         self.discord_webhook_var.set(cfg.discord_webhook_url)
         self.discord_max_size_var.set(str(cfg.discord_max_video_size_mb))
+        self.discord_resolution_var.set(cfg.discord_export_resolution)
+        self.discord_auto_quality_var.set(cfg.discord_auto_quality_reduction)
+        try:
+            self.delete_video_after_discord_var.set(cfg.delete_video_after_discord_upload)
+        except Exception:
+            self.delete_video_after_discord_var.set(False)
 
         # Load scheduled dates into calendar
         if cfg.scheduled_dates:
@@ -537,6 +591,9 @@ class SchedulingPanel(ttk.Frame):
             cfg.discord_max_video_size_mb = int(self.discord_max_size_var.get())
         except ValueError:
             cfg.discord_max_video_size_mb = 8
+        cfg.discord_export_resolution = self.discord_resolution_var.get()
+        cfg.discord_auto_quality_reduction = self.discord_auto_quality_var.get()
+        cfg.delete_video_after_discord_upload = self.delete_video_after_discord_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
         # Scheduler UI state
@@ -639,6 +696,8 @@ class SchedulingPanel(ttk.Frame):
         self.delete_snapshots_check.config(state=state)
         self.discord_webhook_entry.config(state=state)
         self.discord_max_size_entry.config(state=state)
+        self.discord_resolution_combo.config(state="disabled" if state == "disabled" else "readonly")
+        self.discord_auto_quality_check.config(state=state)
 
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""

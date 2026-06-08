@@ -39,6 +39,7 @@
 - **Two-month calendar view** showing captured dates, scheduled dates, and today.
 - **Auto video creation** after each night's capture session completes.
 - **Discord webhook upload** for automatically posting generated videos to a Discord channel.
+- **Delete video after successful Discord upload** option to remove the exported MP4 once it has been posted.
 - **Auto delete snapshots** option to free up disk space after video creation.
 - **Minimize to tray on startup** option in the Scheduling panel for headless or always-running setups.
 - **Color-coded scheduler log** for monitoring automated capture activity.
@@ -268,6 +269,7 @@ Choose between two scheduling modes:
    ```
    - If you want the created timelapse to be sent to Discord automatically, enter a valid webhook URL and set the maximum upload size in MB.
    - If the generated video is larger than the configured size limit, upload is skipped and the video is still created locally.
+   - **Delete video after Discord upload:** a new option lets the app automatically delete the exported video file after a successful Discord upload. Enable this with caution — the deletion is permanent. The UI checkbox is in the Scheduling tab under the Discord settings, and the corresponding configuration key is `delete_video_after_discord_upload` in the `astro_schedule` section of the config file.
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -649,6 +651,15 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 ---
 
 ## Version History
+
+### v3.2.1 (2026-06-08) - Maintenance
+**Discord Upload Cleanup**
+
+- **New**: Option to delete the generated video file after a successful Discord webhook upload.
+  - Controlled by the Scheduling tab checkbox and the `astro_schedule.delete_video_after_discord_upload` config setting.
+- **Documentation**: Updated README and example config to describe the new Discord cleanup option.
+
+---
 
 ### v3.2.0 (2026-05-29) - Latest
 **Unattended Startup**

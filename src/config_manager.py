@@ -85,6 +85,9 @@ class AstroScheduleConfig:
     delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
     discord_webhook_url: str = ""  # Discord webhook URL for automatic uploads
     discord_max_video_size_mb: int = 8  # Maximum file size to upload to Discord in MB
+    discord_export_resolution: str = "original"  # Resolution for Discord export: original/720p/480p/360p
+    discord_auto_quality_reduction: bool = False  # Auto re-encode with lower quality if file exceeds limit
+    delete_video_after_discord_upload: bool = False  # Delete generated video after successful Discord upload
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time
@@ -301,6 +304,10 @@ class ConfigManager:
         if not 1 <= self.astro_schedule.discord_max_video_size_mb <= 1024:
             errors.append(
                 f"Discord max upload size must be between 1 and 1024 MB, got {self.astro_schedule.discord_max_video_size_mb}"
+            )
+        if self.astro_schedule.discord_export_resolution not in ["original", "720p", "480p", "360p"]:
+            errors.append(
+                f"Discord export resolution must be original/720p/480p/360p, got {self.astro_schedule.discord_export_resolution}"
             )
 
         return len(errors) == 0, errors
