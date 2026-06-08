@@ -8,12 +8,17 @@ and video export capabilities.
 
 import os
 import sys
+import json
+import mimetypes
+import uuid
+import urllib.request
+import urllib.error
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
 from datetime import datetime
 from pathlib import Path
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 import numpy as np
 
 
@@ -66,6 +71,9 @@ class RTSPTimelapseGUI:
         self.config_manager = ConfigManager()
         self.capture_engine = None
         self.is_capturing = False
+        self.tray_icon = None
+        self.pystray = None
+        self._pystray_available = None
 
         # Preview variables
         self.preview_enabled = tk.BooleanVar(value=self.config_manager.ui.preview_enabled)
@@ -87,6 +95,11 @@ class RTSPTimelapseGUI:
 
         # Update status initially
         self.update_status()
+
+        # Setup tray icon and optionally start minimized
+        self.setup_system_tray()
+        if self.config_manager.ui.minimize_to_tray_on_startup:
+            self.root.after(100, self.hide_window_to_tray)
 
     def create_widgets(self):
         """Create all GUI widgets with tabbed interface"""
@@ -137,6 +150,102 @@ class RTSPTimelapseGUI:
         self.video_export_panel.set_snapshots_dir_callback(
             lambda: self.output_entry.get()
         )
+
+    def _encode_multipart_formdata(self, fields):
+        """Encode a multipart/form-data request body."""
+        boundary = uuid.uuid4().hex
+        body = bytearray()
+
+        for field in fields:
+            if len(field) == 2:
+                name, value = field
+                value_bytes = value if isinstance(value, (bytes, bytearray)) else str(value).encode('utf-8')
+                body.extend(f"--{boundary}\r\n".encode('utf-8'))
+                body.extend(f"Content-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode('utf-8'))
+                body.extend(value_bytes)
+                body.extend(b"\r\n")
+            else:
+                name, (filename, value, content_type) = field
+                file_bytes = value if isinstance(value, (bytes, bytearray)) else value.encode('utf-8')
+                body.extend(f"--{boundary}\r\n".encode('utf-8'))
+                body.extend(
+                    f"Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n"
+                    .encode('utf-8')
+                )
+                body.extend(f"Content-Type: {content_type}\r\n\r\n".encode('utf-8'))
+                body.extend(file_bytes)
+                body.extend(b"\r\n")
+
+        body.extend(f"--{boundary}--\r\n".encode('utf-8'))
+        content_type = f"multipart/form-data; boundary={boundary}"
+        return bytes(body), content_type
+
+    def _send_discord_webhook(self, output_file: Path, date_str: str) -> bool:
+        """Send the generated video file to a Discord webhook."""
+        webhook_url = self.config_manager.astro_schedule.discord_webhook_url.strip()
+        if not webhook_url:
+            return False
+
+        max_size_mb = self.config_manager.astro_schedule.discord_max_video_size_mb
+        if max_size_mb <= 0:
+            max_size_mb = 8
+
+        if not output_file.exists():
+            self.log_message("ERROR", f"Discord upload failed: video file not found: {output_file}")
+            return False
+
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+        if file_size_mb > max_size_mb:
+            self.log_message(
+                "WARNING",
+                f"Discord upload skipped: {output_file.name} is {file_size_mb:.1f} MB, exceeds limit {max_size_mb} MB"
+            )
+            return False
+
+        self.log_message("INFO", f"Uploading video to Discord ({file_size_mb:.1f} MB)...")
+
+        try:
+            mime_type, _ = mimetypes.guess_type(str(output_file))
+            if not mime_type:
+                mime_type = "application/octet-stream"
+
+            with output_file.open('rb') as f:
+                file_bytes = f.read()
+
+            payload = json.dumps({
+                "content": f"Timelapse video completed for {date_str}",
+                "username": "RTSP Timelapse Bot"
+            }).encode('utf-8')
+
+            fields = [
+                ("payload_json", payload),
+                ("file", (output_file.name, file_bytes, mime_type))
+            ]
+            body, content_type = self._encode_multipart_formdata(fields)
+
+            request = urllib.request.Request(webhook_url, data=body, method="POST")
+            request.add_header("Content-Type", content_type)
+            request.add_header("User-Agent", "RTSP-Timelapse-Capture")
+
+            with urllib.request.urlopen(request, timeout=60) as response:
+                if 200 <= response.status < 300:
+                    self.log_message("INFO", "Discord upload successful")
+                    return True
+                else:
+                    self.log_message(
+                        "ERROR",
+                        f"Discord upload failed: HTTP {response.status} {response.reason}"
+                    )
+                    return False
+
+        except urllib.error.HTTPError as e:
+            self.log_message("ERROR", f"Discord upload failed: HTTP {e.code} {e.reason}")
+        except urllib.error.URLError as e:
+            self.log_message("ERROR", f"Discord upload failed: {e.reason}")
+        except Exception as e:
+            self.log_message("ERROR", f"Discord upload error: {e}")
+
+        return False
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -436,6 +545,113 @@ class RTSPTimelapseGUI:
         self.root.bind('<Control-t>', lambda e: self.test_connection())
         self.root.bind('<space>', lambda e: self.toggle_capture() if not self.is_capturing else None)
         self.root.bind('<Escape>', lambda e: self.stop_capture() if self.is_capturing else None)
+
+    def _load_pystray(self):
+        if self._pystray_available is False:
+            return
+        if self.pystray is not None:
+            return
+
+        try:
+            import importlib
+            self.pystray = importlib.import_module("pystray")
+            self._pystray_available = True
+        except Exception as e:
+            self.pystray = None
+            self._pystray_available = False
+            self.log_message("WARNING", f"System tray support unavailable: {e}")
+
+    def _create_tray_image(self):
+        size = 64
+        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((4, 4, size - 4, size - 4), fill=(30, 120, 215, 255))
+
+        try:
+            font = ImageFont.load_default()
+            text = "RT"
+            text_w, text_h = draw.textsize(text, font=font)
+            draw.text(
+                ((size - text_w) / 2, (size - text_h) / 2),
+                text,
+                fill="white",
+                font=font
+            )
+        except Exception:
+            pass
+
+        return image
+
+    def setup_system_tray(self):
+        """Initialize the system tray icon if tray support is enabled."""
+        if not self.config_manager.ui.minimize_to_tray_on_startup:
+            return
+        if self.tray_icon is not None:
+            return
+
+        self._load_pystray()
+        if not self.pystray:
+            return
+
+        icon_image = self._create_tray_image()
+        menu = self.pystray.Menu(
+            self.pystray.MenuItem("Open", self._on_tray_open, default=True),
+            self.pystray.MenuItem("Quit", self._on_tray_quit)
+        )
+
+        try:
+            self.tray_icon = self.pystray.Icon(
+                "RTSP Timelapse Capture",
+                icon_image,
+                "RTSP Timelapse Capture",
+                menu=menu
+            )
+            self.tray_icon.run_detached(lambda icon: setattr(icon, 'visible', True))
+        except Exception as e:
+            self.log_message("WARNING", f"Could not start tray icon: {e}")
+            self.tray_icon = None
+
+    def hide_window_to_tray(self):
+        """Minimize the application to the system tray."""
+        self.setup_system_tray()
+        if not self.tray_icon:
+            self.log_message(
+                "WARNING",
+                "Tray icon unavailable; cannot start minimized to system tray."
+            )
+            return
+
+        try:
+            self.tray_icon.visible = True
+        except Exception:
+            pass
+
+        self.root.withdraw()
+        self.log_message("INFO", "Application started minimized to system tray.")
+
+    def restore_from_tray(self, icon=None, item=None):
+        """Restore the application window from the tray."""
+        if self.root.state() == 'withdrawn':
+            self.root.deiconify()
+
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.attributes('-topmost', False)
+        self.root.focus_force()
+
+    def _on_tray_open(self, icon, item):
+        self.root.after(0, self.restore_from_tray)
+
+    def _on_tray_quit(self, icon, item):
+        self.root.after(0, self.on_closing)
+
+    def cleanup_tray(self):
+        if self.tray_icon:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+            self.tray_icon = None
 
     def log_message(self, level, message):
         """Add a timestamped message to the activity log"""
@@ -980,6 +1196,13 @@ class RTSPTimelapseGUI:
                 if result.success:
                     self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
 
+                    # Upload to Discord if webhook is configured
+                    try:
+                        if self._send_discord_webhook(result.output_file, date_str):
+                            self.log_message("INFO", "[Auto Video] Discord upload completed")
+                    except Exception as e:
+                        self.log_message("ERROR", f"[Auto Video] Discord upload failed: {e}")
+
                     # Update capture history to mark video as created
                     try:
                         capture_history = get_capture_history()
@@ -1013,6 +1236,7 @@ class RTSPTimelapseGUI:
 
         # Auto-save all settings before closing
         self.save_config()
+        self.cleanup_tray()
 
         if self.is_capturing:
             if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):

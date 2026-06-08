@@ -92,4 +92,8 @@ SCHEDULING_TOOLTIPS = {
         "Uses the preset and output folder configured in\n"
         "the Video Export tab."
     ),
+    "minimize_to_tray_startup": (
+        "Start the application minimized to the system tray on launch.\n"
+        "Restore it from the tray icon when needed."
+    ),
 }

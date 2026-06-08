@@ -316,7 +316,34 @@ class SchedulingPanel(ttk.Frame):
             "images for that date. Use with caution!"
         )
 
-        # Initially disable delete checkbox if auto video is off
+        # Row 1: Discord webhook settings
+        webhook_frame = ttk.Frame(parent)
+        webhook_frame.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        webhook_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(webhook_frame, text="Discord Webhook URL:").grid(row=0, column=0, sticky="w")
+        self.discord_webhook_var = tk.StringVar(value="")
+        self.discord_webhook_entry = ttk.Entry(webhook_frame, textvariable=self.discord_webhook_var, width=60)
+        self.discord_webhook_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        self.discord_webhook_entry.bind("<FocusOut>", self._on_discord_settings_change)
+        self.discord_webhook_entry.bind("<Return>", self._on_discord_settings_change)
+        ToolTip(self.discord_webhook_entry,
+            "Discord webhook URL used to upload the generated timelapse video.\n"
+            "Leave blank to disable automatic Discord uploads."
+        )
+
+        ttk.Label(webhook_frame, text="Max upload size (MB):").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.discord_max_size_var = tk.StringVar(value="8")
+        self.discord_max_size_entry = ttk.Entry(webhook_frame, textvariable=self.discord_max_size_var, width=8)
+        self.discord_max_size_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.discord_max_size_entry.bind("<FocusOut>", self._on_discord_settings_change)
+        self.discord_max_size_entry.bind("<Return>", self._on_discord_settings_change)
+        ToolTip(self.discord_max_size_entry,
+            "Maximum file size in megabytes for Discord uploads.\n"
+            "If the generated video exceeds this limit, upload will be skipped."
+        )
+
+        # Initially disable delete checkbox and Discord settings if auto video is off
         self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
@@ -365,6 +392,19 @@ class SchedulingPanel(ttk.Frame):
             "re-arms on its own.\n\n"
             "Note: a logged-in desktop session is required, so enable Windows\n"
             "auto-login on a headless machine."
+        )
+
+        self.minimize_to_tray_var = tk.BooleanVar(value=False)
+        self.minimize_to_tray_checkbox = ttk.Checkbutton(
+            control_frame,
+            text="Minimize to tray on startup",
+            variable=self.minimize_to_tray_var,
+            command=self._on_minimize_to_tray_toggle
+        )
+        self.minimize_to_tray_checkbox.pack(side="left", padx=(20, 0))
+        ToolTip(self.minimize_to_tray_checkbox,
+            "Start the application minimized to the system tray on launch.\n"
+            "Use the tray icon to restore the window."
         )
 
         # Only meaningful on Windows; disable elsewhere.
@@ -434,6 +474,8 @@ class SchedulingPanel(ttk.Frame):
         # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
         self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
+        self.discord_webhook_var.set(cfg.discord_webhook_url)
+        self.discord_max_size_var.set(str(cfg.discord_max_video_size_mb))
 
         # Load scheduled dates into calendar
         if cfg.scheduled_dates:
@@ -441,6 +483,7 @@ class SchedulingPanel(ttk.Frame):
 
         # Scheduler enabled state (UI only — actual restart happens via restore_scheduler_state)
         self.scheduler_enabled_var.set(cfg.scheduler_enabled)
+        self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray_on_startup)
 
         # "Start with Windows" reflects the live registry state, not config.
         self.start_with_windows_var.set(startup_manager.is_enabled())
@@ -489,10 +532,16 @@ class SchedulingPanel(ttk.Frame):
         # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
         cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
+        cfg.discord_webhook_url = self.discord_webhook_var.get().strip()
+        try:
+            cfg.discord_max_video_size_mb = int(self.discord_max_size_var.get())
+        except ValueError:
+            cfg.discord_max_video_size_mb = 8
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
-        # Scheduler enabled state
+        # Scheduler UI state
         cfg.scheduler_enabled = self.scheduler_enabled_var.get()
+        self.config_manager.ui.minimize_to_tray_on_startup = self.minimize_to_tray_var.get()
 
         # Save to file
         self.config_manager.save_to_file()
@@ -588,6 +637,8 @@ class SchedulingPanel(ttk.Frame):
         """Enable/disable video widgets based on checkbox"""
         state = "normal" if self.auto_video_var.get() else "disabled"
         self.delete_snapshots_check.config(state=state)
+        self.discord_webhook_entry.config(state=state)
+        self.discord_max_size_entry.config(state=state)
 
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""
@@ -648,6 +699,14 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_delete_snapshots_toggle(self):
         """Handle delete snapshots checkbox toggle"""
+        self._save_to_config()
+
+    def _on_minimize_to_tray_toggle(self):
+        """Handle tray startup checkbox toggle"""
+        self._save_to_config()
+
+    def _on_discord_settings_change(self, event=None):
+        """Handle Discord webhook or size setting changes"""
         self._save_to_config()
 
     def _on_scheduler_toggle(self):

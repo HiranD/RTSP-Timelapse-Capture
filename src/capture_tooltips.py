@@ -38,6 +38,11 @@ CAPTURE_TOOLTIPS = {
         "Recommended: Enable for IP cameras to prevent frame drops and disconnections."
     ),
 
+    "minimize_startup": (
+        "Start the application minimized in the system tray. "
+        "Double-click the tray icon or choose Open to restore the window."
+    ),
+
     # ========================================
     # Schedule Section
     # ========================================

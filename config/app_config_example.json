@@ -20,11 +20,28 @@
     "proactive_reconnect_seconds": 0,
     "flush_buffer_count": 10
   },
+  "astro_schedule": {
+    "latitude": 0.0,
+    "longitude": 0.0,
+    "twilight_type": "astronomical",
+    "start_offset_minutes": 0,
+    "end_offset_minutes": 0,
+    "scheduled_dates": [],
+    "auto_create_video": false,
+    "delete_snapshots_after_video": false,
+    "discord_webhook_url": "",
+    "discord_max_video_size_mb": 8,
+    "use_manual_times": false,
+    "manual_start_time": "20:00",
+    "manual_end_time": "08:00",
+    "scheduler_enabled": false
+  },
   "ui": {
     "window_width": 1000,
     "window_height": 700,
     "preview_size": "medium",
     "preview_enabled": true,
+    "minimize_to_tray_on_startup": false,
     "auto_start": false,
     "last_video_export_dir": ""
   },

@@ -38,7 +38,9 @@
 - **Manual time mode** as alternative to twilight-based scheduling.
 - **Two-month calendar view** showing captured dates, scheduled dates, and today.
 - **Auto video creation** after each night's capture session completes.
+- **Discord webhook upload** for automatically posting generated videos to a Discord channel.
 - **Auto delete snapshots** option to free up disk space after video creation.
+- **Minimize to tray on startup** option in the Scheduling panel for headless or always-running setups.
 - **Color-coded scheduler log** for monitoring automated capture activity.
 - Start/end time offsets to fine-tune the darkness window.
 
@@ -101,6 +103,9 @@
    ```bash
    python run_gui.py
    ```
+
+> Note: The system tray startup feature requires the `pystray` dependency, which is installed automatically by `pip install -r requirements.txt`.
+
 
 ---
 
@@ -261,6 +266,8 @@ Choose between two scheduling modes:
    [✓] Create video after each night's session
    [ ] Delete snapshots after (use with caution!)
    ```
+   - If you want the created timelapse to be sent to Discord automatically, enter a valid webhook URL and set the maximum upload size in MB.
+   - If the generated video is larger than the configured size limit, upload is skipped and the video is still created locally.
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -269,6 +276,10 @@ Choose between two scheduling modes:
    - Capture starts automatically when darkness begins
    - Capture stops automatically when darkness ends
    - Videos are created automatically if enabled
+5. **Startup & Tray Option**
+   - Use **Minimize to tray on startup** in the Scheduling panel
+   - The app will launch minimized into the system tray when enabled
+   - Restore the window by double-clicking the tray icon or choosing `Open`
 
 ### Scheduler Status
 
