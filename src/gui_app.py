@@ -336,8 +336,7 @@ class RTSPTimelapseGUI:
             # All qualities failed or still too large
             self.log_message(
                 "WARNING",
-                f"[Discord] Could not reduce video below {max_size_mb} MB. "
-                "Attempting upload with original file..."
+                f"[Discord] Could not reduce video below {max_size_mb} MB. Upload will be skipped."
             )
             
             # Cleanup temp folder
@@ -410,7 +409,7 @@ class RTSPTimelapseGUI:
             }).encode('utf-8')
 
             fields = [
-                ("payload_json", payload),
+                ("payload_json", ("payload.json", payload, "application/json")),
                 ("file", (upload_file.name, file_bytes, mime_type))
             ]
             body, content_type = self._encode_multipart_formdata(fields)

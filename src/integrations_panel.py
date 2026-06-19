@@ -233,9 +233,10 @@ class IntegrationsPanel(ttk.Frame):
 
         cfg.discord_webhook_url = self.discord_webhook_var.get().strip()
         try:
-            cfg.discord_max_video_size_mb = int(self.discord_max_size_var.get())
+            size_mb = int(self.discord_max_size_var.get())
         except ValueError:
-            cfg.discord_max_video_size_mb = 8
+            size_mb = 8
+        cfg.discord_max_video_size_mb = max(1, min(1024, size_mb))
         cfg.discord_export_resolution = self.discord_resolution_var.get()
         cfg.discord_auto_quality_reduction = self.discord_auto_quality_var.get()
         cfg.delete_video_after_discord_upload = self.delete_video_after_discord_var.get()
