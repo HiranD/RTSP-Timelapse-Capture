@@ -74,41 +74,52 @@ class IntegrationsPanel(ttk.Frame):
         # auto-video step, so it requires that option on the Scheduling tab.
         hint = ttk.Label(
             parent,
-            text=("Uploads the auto-created video after each night's session. "
-                  "Requires “Create video after each night” on the Scheduling tab."),
+            text="Requires “Create video after each night” on the Scheduling tab.",
             font=("Segoe UI", 8),
-            foreground="gray",
-            wraplength=560,
-            justify="left"
+            foreground="gray"
         )
         hint.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
         # Webhook URL
-        ttk.Label(parent, text="Discord Webhook URL:").grid(row=1, column=0, sticky="w")
+        webhook_tip = (
+            "Discord webhook URL used to upload the generated timelapse video.\n"
+            "Leave blank to disable automatic Discord uploads."
+        )
+        webhook_label = ttk.Label(parent, text="Discord Webhook URL:")
+        webhook_label.grid(row=1, column=0, sticky="w")
         self.discord_webhook_var = tk.StringVar(value="")
         self.discord_webhook_entry = ttk.Entry(parent, textvariable=self.discord_webhook_var, width=60)
         self.discord_webhook_entry.grid(row=1, column=1, sticky="ew", padx=(10, 0))
         self.discord_webhook_entry.bind("<FocusOut>", self._on_discord_settings_change)
         self.discord_webhook_entry.bind("<Return>", self._on_discord_settings_change)
-        ToolTip(self.discord_webhook_entry,
-            "Discord webhook URL used to upload the generated timelapse video.\n"
-            "Leave blank to disable automatic Discord uploads."
-        )
+        ToolTip(webhook_label, webhook_tip)
+        ToolTip(self.discord_webhook_entry, webhook_tip)
 
         # Max upload size
-        ttk.Label(parent, text="Max upload size (MB):").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        max_size_tip = (
+            "Largest file size (MB) Discord will accept.\n"
+            "If the video is bigger, upload is skipped — unless 'Auto reduce\n"
+            "quality' is on, which re-encodes it (at lower quality) to fit."
+        )
+        max_size_label = ttk.Label(parent, text="Max upload size (MB):")
+        max_size_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.discord_max_size_var = tk.StringVar(value="8")
         self.discord_max_size_entry = ttk.Entry(parent, textvariable=self.discord_max_size_var, width=8)
         self.discord_max_size_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.discord_max_size_entry.bind("<FocusOut>", self._on_discord_settings_change)
         self.discord_max_size_entry.bind("<Return>", self._on_discord_settings_change)
-        ToolTip(self.discord_max_size_entry,
-            "Maximum file size in megabytes for Discord uploads.\n"
-            "If the generated video exceeds this limit, upload will be skipped."
-        )
+        ToolTip(max_size_label, max_size_tip)
+        ToolTip(self.discord_max_size_entry, max_size_tip)
 
         # Export resolution
-        ttk.Label(parent, text="Export resolution:").grid(row=3, column=0, sticky="w", pady=(10, 0))
+        resolution_tip = (
+            "Frame size used only when 'Auto reduce quality' re-encodes an\n"
+            "oversized video. Smaller resolutions shrink the file to meet the\n"
+            "size limit with less visible quality loss than compression alone.\n"
+            "'original' keeps the source resolution (relies on compression only)."
+        )
+        resolution_label = ttk.Label(parent, text="Export resolution:")
+        resolution_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
         self.discord_resolution_var = tk.StringVar(value="original")
         self.discord_resolution_combo = ttk.Combobox(
             parent,
@@ -119,11 +130,8 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.discord_resolution_combo.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.discord_resolution_combo.bind("<<ComboboxSelected>>", self._on_discord_settings_change)
-        ToolTip(self.discord_resolution_combo,
-            "Resolution for Discord export.\n"
-            "Lower resolutions reduce file size significantly.\n"
-            "Original uses Video Export tab resolution."
-        )
+        ToolTip(resolution_label, resolution_tip)
+        ToolTip(self.discord_resolution_combo, resolution_tip)
 
         # Auto quality reduction
         self.discord_auto_quality_var = tk.BooleanVar(value=False)
@@ -135,9 +143,12 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.discord_auto_quality_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.discord_auto_quality_check,
-            "Automatically re-encode the video with progressively\n"
-            "lower quality (CRF) if it exceeds the size limit.\n"
-            "Stops when file is under limit or quality is unacceptable."
+            "When a video is over the size limit, re-encode it to fit:\n"
+            "quality is stepped down through CRF 20 → 25 → 28 → 32 → 35 → 40 → 45\n"
+            "(each step smaller but lossier), at the selected Export resolution,\n"
+            "stopping at the first encode that fits under Max upload size.\n"
+            "If even the lowest quality can't fit, upload is skipped and the\n"
+            "original video is kept locally."
         )
 
         # Delete video after successful upload
