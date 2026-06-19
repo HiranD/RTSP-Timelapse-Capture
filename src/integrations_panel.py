@@ -82,7 +82,7 @@ class IntegrationsPanel(ttk.Frame):
 
         # Webhook URL
         webhook_tip = (
-            "Discord webhook URL used to upload the generated timelapse video.\n"
+            "Discord webhook URL used to upload the generated timelapse video. "
             "Leave blank to disable automatic Discord uploads."
         )
         webhook_label = ttk.Label(parent, text="Discord Webhook URL:")
@@ -97,9 +97,9 @@ class IntegrationsPanel(ttk.Frame):
 
         # Max upload size
         max_size_tip = (
-            "Largest file size (MB) Discord will accept.\n"
-            "If the video is bigger, upload is skipped — unless 'Auto reduce\n"
-            "quality' is on, which re-encodes it (at lower quality) to fit."
+            "Largest file size (MB) Discord will accept. If the video is bigger, "
+            "upload is skipped — unless 'Auto reduce quality' is on, which "
+            "re-encodes it (at lower quality) to fit."
         )
         max_size_label = ttk.Label(parent, text="Max upload size (MB):")
         max_size_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
@@ -113,10 +113,10 @@ class IntegrationsPanel(ttk.Frame):
 
         # Export resolution
         resolution_tip = (
-            "Frame size used only when 'Auto reduce quality' re-encodes an\n"
-            "oversized video. Smaller resolutions shrink the file to meet the\n"
-            "size limit with less visible quality loss than compression alone.\n"
-            "'original' keeps the source resolution (relies on compression only)."
+            "Frame size used only when 'Auto reduce quality' re-encodes an oversized "
+            "video. Smaller resolutions shrink the file to meet the size limit with "
+            "less visible quality loss than compression alone. 'original' keeps the "
+            "source resolution (relies on compression only)."
         )
         resolution_label = ttk.Label(parent, text="Export resolution:")
         resolution_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
@@ -143,12 +143,12 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.discord_auto_quality_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.discord_auto_quality_check,
-            "When a video is over the size limit, re-encode it to fit:\n"
-            "quality is stepped down through CRF 20 → 25 → 28 → 32 → 35 → 40 → 45\n"
-            "(each step smaller but lossier), at the selected Export resolution,\n"
-            "stopping at the first encode that fits under Max upload size.\n"
-            "If even the lowest quality can't fit, upload is skipped and the\n"
-            "original video is kept locally."
+            "When a video is over the size limit, re-encode it to fit: quality is "
+            "stepped down through CRF 20 → 25 → 28 → 32 → 35 → 40 → 45 (each step "
+            "smaller but lossier), at the selected Export resolution, stopping at "
+            "the first encode that fits under Max upload size. If even the lowest "
+            "quality can't fit, upload is skipped and the original video is kept "
+            "locally."
         )
 
         # Delete video after successful upload
@@ -161,9 +161,9 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.delete_video_after_discord_check.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.delete_video_after_discord_check,
-            "Automatically delete the exported video file after a\n"
-            "successful upload to the configured Discord webhook.\n"
-            "Use with caution: this removes the generated video permanently."
+            "Automatically delete the exported video file after a successful upload "
+            "to the configured Discord webhook. Use with caution: this removes the "
+            "generated video permanently."
         )
 
     def _create_application_section(self, parent: ttk.LabelFrame):
@@ -180,10 +180,10 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.minimize_to_tray_checkbox.grid(row=0, column=0, sticky="w")
         ToolTip(self.minimize_to_tray_checkbox,
-            "Send the window to the system tray instead of the taskbar.\n"
-            "When enabled, the app starts minimized in the tray on startup,\n"
-            "and the minimize button also hides the window to the tray.\n"
-            "Restore it from the tray icon."
+            "Send the window to the system tray instead of the taskbar. When "
+            "enabled, the app starts minimized in the tray on startup, and the "
+            "minimize button also hides the window to the tray. Restore it from "
+            "the tray icon."
         )
 
         # Start automatically when Windows starts
@@ -197,10 +197,9 @@ class IntegrationsPanel(ttk.Frame):
         self.start_with_windows_checkbox.grid(row=1, column=0, sticky="w", pady=(8, 0))
         ToolTip(self.start_with_windows_checkbox,
             "Launch this app automatically when you log in to Windows.\n\n"
-            "Combine with 'Enable automatic scheduling' for a fully\n"
-            "unattended rig: after a reboot the app starts and the scheduler\n"
-            "re-arms on its own.\n\n"
-            "Note: a logged-in desktop session is required, so enable Windows\n"
+            "Combine with 'Enable automatic scheduling' for a fully unattended rig: "
+            "after a reboot the app starts and the scheduler re-arms on its own.\n\n"
+            "Note: a logged-in desktop session is required, so enable Windows "
             "auto-login on a headless machine."
         )
 
