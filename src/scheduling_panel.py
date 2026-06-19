@@ -350,16 +350,6 @@ class SchedulingPanel(ttk.Frame):
             "images for that date. Use with caution!"
         )
 
-        # Discord upload now lives on the Integrations tab (kept separate so this
-        # section stays focused on the per-night auto-video behavior).
-        hint = ttk.Label(
-            parent,
-            text="Discord upload is configured on the Integrations tab.",
-            font=("Segoe UI", 8),
-            foreground="gray"
-        )
-        hint.grid(row=1, column=0, sticky="w", pady=(8, 0))
-
         # Initially disable the delete-snapshots checkbox if auto video is off
         self._update_video_widgets_state()
 
