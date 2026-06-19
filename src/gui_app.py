@@ -8,12 +8,18 @@ and video export capabilities.
 
 import os
 import sys
+import json
+import mimetypes
+import uuid
+import urllib.request
+import urllib.error
+import subprocess
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
 from datetime import datetime
 from pathlib import Path
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 import numpy as np
 
 
@@ -66,6 +72,9 @@ class RTSPTimelapseGUI:
         self.config_manager = ConfigManager()
         self.capture_engine = None
         self.is_capturing = False
+        self.tray_icon = None
+        self.pystray = None
+        self._pystray_available = None
 
         # Preview variables
         self.preview_enabled = tk.BooleanVar(value=self.config_manager.ui.preview_enabled)
@@ -87,6 +96,11 @@ class RTSPTimelapseGUI:
 
         # Update status initially
         self.update_status()
+
+        # Setup tray icon and optionally start minimized
+        self.setup_system_tray()
+        if self.config_manager.ui.minimize_to_tray_on_startup:
+            self.root.after(100, self.hide_window_to_tray)
 
     def create_widgets(self):
         """Create all GUI widgets with tabbed interface"""
@@ -137,6 +151,243 @@ class RTSPTimelapseGUI:
         self.video_export_panel.set_snapshots_dir_callback(
             lambda: self.output_entry.get()
         )
+
+    def _encode_multipart_formdata(self, fields):
+        """Encode a multipart/form-data request body."""
+        boundary = uuid.uuid4().hex
+        body = bytearray()
+
+        for field in fields:
+            if len(field) == 2:
+                name, value = field
+                value_bytes = value if isinstance(value, (bytes, bytearray)) else str(value).encode('utf-8')
+                body.extend(f"--{boundary}\r\n".encode('utf-8'))
+                body.extend(f"Content-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode('utf-8'))
+                body.extend(value_bytes)
+                body.extend(b"\r\n")
+            else:
+                name, (filename, value, content_type) = field
+                file_bytes = value if isinstance(value, (bytes, bytearray)) else value.encode('utf-8')
+                body.extend(f"--{boundary}\r\n".encode('utf-8'))
+                body.extend(
+                    f"Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n"
+                    .encode('utf-8')
+                )
+                body.extend(f"Content-Type: {content_type}\r\n\r\n".encode('utf-8'))
+                body.extend(file_bytes)
+                body.extend(b"\r\n")
+
+        body.extend(f"--{boundary}--\r\n".encode('utf-8'))
+        content_type = f"multipart/form-data; boundary={boundary}"
+        return bytes(body), content_type
+
+    def _reencode_for_discord(self, output_file: Path, date_str: str, max_size_mb: int) -> Path:
+        """
+        Re-encode video with progressively lower quality if it exceeds Discord size limit.
+        Uses FFmpeg directly with quality degradation sequence.
+        
+        Args:
+            output_file: Original video file path
+            date_str: Date string YYYYMMDD
+            max_size_mb: Maximum allowed size in MB
+        
+        Returns:
+            Path to Discord-compatible video (original or re-encoded)
+        """
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+        if file_size_mb <= max_size_mb:
+            return output_file  # Already under limit
+
+        self.log_message(
+            "INFO",
+            f"[Discord] Video {file_size_mb:.1f} MB exceeds limit {max_size_mb} MB. Re-encoding..."
+        )
+
+        try:
+            import subprocess
+            from ffmpeg_wrapper import FFmpegWrapper
+
+            ffmpeg_wrapper = FFmpegWrapper()
+            ffmpeg_path = ffmpeg_wrapper.ffmpeg_path
+            
+            if not ffmpeg_path:
+                raise RuntimeError("FFmpeg not found")
+
+            discord_folder = output_file.parent / ".discord_encode"
+            discord_folder.mkdir(parents=True, exist_ok=True)
+
+            # Get Discord settings
+            discord_res = self.config_manager.astro_schedule.discord_export_resolution
+            resolution_map = {
+                "720p": "1280:720",
+                "480p": "854:480",
+                "360p": "640:360",
+                "original": None
+            }
+            target_scale = resolution_map.get(discord_res)
+
+            # Quality degradation sequence (CRF values: lower = better quality, larger file)
+            quality_sequence = [20, 25, 28, 32, 35, 40, 45]
+
+            for crf in quality_sequence:
+                discord_file = discord_folder / f"discord_crf{crf}.mp4"
+                
+                self.log_message(
+                    "INFO",
+                    f"[Discord] Attempting encode: CRF {crf} {target_scale or 'original resolution'}..."
+                )
+
+                # Build FFmpeg command for re-encoding
+                cmd = [ffmpeg_path, "-i", str(output_file), "-c:v", "libx264", "-preset", "fast"]
+                cmd.extend(["-crf", str(crf)])
+                
+                # Add resolution scaling if needed
+                if target_scale:
+                    cmd.extend(["-vf", f"scale={target_scale}"])
+                
+                cmd.extend(["-c:a", "aac", "-y", str(discord_file)])
+
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 minute timeout per encoding attempt
+                    )
+
+                    if result.returncode != 0:
+                        self.log_message(
+                            "WARNING",
+                            f"[Discord] CRF {crf} encode failed. Trying next quality..."
+                        )
+                        try:
+                            discord_file.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        continue
+
+                except subprocess.TimeoutExpired:
+                    self.log_message(
+                        "WARNING",
+                        f"[Discord] CRF {crf} encode timed out. Trying next quality..."
+                    )
+                    try:
+                        discord_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
+
+                # Check resulting file size
+                new_size_mb = discord_file.stat().st_size / (1024 * 1024)
+                self.log_message(
+                    "INFO",
+                    f"[Discord] CRF {crf} result: {new_size_mb:.1f} MB (limit: {max_size_mb} MB)"
+                )
+
+                if new_size_mb <= max_size_mb:
+                    self.log_message(
+                        "INFO",
+                        f"[Discord] Re-encoded successfully. Using quality level CRF {crf}"
+                    )
+                    return discord_file
+
+            # All qualities failed or still too large
+            self.log_message(
+                "WARNING",
+                f"[Discord] Could not reduce video below {max_size_mb} MB. "
+                "Attempting upload with original file..."
+            )
+            
+            # Cleanup temp folder
+            import shutil
+            try:
+                shutil.rmtree(discord_folder)
+            except Exception:
+                pass
+            
+            return output_file
+
+        except Exception as e:
+            self.log_message(
+                "ERROR",
+                f"[Discord] Re-encoding failed: {str(e)}. Using original file."
+            )
+            return output_file
+
+    def _send_discord_webhook(self, output_file: Path, date_str: str) -> bool:
+        """Send the generated video file to a Discord webhook."""
+        webhook_url = self.config_manager.astro_schedule.discord_webhook_url.strip()
+        if not webhook_url:
+            return False
+
+        max_size_mb = self.config_manager.astro_schedule.discord_max_video_size_mb
+        if max_size_mb <= 0:
+            max_size_mb = 8
+
+        if not output_file.exists():
+            self.log_message("ERROR", f"Discord upload failed: video file not found: {output_file}")
+            return False
+
+        # Check if auto quality reduction is enabled
+        auto_quality_reduce = self.config_manager.astro_schedule.discord_auto_quality_reduction
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
+        # If file is too large and auto-reduce is enabled, try re-encoding
+        if auto_quality_reduce and file_size_mb > max_size_mb:
+            output_file = self._reencode_for_discord(output_file, date_str, max_size_mb)
+            file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
+        if file_size_mb > max_size_mb:
+            self.log_message(
+                "WARNING",
+                f"Discord upload skipped: {output_file.name} is {file_size_mb:.1f} MB, exceeds limit {max_size_mb} MB"
+            )
+            return False
+
+        self.log_message("INFO", f"Uploading video to Discord ({file_size_mb:.1f} MB)...")
+
+        try:
+            mime_type, _ = mimetypes.guess_type(str(output_file))
+            if not mime_type:
+                mime_type = "application/octet-stream"
+
+            with output_file.open('rb') as f:
+                file_bytes = f.read()
+
+            payload = json.dumps({
+                "content": f"Timelapse video completed for {date_str}",
+                "username": "RTSP Timelapse Bot"
+            }).encode('utf-8')
+
+            fields = [
+                ("payload_json", payload),
+                ("file", (output_file.name, file_bytes, mime_type))
+            ]
+            body, content_type = self._encode_multipart_formdata(fields)
+
+            request = urllib.request.Request(webhook_url, data=body, method="POST")
+            request.add_header("Content-Type", content_type)
+            request.add_header("User-Agent", "RTSP-Timelapse-Capture")
+
+            with urllib.request.urlopen(request, timeout=60) as response:
+                if 200 <= response.status < 300:
+                    self.log_message("INFO", "Discord upload successful")
+                    return True
+                else:
+                    self.log_message(
+                        "ERROR",
+                        f"Discord upload failed: HTTP {response.status} {response.reason}"
+                    )
+                    return False
+
+        except urllib.error.HTTPError as e:
+            self.log_message("ERROR", f"Discord upload failed: HTTP {e.code} {e.reason}")
+        except urllib.error.URLError as e:
+            self.log_message("ERROR", f"Discord upload failed: {e.reason}")
+        except Exception as e:
+            self.log_message("ERROR", f"Discord upload error: {e}")
+
+        return False
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -436,6 +687,113 @@ class RTSPTimelapseGUI:
         self.root.bind('<Control-t>', lambda e: self.test_connection())
         self.root.bind('<space>', lambda e: self.toggle_capture() if not self.is_capturing else None)
         self.root.bind('<Escape>', lambda e: self.stop_capture() if self.is_capturing else None)
+
+    def _load_pystray(self):
+        if self._pystray_available is False:
+            return
+        if self.pystray is not None:
+            return
+
+        try:
+            import importlib
+            self.pystray = importlib.import_module("pystray")
+            self._pystray_available = True
+        except Exception as e:
+            self.pystray = None
+            self._pystray_available = False
+            self.log_message("WARNING", f"System tray support unavailable: {e}")
+
+    def _create_tray_image(self):
+        size = 64
+        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((4, 4, size - 4, size - 4), fill=(30, 120, 215, 255))
+
+        try:
+            font = ImageFont.load_default()
+            text = "RT"
+            text_w, text_h = draw.textsize(text, font=font)
+            draw.text(
+                ((size - text_w) / 2, (size - text_h) / 2),
+                text,
+                fill="white",
+                font=font
+            )
+        except Exception:
+            pass
+
+        return image
+
+    def setup_system_tray(self):
+        """Initialize the system tray icon if tray support is enabled."""
+        if not self.config_manager.ui.minimize_to_tray_on_startup:
+            return
+        if self.tray_icon is not None:
+            return
+
+        self._load_pystray()
+        if not self.pystray:
+            return
+
+        icon_image = self._create_tray_image()
+        menu = self.pystray.Menu(
+            self.pystray.MenuItem("Open", self._on_tray_open, default=True),
+            self.pystray.MenuItem("Quit", self._on_tray_quit)
+        )
+
+        try:
+            self.tray_icon = self.pystray.Icon(
+                "RTSP Timelapse Capture",
+                icon_image,
+                "RTSP Timelapse Capture",
+                menu=menu
+            )
+            self.tray_icon.run_detached(lambda icon: setattr(icon, 'visible', True))
+        except Exception as e:
+            self.log_message("WARNING", f"Could not start tray icon: {e}")
+            self.tray_icon = None
+
+    def hide_window_to_tray(self):
+        """Minimize the application to the system tray."""
+        self.setup_system_tray()
+        if not self.tray_icon:
+            self.log_message(
+                "WARNING",
+                "Tray icon unavailable; cannot start minimized to system tray."
+            )
+            return
+
+        try:
+            self.tray_icon.visible = True
+        except Exception:
+            pass
+
+        self.root.withdraw()
+        self.log_message("INFO", "Application started minimized to system tray.")
+
+    def restore_from_tray(self, icon=None, item=None):
+        """Restore the application window from the tray."""
+        if self.root.state() == 'withdrawn':
+            self.root.deiconify()
+
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.attributes('-topmost', False)
+        self.root.focus_force()
+
+    def _on_tray_open(self, icon, item):
+        self.root.after(0, self.restore_from_tray)
+
+    def _on_tray_quit(self, icon, item):
+        self.root.after(0, self.on_closing)
+
+    def cleanup_tray(self):
+        if self.tray_icon:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+            self.tray_icon = None
 
     def log_message(self, level, message):
         """Add a timestamped message to the activity log"""
@@ -980,6 +1338,21 @@ class RTSPTimelapseGUI:
                 if result.success:
                     self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
 
+                    # Upload to Discord if webhook is configured
+                    try:
+                        if self._send_discord_webhook(result.output_file, date_str):
+                            self.log_message("INFO", "[Auto Video] Discord upload completed")
+
+                            # Optionally delete the generated video after successful Discord upload
+                            try:
+                                if self.config_manager.astro_schedule.delete_video_after_discord_upload:
+                                    result.output_file.unlink()
+                                    self.log_message("INFO", f"[Auto Video] Deleted video after Discord upload: {result.output_file}")
+                            except Exception as e:
+                                self.log_message("WARNING", f"[Auto Video] Failed to delete video file: {e}")
+                    except Exception as e:
+                        self.log_message("ERROR", f"[Auto Video] Discord upload failed: {e}")
+
                     # Update capture history to mark video as created
                     try:
                         capture_history = get_capture_history()
@@ -1013,6 +1386,7 @@ class RTSPTimelapseGUI:
 
         # Auto-save all settings before closing
         self.save_config()
+        self.cleanup_tray()
 
         if self.is_capturing:
             if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):

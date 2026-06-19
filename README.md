@@ -38,7 +38,10 @@
 - **Manual time mode** as alternative to twilight-based scheduling.
 - **Two-month calendar view** showing captured dates, scheduled dates, and today.
 - **Auto video creation** after each night's capture session completes.
+- **Discord webhook upload** for automatically posting generated videos to a Discord channel.
+- **Delete video after successful Discord upload** option to remove the exported MP4 once it has been posted.
 - **Auto delete snapshots** option to free up disk space after video creation.
+- **Minimize to tray on startup** option in the Scheduling panel for headless or always-running setups.
 - **Color-coded scheduler log** for monitoring automated capture activity.
 - Start/end time offsets to fine-tune the darkness window.
 
@@ -101,6 +104,9 @@
    ```bash
    python run_gui.py
    ```
+
+> Note: The system tray startup feature requires the `pystray` dependency, which is installed automatically by `pip install -r requirements.txt`.
+
 
 ---
 
@@ -261,6 +267,9 @@ Choose between two scheduling modes:
    [✓] Create video after each night's session
    [ ] Delete snapshots after (use with caution!)
    ```
+   - If you want the created timelapse to be sent to Discord automatically, enter a valid webhook URL and set the maximum upload size in MB.
+   - If the generated video is larger than the configured size limit, upload is skipped and the video is still created locally.
+   - **Delete video after Discord upload:** a new option lets the app automatically delete the exported video file after a successful Discord upload. Enable this with caution — the deletion is permanent. The UI checkbox is in the Scheduling tab under the Discord settings, and the corresponding configuration key is `delete_video_after_discord_upload` in the `astro_schedule` section of the config file.
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -269,6 +278,10 @@ Choose between two scheduling modes:
    - Capture starts automatically when darkness begins
    - Capture stops automatically when darkness ends
    - Videos are created automatically if enabled
+5. **Startup & Tray Option**
+   - Use **Minimize to tray on startup** in the Scheduling panel
+   - The app will launch minimized into the system tray when enabled
+   - Restore the window by double-clicking the tray icon or choosing `Open`
 
 ### Scheduler Status
 
@@ -639,7 +652,16 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.2.1 (2026-05-30) - Latest
+### v3.3.0 (in development)
+**Discord Upload & System Tray**
+
+- **New**: Discord webhook upload — automatically posts the generated timelapse video to a Discord channel after each night's session. Includes a configurable max upload size, optional auto quality reduction (re-encodes to fit the limit), and an export-resolution selector.
+- **New**: "Delete video after successful Discord upload" option to remove the exported MP4 once it has been posted.
+- **New**: "Minimize to tray on startup" option — the app launches into the system tray for headless or always-running setups; restore it from the tray icon.
+
+---
+
+### v3.2.1 (2026-05-30)
 **Bug Fix Release**
 
 - **Fixed**: The scheduler status label could get stuck on "Capturing" after a scheduled session ended. It now always reflects the scheduler's real state — Capturing / Active (waiting) / Inactive — via a corrected stop sequence plus a self-healing periodic refresh.
