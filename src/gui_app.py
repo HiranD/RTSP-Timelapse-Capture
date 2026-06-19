@@ -14,6 +14,7 @@ import uuid
 import urllib.request
 import urllib.error
 import subprocess
+import shutil
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -216,14 +217,13 @@ class RTSPTimelapseGUI:
         content_type = f"multipart/form-data; boundary={boundary}"
         return bytes(body), content_type
 
-    def _reencode_for_discord(self, output_file: Path, date_str: str, max_size_mb: int) -> Path:
+    def _reencode_for_discord(self, output_file: Path, max_size_mb: int) -> Path:
         """
         Re-encode video with progressively lower quality if it exceeds Discord size limit.
         Uses FFmpeg directly with quality degradation sequence.
         
         Args:
             output_file: Original video file path
-            date_str: Date string YYYYMMDD
             max_size_mb: Maximum allowed size in MB
         
         Returns:
@@ -239,6 +239,7 @@ class RTSPTimelapseGUI:
         )
 
         try:
+            discord_folder = None
             from ffmpeg_wrapper import FFmpegWrapper
 
             ffmpeg_wrapper = FFmpegWrapper()
@@ -333,7 +334,6 @@ class RTSPTimelapseGUI:
             )
             
             # Cleanup temp folder
-            import shutil
             try:
                 shutil.rmtree(discord_folder)
             except Exception:
@@ -346,6 +346,8 @@ class RTSPTimelapseGUI:
                 "ERROR",
                 f"[Discord] Re-encoding failed: {str(e)}. Using original file."
             )
+            if discord_folder is not None and discord_folder.exists():
+                shutil.rmtree(discord_folder, ignore_errors=True)
             return output_file
 
     def _send_discord_webhook(self, output_file: Path, date_str: str) -> bool:
@@ -374,7 +376,7 @@ class RTSPTimelapseGUI:
         try:
             # If file is too large and auto-reduce is enabled, try re-encoding
             if auto_quality_reduce and file_size_mb > max_size_mb:
-                upload_file = self._reencode_for_discord(output_file, date_str, max_size_mb)
+                upload_file = self._reencode_for_discord(output_file, max_size_mb)
                 if upload_file != output_file:
                     temp_dir = upload_file.parent
                 file_size_mb = upload_file.stat().st_size / (1024 * 1024)
@@ -426,7 +428,6 @@ class RTSPTimelapseGUI:
             # Always remove the re-encode scratch folder so temp files never accumulate,
             # regardless of whether the upload succeeded or the original is later deleted.
             if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
-                import shutil
                 try:
                     shutil.rmtree(temp_dir)
                 except Exception:
@@ -1430,7 +1431,6 @@ class RTSPTimelapseGUI:
                     # Delete snapshot folder if enabled
                     if delete_snapshots:
                         try:
-                            import shutil
                             self.log_message("INFO", f"[Auto Video] Deleting snapshot folder: {date_folder}")
                             shutil.rmtree(date_folder)
                             self.log_message("INFO", f"[Auto Video] Snapshot folder deleted successfully")
