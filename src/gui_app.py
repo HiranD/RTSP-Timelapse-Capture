@@ -326,6 +326,13 @@ class RTSPTimelapseGUI:
                     )
                     return discord_file
 
+                # Still too large — drop this copy before trying the next quality step,
+                # so oversized encodes don't pile up in .discord_encode/ during the loop.
+                try:
+                    discord_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
             # All qualities failed or still too large
             self.log_message(
                 "WARNING",
