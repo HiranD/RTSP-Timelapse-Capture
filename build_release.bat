@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.2.1"
+set "VERSION=3.3.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -68,9 +68,10 @@ echo    Astronomical Scheduling - Automated Long-Term Capture Planning
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * Fixed: scheduler status no longer gets stuck on "Capturing" after a
-echo     session ends - it now always reflects the real state
-echo     ^(Capturing / Active ^(waiting^) / Inactive^)
+echo   * New Integrations tab: Discord webhook upload of the nightly video, with
+echo     max upload size, auto quality reduction, and delete-after-upload.
+echo   * Minimize to tray on startup and Start automatically with Windows.
+echo   * New custom application icon.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
