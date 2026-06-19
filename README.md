@@ -2,7 +2,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.2.1-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -65,7 +65,7 @@
 
 ### Scheduling Tab (NEW in v3.0)
 ![Scheduling Interface](screenshots/Scheduling_tab.jpg)
-*Astronomical scheduling interface with twilight/manual time modes, two-month calendar, auto video creation, and scheduler log.*
+*Astronomical scheduling interface: twilight or manual time modes, two-month capture calendar (captured / scheduled / past), auto video creation with optional snapshot cleanup, start-automatically-with-Windows, a live scheduler status indicator, and scheduler log.*
 
 ---
 
@@ -639,7 +639,14 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.2.0 (2026-05-29) - Latest
+### v3.2.1 (2026-05-30) - Latest
+**Bug Fix Release**
+
+- **Fixed**: The scheduler status label could get stuck on "Capturing" after a scheduled session ended. It now always reflects the scheduler's real state — Capturing / Active (waiting) / Inactive — via a corrected stop sequence plus a self-healing periodic refresh.
+
+---
+
+### v3.2.0 (2026-05-29)
 **Unattended Startup**
 
 - **New**: "Start automatically when Windows starts" toggle on the Scheduling tab. Registers the app to launch at user logon (per-user Windows startup, no admin). Paired with persistent automatic scheduling, the rig resumes capture on its own after a reboot — boot → login → app launches → scheduler re-arms.

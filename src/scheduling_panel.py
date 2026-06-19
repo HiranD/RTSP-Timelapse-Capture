@@ -68,14 +68,50 @@ class SchedulingPanel(ttk.Frame):
         self.create_video_callback = None
         self.log_callback = None
 
-        # Session tracking for capture history
+        # Session tracking for capture history. Invariant: session_start_time is
+        # only ever written and read on the scheduler's monitor thread
+        # (_on_scheduler_start_capture writes; _on_session_complete /
+        # _record_capture_session read and clear), so it needs no lock. Add one
+        # if a main-thread reader is ever introduced.
         self.session_start_time: Optional[datetime] = None
         self.capture_history = get_capture_history()
+
+        # Cancellation handle for the periodic status poll (see cleanup()).
+        self._status_poll_id: Optional[str] = None
 
         # Create UI
         self._create_widgets()
         self._load_from_config()
         self._update_tonight_display()
+
+        # Self-healing status refresh: keep the scheduler status label in sync
+        # with the scheduler's real state, so it can never get stuck (e.g. on
+        # "Capturing" after a session ends). Runs on the main thread.
+        self._poll_scheduler_status()
+
+    def _widget_alive(self) -> bool:
+        """True if this widget still exists. Used by after() callbacks that may
+        fire after cleanup()/destroy, to avoid touching a torn-down widget and
+        raising TclError."""
+        try:
+            return bool(self.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _poll_scheduler_status(self):
+        """Periodically resync the status label to the scheduler's real state."""
+        # Guard against a callback dispatched into the Tk event loop before
+        # cleanup()/after_cancel ran (see _widget_alive).
+        if not self._widget_alive():
+            return
+        # This runs on the main thread and reads scheduler.capture_active (via
+        # _update_scheduler_status -> get_status), which the monitor thread
+        # writes. Unlike session_start_time, capture_active is a single boolean
+        # flag whose read is GIL-atomic in CPython, so no lock is needed here.
+        self._update_scheduler_status()
+        # ~2s cadence is plenty for a status label and is negligible cost.
+        # Store the handle so cleanup() can cancel the loop on teardown.
+        self._status_poll_id = self.after(2000, self._poll_scheduler_status)
 
     def _create_widgets(self):
         """Create all panel widgets"""
@@ -715,6 +751,11 @@ class SchedulingPanel(ttk.Frame):
 
     def _update_scheduler_status(self):
         """Update the scheduler status display"""
+        # Central teardown guard: this is dispatched via after(0, ...) from the
+        # monitor thread (start/stop capture) and from the periodic poll, so it
+        # may fire after cleanup() has destroyed the widget (see _widget_alive).
+        if not self._widget_alive():
+            return
         if self.scheduler and self.scheduler.is_running():
             status = self.scheduler.get_status()
             if status.get("capture_active"):
@@ -735,7 +776,11 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_scheduler_start_capture(self):
         """Called by scheduler when it's time to start capture"""
-        self._update_scheduler_status()
+        # Called from the scheduler's monitor thread. UI work is marshalled to
+        # the main thread via after(). session_start_time is written here and
+        # read later in _record_capture_session, both on this same monitor
+        # thread (see __init__), so no locking is needed.
+        self.after(0, self._update_scheduler_status)
         # Track session start time for capture history
         self.session_start_time = datetime.now()
         if self.start_capture_callback:
@@ -745,24 +790,48 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
-        self._update_scheduler_status()
+        # Called from the scheduler's monitor thread - marshal UI work to the
+        # main thread via after().
+        # Ordering is intentional: the status refresh reflects the scheduler's
+        # already-updated state (capture_active is False by now), so the label
+        # flips to "Active (waiting)" even though stop_capture_callback may still
+        # be unwinding the capture engine on the same tick. The 2s poll
+        # reconciles any transient mismatch.
+        self.after(0, self._update_scheduler_status)
         if self.stop_capture_callback:
             # Use after() to call on main thread
             self.after(0, self.stop_capture_callback)
 
     def _on_session_complete(self, date_str: str):
-        """Called by scheduler when a capture session completes"""
+        """Called by the scheduler on its monitor thread when a session completes."""
         self._log("INFO", f"Session complete for {date_str}")
 
-        # Record session to capture history
+        # Record to history on this (monitor) thread on purpose: it globs the
+        # snapshot directory (file I/O that could block the Tk event loop on a
+        # large session), and the only Tk it touches (_log, calendar refresh) is
+        # already marshalled via after() internally.
         self._record_capture_session(date_str)
 
-        # Check if auto video creation is enabled
+        # The start time has now been consumed; clear it so a stray second
+        # on_session_complete can't silently reuse a stale value. Same monitor
+        # thread as the write/read, so no lock needed (see __init__).
+        self.session_start_time = None
+
+        # auto_video_var is a tk.BooleanVar - read it (and kick off the video) on
+        # the main thread.
+        self.after(0, lambda: self._maybe_autocreate_video(date_str))
+
+    def _maybe_autocreate_video(self, date_str: str):
+        """Runs on the main thread - safe to read auto_video_var here."""
+        # Guard against teardown between scheduling this callback and it firing:
+        # if the widget is gone, auto_video_var.get() would raise TclError.
+        if not self._widget_alive():
+            return
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
                 # Pass the date string so the callback can find the right folder
-                self.after(0, lambda: self.create_video_callback(date_str))
+                self.create_video_callback(date_str)
 
     def _record_capture_session(self, date_str: str):
         """Record a completed capture session to history"""
@@ -774,7 +843,7 @@ class SchedulingPanel(ttk.Frame):
             if date_folder.exists():
                 image_count = len(list(date_folder.glob("*.jpg"))) + len(list(date_folder.glob("*.jpeg")))
 
-            # Get session times
+            # Get session times (monitor-thread only - see __init__)
             end_time = datetime.now()
             start_time = self.session_start_time or end_time
 
@@ -840,6 +909,10 @@ class SchedulingPanel(ttk.Frame):
 
     def cleanup(self):
         """Clean up resources when panel is destroyed"""
+        # Stop the periodic status poll so it can't fire on a torn-down widget.
+        if self._status_poll_id is not None:
+            self.after_cancel(self._status_poll_id)
+            self._status_poll_id = None
         if self.scheduler:
             self.scheduler.stop()
             self.scheduler = None
