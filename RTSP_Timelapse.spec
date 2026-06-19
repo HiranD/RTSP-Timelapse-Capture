@@ -5,7 +5,7 @@ a = Analysis(
     ['src\\gui_app.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
+    datas=[('assets/icon.ico', 'assets')],
     hiddenimports=[
         'config_manager',
         'capture_engine',

@@ -37,6 +37,24 @@ def get_config_path() -> Path:
     """Get the path to the config file."""
     return get_app_base_dir() / "config" / "app_config.json"
 
+
+def get_resource_path(relative: str) -> Path:
+    """Resolve a bundled resource (e.g. assets/icon.ico).
+
+    PyInstaller one-file builds extract bundled data to a temp dir exposed as
+    ``sys._MEIPASS`` (not the exe's folder), so check that first. From source,
+    resolve relative to the repo root (src's parent).
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base) / relative
+    return Path(__file__).parent.parent / relative
+
+
+def get_app_icon_path() -> Path:
+    """Path to the application icon (.ico)."""
+    return get_resource_path("assets/icon.ico")
+
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
 from video_export_panel import VideoExportPanel
@@ -68,6 +86,7 @@ class RTSPTimelapseGUI:
         self.root.title("RTSP Timelapse Capture System")
         self.root.geometry("1200x900")
         self.root.minsize(1000, 850)
+        self._set_window_icon()
 
         # Configuration and engine
         self.config_manager = ConfigManager()
@@ -720,6 +739,15 @@ class RTSPTimelapseGUI:
         self.root.bind('<space>', lambda e: self.toggle_capture() if not self.is_capturing else None)
         self.root.bind('<Escape>', lambda e: self.stop_capture() if self.is_capturing else None)
 
+    def _set_window_icon(self):
+        """Set the window/taskbar icon from the bundled .ico (best-effort)."""
+        try:
+            icon_path = get_app_icon_path()
+            if icon_path.exists():
+                self.root.iconbitmap(default=str(icon_path))
+        except Exception:
+            pass
+
     def _load_pystray(self):
         if self._pystray_available is False:
             return
@@ -736,6 +764,15 @@ class RTSPTimelapseGUI:
             self.log_message("WARNING", f"System tray support unavailable: {e}")
 
     def _create_tray_image(self):
+        # Prefer the real application icon so the tray matches the window/taskbar.
+        try:
+            icon_path = get_app_icon_path()
+            if icon_path.exists():
+                return Image.open(str(icon_path)).convert("RGBA")
+        except Exception as e:
+            self.log_message("WARNING", f"Could not load tray icon, using fallback: {e}")
+
+        # Fallback: a simple generated "RT" badge.
         size = 64
         image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
