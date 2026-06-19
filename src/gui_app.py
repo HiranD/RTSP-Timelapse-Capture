@@ -153,28 +153,33 @@ class RTSPTimelapseGUI:
         )
 
     def _encode_multipart_formdata(self, fields):
-        """Encode a multipart/form-data request body."""
+        """Encode a multipart/form-data request body.
+
+        Each field is a ``(name, value)`` pair. A simple field's value is
+        bytes/str; a file field's value is a ``(filename, content, content_type)``
+        tuple. Branch on the value type — both pairs are length 2, so a length
+        check cannot tell them apart.
+        """
         boundary = uuid.uuid4().hex
         body = bytearray()
 
-        for field in fields:
-            if len(field) == 2:
-                name, value = field
-                value_bytes = value if isinstance(value, (bytes, bytearray)) else str(value).encode('utf-8')
-                body.extend(f"--{boundary}\r\n".encode('utf-8'))
-                body.extend(f"Content-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode('utf-8'))
-                body.extend(value_bytes)
-                body.extend(b"\r\n")
-            else:
-                name, (filename, value, content_type) = field
-                file_bytes = value if isinstance(value, (bytes, bytearray)) else value.encode('utf-8')
+        for name, value in fields:
+            if isinstance(value, tuple):
+                filename, content, content_type = value
+                content_bytes = content if isinstance(content, (bytes, bytearray)) else content.encode('utf-8')
                 body.extend(f"--{boundary}\r\n".encode('utf-8'))
                 body.extend(
                     f"Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n"
                     .encode('utf-8')
                 )
                 body.extend(f"Content-Type: {content_type}\r\n\r\n".encode('utf-8'))
-                body.extend(file_bytes)
+                body.extend(content_bytes)
+                body.extend(b"\r\n")
+            else:
+                value_bytes = value if isinstance(value, (bytes, bytearray)) else str(value).encode('utf-8')
+                body.extend(f"--{boundary}\r\n".encode('utf-8'))
+                body.extend(f"Content-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode('utf-8'))
+                body.extend(value_bytes)
                 body.extend(b"\r\n")
 
         body.extend(f"--{boundary}--\r\n".encode('utf-8'))
