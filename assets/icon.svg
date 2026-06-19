@@ -1,41 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RTSP Timelapse Capture System — application icon (master source).
-  Concept: head-on RTSP/IP security camera. Rounded housing + corner IR-illuminator
-  dots (one amber = record/status light) + wall mount; a circular timelapse "interval
-  loop" arrow wraps the lens, and the lens "captures" a small starfield (astro theme).
-  Palette: slate housing/background + amber accent (timelapse loop, status LED).
+  RTSP Timelapse Capture System - application icon (master source).
+  Concept: head-on RTSP/IP security camera on a TRANSPARENT background (no badge).
+  Rounded housing + green live-status LED + wall mount; an amber timelapse
+  "interval loop" arrow wraps the lens, and the lens "captures" a small starfield
+  (astro theme).
+  Palette: slate housing + amber accent (timelapse loop), green status LED.
   Edit this file, then run:  python scripts/build_icon.py  to regenerate assets/icon.ico + icon.png.
-  Note: background is a FULL square here; rounded corners are applied by the build script's alpha mask.
-        svglib's cairo backend can't render <linearGradient> (it clips and errors), so fills are flat.
+  Note: there is NO background rect here. The build script recovers transparency by
+        rendering the artwork over white and black and reconstructing alpha (the cairo
+        backend cannot emit alpha directly). The cairo backend also cannot render
+        gradients, so all fills are flat.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <!-- Background (full square; corners rounded by build script) -->
-  <rect x="0" y="0" width="256" height="256" fill="#26303f"/>
-
   <!-- Wall/ceiling mount (drawn behind the housing) -->
-  <rect x="116" y="176" width="24" height="30" rx="6" fill="#465569"/>
-  <rect x="92" y="198" width="72" height="20" rx="10" fill="#465569"/>
+  <rect x="114" y="196" width="28" height="34" rx="7" fill="#465569"/>
+  <rect x="92" y="222" width="72" height="20" rx="10" fill="#465569"/>
 
-  <!-- Camera housing (head-on IP-cam face plate) -->
-  <rect x="54" y="52" width="148" height="132" rx="30" fill="#e8edf3"/>
-  <rect x="54" y="52" width="148" height="56" rx="30" fill="#ffffff" opacity="0.4"/>
-
-  <!-- Single "live / online" status LED (green), bottom-right corner -->
-  <circle cx="184" cy="160" r="6" fill="#22c55e"/>
+  <!-- Camera housing (head-on IP-cam face plate), near full-bleed -->
+  <rect x="20" y="22" width="216" height="180" rx="40" fill="#e8edf3"/>
+  <rect x="20" y="22" width="216" height="74" rx="40" fill="#ffffff" opacity="0.4"/>
 
   <!-- Timelapse interval loop: amber arc sweeping clockwise around the lens -->
-  <path d="M 161.3 68.5 A 58 58 0 1 1 99 65.8"
-        fill="none" stroke="#f59e0b" stroke-width="13" stroke-linecap="round"/>
-  <polygon points="112.9,57.8 99.3,78.3 88.3,59.3" fill="#f59e0b"/>
+  <path d="M 171.6 43.7 A 76 76 0 1 1 90 40.2"
+        fill="none" stroke="#f59e0b" stroke-width="16" stroke-linecap="round"/>
+  <polygon points="109,29.2 90.6,57.2 75.6,31.2" fill="#f59e0b"/>
 
   <!-- Lens (glass deepened to night-sky navy so the captured stars read) -->
-  <circle cx="128" cy="116" r="46" fill="#0f172a"/>
-  <circle cx="128" cy="116" r="37" fill="#334155"/>
-  <circle cx="128" cy="116" r="26" fill="#1f2d4d"/>
+  <circle cx="128" cy="106" r="64" fill="#0f172a"/>
+  <circle cx="128" cy="106" r="51" fill="#334155"/>
+  <circle cx="128" cy="106" r="36" fill="#1f2d4d"/>
   <!-- Starfield "captured" in the lens: a sparkle + a few small stars -->
-  <polygon points="124,96 127,107 138,110 127,113 124,124 121,113 110,110 121,107" fill="#ffffff"/>
-  <circle cx="139" cy="122" r="2.4" fill="#ffffff" opacity="0.85"/>
-  <circle cx="116" cy="127" r="1.8" fill="#ffffff" opacity="0.7"/>
-  <circle cx="136" cy="103" r="1.4" fill="#ffffff" opacity="0.6"/>
+  <polygon points="122,78 126,94 142,98 126,102 122,118 118,102 102,98 118,94" fill="#ffffff"/>
+  <circle cx="143" cy="114" r="3.3" fill="#ffffff" opacity="0.85"/>
+  <circle cx="111" cy="121" r="2.5" fill="#ffffff" opacity="0.7"/>
+  <circle cx="139" cy="88"  r="1.9" fill="#ffffff" opacity="0.6"/>
+
+  <!-- Single "live / online" status LED (green), bottom-right corner -->
+  <circle cx="206" cy="170" r="8" fill="#22c55e"/>
 </svg>
