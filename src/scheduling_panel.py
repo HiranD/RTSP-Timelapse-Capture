@@ -25,7 +25,6 @@ try:
     from src.tooltip import ToolTip
     from src.scheduling_tooltips import SCHEDULING_TOOLTIPS
     from src.capture_history import get_capture_history
-    from src import startup_manager
 except ImportError:
     from calendar_widget import TwoMonthCalendar
     from twilight_calculator import TwilightCalculator
@@ -35,7 +34,6 @@ except ImportError:
     from tooltip import ToolTip
     from scheduling_tooltips import SCHEDULING_TOOLTIPS
     from capture_history import get_capture_history
-    import startup_manager
 
 
 class SchedulingPanel(ttk.Frame):
@@ -352,7 +350,7 @@ class SchedulingPanel(ttk.Frame):
             "images for that date. Use with caution!"
         )
 
-        # Initially disable delete checkbox if auto video is off
+        # Initially disable the delete-snapshots checkbox if auto video is off
         self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
@@ -385,28 +383,7 @@ class SchedulingPanel(ttk.Frame):
             font=("Segoe UI", 9),
             foreground="gray"
         )
-        # "Start with Windows" - inline, just right of the scheduling toggle
-        self.start_with_windows_var = tk.BooleanVar(value=False)
-        self.start_with_windows_checkbox = ttk.Checkbutton(
-            control_frame,
-            text="Start automatically when Windows starts",
-            variable=self.start_with_windows_var,
-            command=self._on_start_with_windows_toggle
-        )
-        self.start_with_windows_checkbox.pack(side="left", padx=(20, 0))
-        ToolTip(self.start_with_windows_checkbox,
-            "Launch this app automatically when you log in to Windows.\n\n"
-            "Combine with 'Enable automatic scheduling' for a fully\n"
-            "unattended rig: after a reboot the app starts and the scheduler\n"
-            "re-arms on its own.\n\n"
-            "Note: a logged-in desktop session is required, so enable Windows\n"
-            "auto-login on a headless machine."
-        )
-
-        # Only meaningful on Windows; disable elsewhere.
-        if not startup_manager.is_supported():
-            self.start_with_windows_checkbox.config(state="disabled")
-
+        # (Start-with-Windows and minimize-to-tray moved to the Integrations tab.)
         self.scheduler_status_label.pack(side="right", padx=(20, 0))
 
         # Separator
@@ -478,9 +455,6 @@ class SchedulingPanel(ttk.Frame):
         # Scheduler enabled state (UI only — actual restart happens via restore_scheduler_state)
         self.scheduler_enabled_var.set(cfg.scheduler_enabled)
 
-        # "Start with Windows" reflects the live registry state, not config.
-        self.start_with_windows_var.set(startup_manager.is_enabled())
-
         # Update twilight calculator
         self._update_twilight_calculator()
         self._update_hemisphere_display()
@@ -527,7 +501,7 @@ class SchedulingPanel(ttk.Frame):
         cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
-        # Scheduler enabled state
+        # Scheduler UI state
         cfg.scheduler_enabled = self.scheduler_enabled_var.get()
 
         # Save to file
@@ -693,21 +667,6 @@ class SchedulingPanel(ttk.Frame):
         else:
             self._stop_scheduler()
         self._save_to_config()
-
-    def _on_start_with_windows_toggle(self):
-        """Register/unregister the app to launch at Windows logon."""
-        want_enabled = self.start_with_windows_var.get()
-        if want_enabled:
-            success, message = startup_manager.enable()
-        else:
-            success, message = startup_manager.disable()
-
-        if success:
-            self._log("INFO", message)
-        else:
-            # Resync the checkbox to the registry's actual state and report why.
-            self.start_with_windows_var.set(startup_manager.is_enabled())
-            self._log("ERROR", message)
 
     def _start_scheduler(self):
         """Start the astronomical scheduler"""

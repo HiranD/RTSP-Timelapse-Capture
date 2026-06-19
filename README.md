@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/icon.png" alt="RTSP Timelapse Capture" width="128">
+</p>
+
 # RTSP Timelapse Capture System
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.2.1-blue.svg)
+![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -42,9 +46,16 @@
 - **Color-coded scheduler log** for monitoring automated capture activity.
 - Start/end time offsets to fine-tune the darkness window.
 
+### Integrations (NEW in v3.3)
+- **Discord webhook upload** automatically posts each night's generated timelapse to a Discord channel.
+- **Upload size handling** with a configurable max size, optional auto quality reduction (re-encodes to fit), and an export-resolution selector.
+- **Delete video after successful Discord upload** to remove the exported MP4 once it has been posted.
+- **Minimize to tray on startup** for headless or always-running setups.
+- **Start automatically when Windows starts** (per-user, no admin) for unattended rigs.
+
 ### User Experience
-- Three-tab interface: **Capture**, **Video Export**, and **Scheduling**.
-- **Comprehensive tooltip system** with 37 hover tooltips explaining every control.
+- Four-tab interface: **Capture**, **Video Export**, **Scheduling**, and **Integrations**.
+- **Comprehensive tooltip system** with 44 hover tooltips explaining every control.
 - Keyboard shortcuts for common actions.
 - Auto-save configuration when switching tabs and on app close.
 - Thread-safe capture engine keeps the UI responsive.
@@ -65,7 +76,11 @@
 
 ### Scheduling Tab (NEW in v3.0)
 ![Scheduling Interface](screenshots/Scheduling_tab.jpg)
-*Astronomical scheduling interface: twilight or manual time modes, two-month capture calendar (captured / scheduled / past), auto video creation with optional snapshot cleanup, start-automatically-with-Windows, a live scheduler status indicator, and scheduler log.*
+*Astronomical scheduling interface: twilight or manual time modes, two-month capture calendar (captured / scheduled / past), auto video creation with optional snapshot cleanup, a live scheduler status indicator, and scheduler log.*
+
+### Integrations Tab (NEW in v3.3)
+![Integrations Interface](screenshots/Integrations_tab.jpg)
+*Integrations tab: Discord webhook upload of the nightly video (max upload size, auto quality reduction, export resolution, delete-after-upload) plus application options — minimize to tray on startup and start automatically with Windows.*
 
 ---
 
@@ -101,6 +116,9 @@
    ```bash
    python run_gui.py
    ```
+
+> Note: The system tray startup feature requires the `pystray` dependency, which is installed automatically by `pip install -r requirements.txt`.
+
 
 ---
 
@@ -261,6 +279,7 @@ Choose between two scheduling modes:
    [✓] Create video after each night's session
    [ ] Delete snapshots after (use with caution!)
    ```
+   - Enabling **Create video after each night's session** is also what unlocks the optional **Discord upload** — configure the webhook and upload options on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -269,6 +288,9 @@ Choose between two scheduling modes:
    - Capture starts automatically when darkness begins
    - Capture stops automatically when darkness ends
    - Videos are created automatically if enabled
+5. **Startup & Tray Options**
+   - **Minimize to tray on startup** and **Start automatically when Windows starts** now live on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - Restore a tray-minimized window by double-clicking the tray icon or choosing `Open`.
 
 ### Scheduler Status
 
@@ -282,6 +304,35 @@ Monitor scheduler activity in the color-coded log:
 - **INFO** (black): Normal operations
 - **WARNING** (orange): Non-critical issues
 - **ERROR** (red): Problems requiring attention
+
+---
+
+## Using the Integrations Tab (NEW in v3.3)
+
+Optional, set-once integrations and unattended-operation options live on their own tab.
+
+### Discord Upload
+
+Automatically post each night's generated timelapse to a Discord channel.
+
+> Requires **Create video after each night's session** on the Scheduling tab — the upload runs as part of that auto-video step.
+
+| Setting | Description |
+|---------|-------------|
+| **Discord Webhook URL** | Webhook to upload the generated video to. Leave blank to disable Discord uploads. |
+| **Max upload size (MB)** | Largest file Discord will accept (default `8`). If the video is bigger, upload is skipped — unless *Auto reduce quality* is on. |
+| **Auto reduce quality if too large** | Re-encode an oversized video to fit: quality steps down through CRF 20 → 45 at the selected export resolution, stopping at the first encode under the size limit. If even the lowest quality can't fit, upload is skipped and the original is kept locally. |
+| **Export resolution** | Frame size used only when auto-reduce re-encodes (`original`, `720p`, `480p`, `360p`). Smaller resolutions reach the size limit with less visible quality loss than compression alone. |
+| **Delete video after successful Discord upload** | Removes the exported MP4 once it has been posted. Use with caution — deletion is permanent. |
+
+### Application
+
+| Setting | Description |
+|---------|-------------|
+| **Minimize to tray on startup** | Launches the app into the system tray; restore it from the tray icon (`Open`). |
+| **Start automatically when Windows starts** | Registers the app to launch at logon (per-user, no admin). Pair with persistent scheduling for an unattended rig. Note: a GUI needs a desktop session, so enable Windows auto-login on a headless machine. |
+
+*Discord and tray settings are saved to `config/app_config.json`; "Start automatically when Windows starts" is stored in the Windows registry (per-user Run key), not in the config file.*
 
 ---
 
@@ -326,6 +377,20 @@ Overnight windows (start later than end) are handled automatically.
 | Proactive Reconnect (s)  | Reconnect interval to prevent camera timeout | `300` (5 min) |
 
 **v2.3.0 Defaults**: Optimized for maximum timestamp accuracy and reliability. These ready to use values achieve ±5 second precision with 100% capture success rate.
+
+### Integrations Settings (Integrations tab)
+
+Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, except where noted.
+
+| Setting                     | Config key                                       | Default        | Notes                                       |
+|-----------------------------|--------------------------------------------------|----------------|---------------------------------------------|
+| Discord Webhook URL         | `astro_schedule.discord_webhook_url`             | `""`           | Blank disables Discord upload               |
+| Max upload size (MB)        | `astro_schedule.discord_max_video_size_mb`       | `8`            | Skip upload if exceeded (unless auto-reduce)|
+| Auto reduce quality         | `astro_schedule.discord_auto_quality_reduction`  | `false`        | Re-encode CRF 20→45 to fit                  |
+| Export resolution           | `astro_schedule.discord_export_resolution`       | `"original"`   | `original` / `720p` / `480p` / `360p`       |
+| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the MP4 after a successful upload   |
+| Minimize to tray on startup | `ui.minimize_to_tray_on_startup`                 | `false`        |                                             |
+| Start with Windows          | *(Windows registry, per-user Run key)*           | off            | Not stored in the JSON config               |
 
 ---
 
@@ -526,7 +591,17 @@ RTSP/
 │   ├── scheduling_tooltips.py   # Scheduling tab tooltip messages (NEW v3.0)
 │   ├── calendar_widget.py       # Two-month calendar widget (NEW v3.0)
 │   ├── twilight_calculator.py   # Twilight time calculations (NEW v3.0)
-│   └── astro_scheduler.py       # Automated scheduling engine (NEW v3.0)
+│   ├── astro_scheduler.py       # Automated scheduling engine (NEW v3.0)
+│   ├── integrations_panel.py    # Integrations tab GUI (NEW v3.3)
+│   └── startup_manager.py       # Windows start-at-logon registration (NEW v3.3)
+│
+├── assets/                       # Application icon (NEW v3.3)
+│   ├── icon.svg                 # Master vector source
+│   ├── icon.ico                 # Multi-size Windows icon (generated)
+│   └── icon.png                 # 256px PNG (generated)
+│
+├── scripts/                      # Build/utility scripts (NEW v3.3)
+│   └── build_icon.py            # Regenerate icon.ico/.png from icon.svg
 │
 ├── tests/                        # Test files
 │   ├── test_backend.py          # Interactive backend tests
@@ -639,7 +714,20 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.2.1 (2026-05-30) - Latest
+### v3.3.0 (2026-06-19)
+**Integrations: Discord Upload, Tray & Custom Icon**
+
+- **New**: **Integrations tab** consolidating optional, set-once integrations and unattended-operation options (Discord upload + application/startup options).
+- **New**: Discord webhook upload — automatically posts the generated timelapse video to a Discord channel after each night's session. Includes a configurable max upload size, optional auto quality reduction (re-encodes to fit the limit), and an export-resolution selector.
+- **New**: "Delete video after successful Discord upload" option to remove the exported MP4 once it has been posted.
+- **New**: "Minimize to tray on startup" option — the app launches into the system tray for headless or always-running setups; restore it from the tray icon.
+- **New**: Custom application icon (`assets/icon.svg`) for the window, taskbar, tray, and executable, plus a build script (`scripts/build_icon.py`) to regenerate `icon.ico`/`icon.png` from the SVG.
+- **New**: Hover tooltips on every Integrations control (44 tooltips total across the app).
+- **Changed**: "Start automatically when Windows starts" (added in v3.2.0) moved from the Scheduling tab to the Integrations tab.
+
+---
+
+### v3.2.1 (2026-05-30)
 **Bug Fix Release**
 
 - **Fixed**: The scheduler status label could get stuck on "Capturing" after a scheduled session ended. It now always reflects the scheduler's real state — Capturing / Active (waiting) / Inactive — via a corrected stop sequence plus a self-healing periodic refresh.

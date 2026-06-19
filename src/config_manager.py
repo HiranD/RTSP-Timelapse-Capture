@@ -66,6 +66,7 @@ class UIConfig:
     window_height: int = 700
     preview_size: str = "medium"  # small/medium/large
     preview_enabled: bool = True
+    minimize_to_tray_on_startup: bool = False
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
     last_video_preset: str = "Standard 24fps"  # Last selected video export preset
@@ -82,6 +83,11 @@ class AstroScheduleConfig:
     scheduled_dates: List[str] = field(default_factory=list)  # ["2025-12-15", "2025-12-16"]
     auto_create_video: bool = False  # Automatically create video after each night
     delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
+    discord_webhook_url: str = ""  # Discord webhook URL for automatic uploads
+    discord_max_video_size_mb: int = 8  # Maximum file size to upload to Discord in MB
+    discord_export_resolution: str = "original"  # Resolution for Discord export: original/720p/480p/360p
+    discord_auto_quality_reduction: bool = False  # Auto re-encode with lower quality if file exceeds limit
+    delete_video_after_discord_upload: bool = False  # Delete generated video after successful Discord upload
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time
@@ -295,6 +301,14 @@ class ConfigManager:
             errors.append(f"Start offset must be -120 to 120 minutes, got {self.astro_schedule.start_offset_minutes}")
         if not -120 <= self.astro_schedule.end_offset_minutes <= 120:
             errors.append(f"End offset must be -120 to 120 minutes, got {self.astro_schedule.end_offset_minutes}")
+        if not 1 <= self.astro_schedule.discord_max_video_size_mb <= 1024:
+            errors.append(
+                f"Discord max upload size must be between 1 and 1024 MB, got {self.astro_schedule.discord_max_video_size_mb}"
+            )
+        if self.astro_schedule.discord_export_resolution not in ["original", "720p", "480p", "360p"]:
+            errors.append(
+                f"Discord export resolution must be original/720p/480p/360p, got {self.astro_schedule.discord_export_resolution}"
+            )
 
         return len(errors) == 0, errors
 
@@ -351,6 +365,7 @@ class ConfigManager:
             "UI:",
             f"  Window Size: {self.ui.window_width}x{self.ui.window_height}",
             f"  Preview: {self.ui.preview_size} ({'enabled' if self.ui.preview_enabled else 'disabled'})",
+            f"  Minimize to Tray on Startup: {self.ui.minimize_to_tray_on_startup}",
             f"  Auto-start: {self.ui.auto_start}",
             "",
             "Astro Schedule:",
