@@ -332,26 +332,33 @@ class RTSPTimelapseGUI:
         auto_quality_reduce = self.config_manager.astro_schedule.discord_auto_quality_reduction
         file_size_mb = output_file.stat().st_size / (1024 * 1024)
 
-        # If file is too large and auto-reduce is enabled, try re-encoding
-        if auto_quality_reduce and file_size_mb > max_size_mb:
-            output_file = self._reencode_for_discord(output_file, date_str, max_size_mb)
-            file_size_mb = output_file.stat().st_size / (1024 * 1024)
-
-        if file_size_mb > max_size_mb:
-            self.log_message(
-                "WARNING",
-                f"Discord upload skipped: {output_file.name} is {file_size_mb:.1f} MB, exceeds limit {max_size_mb} MB"
-            )
-            return False
-
-        self.log_message("INFO", f"Uploading video to Discord ({file_size_mb:.1f} MB)...")
+        # The file we actually upload may be a re-encoded temp copy living in a
+        # ".discord_encode" scratch folder. Track it so we can always clean up.
+        upload_file = output_file
+        temp_dir = None
 
         try:
-            mime_type, _ = mimetypes.guess_type(str(output_file))
+            # If file is too large and auto-reduce is enabled, try re-encoding
+            if auto_quality_reduce and file_size_mb > max_size_mb:
+                upload_file = self._reencode_for_discord(output_file, date_str, max_size_mb)
+                if upload_file != output_file:
+                    temp_dir = upload_file.parent
+                file_size_mb = upload_file.stat().st_size / (1024 * 1024)
+
+            if file_size_mb > max_size_mb:
+                self.log_message(
+                    "WARNING",
+                    f"Discord upload skipped: {upload_file.name} is {file_size_mb:.1f} MB, exceeds limit {max_size_mb} MB"
+                )
+                return False
+
+            self.log_message("INFO", f"Uploading video to Discord ({file_size_mb:.1f} MB)...")
+
+            mime_type, _ = mimetypes.guess_type(str(upload_file))
             if not mime_type:
                 mime_type = "application/octet-stream"
 
-            with output_file.open('rb') as f:
+            with upload_file.open('rb') as f:
                 file_bytes = f.read()
 
             payload = json.dumps({
@@ -361,7 +368,7 @@ class RTSPTimelapseGUI:
 
             fields = [
                 ("payload_json", payload),
-                ("file", (output_file.name, file_bytes, mime_type))
+                ("file", (upload_file.name, file_bytes, mime_type))
             ]
             body, content_type = self._encode_multipart_formdata(fields)
 
@@ -386,6 +393,15 @@ class RTSPTimelapseGUI:
             self.log_message("ERROR", f"Discord upload failed: {e.reason}")
         except Exception as e:
             self.log_message("ERROR", f"Discord upload error: {e}")
+        finally:
+            # Always remove the re-encode scratch folder so temp files never accumulate,
+            # regardless of whether the upload succeeded or the original is later deleted.
+            if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
+                import shutil
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
 
         return False
 
@@ -712,12 +728,15 @@ class RTSPTimelapseGUI:
         try:
             font = ImageFont.load_default()
             text = "RT"
-            text_w, text_h = draw.textsize(text, font=font)
+            # Center via the "mm" anchor (Pillow >= 8). ImageDraw.textsize was
+            # removed in Pillow 10, which requirements.txt pins, so measuring
+            # with it would raise and silently skip the label.
             draw.text(
-                ((size - text_w) / 2, (size - text_h) / 2),
+                (size / 2, size / 2),
                 text,
                 fill="white",
-                font=font
+                font=font,
+                anchor="mm"
             )
         except Exception:
             pass
