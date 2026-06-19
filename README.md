@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="RTSP Timelapse Capture" width="128">
+</p>
+
 # RTSP Timelapse Capture System
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
