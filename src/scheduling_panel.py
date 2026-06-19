@@ -25,7 +25,6 @@ try:
     from src.tooltip import ToolTip
     from src.scheduling_tooltips import SCHEDULING_TOOLTIPS
     from src.capture_history import get_capture_history
-    from src import startup_manager
 except ImportError:
     from calendar_widget import TwoMonthCalendar
     from twilight_calculator import TwilightCalculator
@@ -35,7 +34,6 @@ except ImportError:
     from tooltip import ToolTip
     from scheduling_tooltips import SCHEDULING_TOOLTIPS
     from capture_history import get_capture_history
-    import startup_manager
 
 
 class SchedulingPanel(ttk.Frame):
@@ -352,82 +350,17 @@ class SchedulingPanel(ttk.Frame):
             "images for that date. Use with caution!"
         )
 
-        # Row 1: Discord webhook settings
-        webhook_frame = ttk.Frame(parent)
-        webhook_frame.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        webhook_frame.columnconfigure(1, weight=1)
+        # Discord upload now lives on the Integrations tab (kept separate so this
+        # section stays focused on the per-night auto-video behavior).
+        hint = ttk.Label(
+            parent,
+            text="Discord upload is configured on the Integrations tab.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        hint.grid(row=1, column=0, sticky="w", pady=(8, 0))
 
-        ttk.Label(webhook_frame, text="Discord Webhook URL:").grid(row=0, column=0, sticky="w")
-        self.discord_webhook_var = tk.StringVar(value="")
-        self.discord_webhook_entry = ttk.Entry(webhook_frame, textvariable=self.discord_webhook_var, width=60)
-        self.discord_webhook_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0))
-        self.discord_webhook_entry.bind("<FocusOut>", self._on_discord_settings_change)
-        self.discord_webhook_entry.bind("<Return>", self._on_discord_settings_change)
-        ToolTip(self.discord_webhook_entry,
-            "Discord webhook URL used to upload the generated timelapse video.\n"
-            "Leave blank to disable automatic Discord uploads."
-        )
-
-        ttk.Label(webhook_frame, text="Max upload size (MB):").grid(row=1, column=0, sticky="w", pady=(10, 0))
-        self.discord_max_size_var = tk.StringVar(value="8")
-        self.discord_max_size_entry = ttk.Entry(webhook_frame, textvariable=self.discord_max_size_var, width=8)
-        self.discord_max_size_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
-        self.discord_max_size_entry.bind("<FocusOut>", self._on_discord_settings_change)
-        self.discord_max_size_entry.bind("<Return>", self._on_discord_settings_change)
-        ToolTip(self.discord_max_size_entry,
-            "Maximum file size in megabytes for Discord uploads.\n"
-            "If the generated video exceeds this limit, upload will be skipped."
-        )
-
-        # Row 2: Discord export resolution
-        ttk.Label(webhook_frame, text="Export resolution:").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        self.discord_resolution_var = tk.StringVar(value="original")
-        self.discord_resolution_combo = ttk.Combobox(
-            webhook_frame,
-            textvariable=self.discord_resolution_var,
-            values=["original", "720p", "480p", "360p"],
-            state="readonly",
-            width=12
-        )
-        self.discord_resolution_combo.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
-        self.discord_resolution_combo.bind("<<ComboboxSelected>>", self._on_discord_settings_change)
-        ToolTip(self.discord_resolution_combo,
-            "Resolution for Discord export.\n"
-            "Lower resolutions reduce file size significantly.\n"
-            "Original uses Video Export tab resolution."
-        )
-
-        # Row 3: Auto quality reduction checkbox
-        self.discord_auto_quality_var = tk.BooleanVar(value=False)
-        self.discord_auto_quality_check = ttk.Checkbutton(
-            webhook_frame,
-            text="Auto reduce quality if too large",
-            variable=self.discord_auto_quality_var,
-            command=self._on_discord_settings_change
-        )
-        self.discord_auto_quality_check.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        ToolTip(self.discord_auto_quality_check,
-            "Automatically re-encode the video with progressively\n"
-            "lower quality (CRF) if it exceeds the size limit.\n"
-            "Stops when file is under limit or quality is unacceptable."
-        )
-
-        # Row 4: Option to delete the generated video after successful Discord upload
-        self.delete_video_after_discord_var = tk.BooleanVar(value=False)
-        self.delete_video_after_discord_check = ttk.Checkbutton(
-            webhook_frame,
-            text="Delete video after successful Discord upload",
-            variable=self.delete_video_after_discord_var,
-            command=self._on_discord_settings_change
-        )
-        self.delete_video_after_discord_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        ToolTip(self.delete_video_after_discord_check,
-            "Automatically delete the exported video file after a\n"
-            "successful upload to the configured Discord webhook.\n"
-            "Use with caution: this removes the generated video permanently."
-        )
-
-        # Initially disable delete checkbox and Discord settings if auto video is off
+        # Initially disable the delete-snapshots checkbox if auto video is off
         self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
@@ -460,41 +393,7 @@ class SchedulingPanel(ttk.Frame):
             font=("Segoe UI", 9),
             foreground="gray"
         )
-        # "Start with Windows" - inline, just right of the scheduling toggle
-        self.start_with_windows_var = tk.BooleanVar(value=False)
-        self.start_with_windows_checkbox = ttk.Checkbutton(
-            control_frame,
-            text="Start automatically when Windows starts",
-            variable=self.start_with_windows_var,
-            command=self._on_start_with_windows_toggle
-        )
-        self.start_with_windows_checkbox.pack(side="left", padx=(20, 0))
-        ToolTip(self.start_with_windows_checkbox,
-            "Launch this app automatically when you log in to Windows.\n\n"
-            "Combine with 'Enable automatic scheduling' for a fully\n"
-            "unattended rig: after a reboot the app starts and the scheduler\n"
-            "re-arms on its own.\n\n"
-            "Note: a logged-in desktop session is required, so enable Windows\n"
-            "auto-login on a headless machine."
-        )
-
-        self.minimize_to_tray_var = tk.BooleanVar(value=False)
-        self.minimize_to_tray_checkbox = ttk.Checkbutton(
-            control_frame,
-            text="Minimize to tray on startup",
-            variable=self.minimize_to_tray_var,
-            command=self._on_minimize_to_tray_toggle
-        )
-        self.minimize_to_tray_checkbox.pack(side="left", padx=(20, 0))
-        ToolTip(self.minimize_to_tray_checkbox,
-            "Start the application minimized to the system tray on launch.\n"
-            "Use the tray icon to restore the window."
-        )
-
-        # Only meaningful on Windows; disable elsewhere.
-        if not startup_manager.is_supported():
-            self.start_with_windows_checkbox.config(state="disabled")
-
+        # (Start-with-Windows and minimize-to-tray moved to the Integrations tab.)
         self.scheduler_status_label.pack(side="right", padx=(20, 0))
 
         # Separator
@@ -558,14 +457,6 @@ class SchedulingPanel(ttk.Frame):
         # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
         self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
-        self.discord_webhook_var.set(cfg.discord_webhook_url)
-        self.discord_max_size_var.set(str(cfg.discord_max_video_size_mb))
-        self.discord_resolution_var.set(cfg.discord_export_resolution)
-        self.discord_auto_quality_var.set(cfg.discord_auto_quality_reduction)
-        try:
-            self.delete_video_after_discord_var.set(cfg.delete_video_after_discord_upload)
-        except Exception:
-            self.delete_video_after_discord_var.set(False)
 
         # Load scheduled dates into calendar
         if cfg.scheduled_dates:
@@ -573,10 +464,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Scheduler enabled state (UI only — actual restart happens via restore_scheduler_state)
         self.scheduler_enabled_var.set(cfg.scheduler_enabled)
-        self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray_on_startup)
-
-        # "Start with Windows" reflects the live registry state, not config.
-        self.start_with_windows_var.set(startup_manager.is_enabled())
 
         # Update twilight calculator
         self._update_twilight_calculator()
@@ -622,19 +509,10 @@ class SchedulingPanel(ttk.Frame):
         # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
         cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
-        cfg.discord_webhook_url = self.discord_webhook_var.get().strip()
-        try:
-            cfg.discord_max_video_size_mb = int(self.discord_max_size_var.get())
-        except ValueError:
-            cfg.discord_max_video_size_mb = 8
-        cfg.discord_export_resolution = self.discord_resolution_var.get()
-        cfg.discord_auto_quality_reduction = self.discord_auto_quality_var.get()
-        cfg.delete_video_after_discord_upload = self.delete_video_after_discord_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
         # Scheduler UI state
         cfg.scheduler_enabled = self.scheduler_enabled_var.get()
-        self.config_manager.ui.minimize_to_tray_on_startup = self.minimize_to_tray_var.get()
 
         # Save to file
         self.config_manager.save_to_file()
@@ -730,10 +608,6 @@ class SchedulingPanel(ttk.Frame):
         """Enable/disable video widgets based on checkbox"""
         state = "normal" if self.auto_video_var.get() else "disabled"
         self.delete_snapshots_check.config(state=state)
-        self.discord_webhook_entry.config(state=state)
-        self.discord_max_size_entry.config(state=state)
-        self.discord_resolution_combo.config(state="disabled" if state == "disabled" else "readonly")
-        self.discord_auto_quality_check.config(state=state)
 
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""
@@ -796,14 +670,6 @@ class SchedulingPanel(ttk.Frame):
         """Handle delete snapshots checkbox toggle"""
         self._save_to_config()
 
-    def _on_minimize_to_tray_toggle(self):
-        """Handle tray startup checkbox toggle"""
-        self._save_to_config()
-
-    def _on_discord_settings_change(self, event=None):
-        """Handle Discord webhook or size setting changes"""
-        self._save_to_config()
-
     def _on_scheduler_toggle(self):
         """Handle scheduler enable/disable toggle"""
         if self.scheduler_enabled_var.get():
@@ -811,21 +677,6 @@ class SchedulingPanel(ttk.Frame):
         else:
             self._stop_scheduler()
         self._save_to_config()
-
-    def _on_start_with_windows_toggle(self):
-        """Register/unregister the app to launch at Windows logon."""
-        want_enabled = self.start_with_windows_var.get()
-        if want_enabled:
-            success, message = startup_manager.enable()
-        else:
-            success, message = startup_manager.disable()
-
-        if success:
-            self._log("INFO", message)
-        else:
-            # Resync the checkbox to the registry's actual state and report why.
-            self.start_with_windows_var.set(startup_manager.is_enabled())
-            self._log("ERROR", message)
 
     def _start_scheduler(self):
         """Start the astronomical scheduler"""

@@ -41,6 +41,7 @@ from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState
 from video_export_panel import VideoExportPanel
 from scheduling_panel import SchedulingPanel
+from integrations_panel import IntegrationsPanel
 from video_export_controller import VideoExportController
 from preset_manager import PresetManager
 from tooltip import ToolTip
@@ -133,6 +134,13 @@ class RTSPTimelapseGUI:
         )
         self.notebook.add(self.scheduling_panel, text="  Scheduling  ")
 
+        # Tab 4: Integrations (Discord upload + application/startup options)
+        self.integrations_panel = IntegrationsPanel(
+            self.notebook,
+            config_manager=self.config_manager
+        )
+        self.notebook.add(self.integrations_panel, text="  Integrations  ")
+
         # Bind tab change event for auto-save
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
@@ -146,6 +154,9 @@ class RTSPTimelapseGUI:
 
         # Restore scheduler enabled state from last session (must be after set_callbacks)
         self.scheduling_panel.restore_scheduler_state()
+
+        # Route Integrations-tab messages (e.g. start-with-Windows) to the main log
+        self.integrations_panel.set_log_callback(self.log_message)
 
         # Set up video export panel callback to get current snapshots dir from Capture tab
         self.video_export_panel.set_snapshots_dir_callback(

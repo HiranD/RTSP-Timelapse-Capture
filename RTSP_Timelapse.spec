@@ -12,6 +12,7 @@ a = Analysis(
         'video_export_panel',
         'video_export_controller',
         'scheduling_panel',
+        'integrations_panel',
         'calendar_widget',
         'twilight_calculator',
         'astro_scheduler',
@@ -20,6 +21,10 @@ a = Analysis(
         'tooltip',
         'capture_tooltips',
         'scheduling_tooltips',
+        # pystray is loaded via importlib.import_module() (dynamic), which
+        # PyInstaller's static analysis can't see. hook-pystray then bundles
+        # the platform backend (pystray._win32 on Windows).
+        'pystray',
     ],
     hookspath=[],
     hooksconfig={},
