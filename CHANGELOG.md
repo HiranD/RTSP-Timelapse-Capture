@@ -2,14 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
-
-### Changed
-- Generalized "Minimize to tray on startup" into a single **Minimize to tray** option: when enabled,
-  the minimize button now also hides the window to the tray (not only at startup). Renamed the config
-  key `ui.minimize_to_tray_on_startup` → `ui.minimize_to_tray` (existing configs migrate automatically).
-
-## [3.3.0] - 2026-06-19
+## [3.3.0] - 2026-06-20
 
 ### Added
 - New **Integrations** tab consolidating optional, set-once integrations and unattended-operation
@@ -20,8 +13,9 @@ All notable changes to this project are documented in this file.
 - Option to delete the generated video file after a successful Discord webhook upload.
   - Configurable on the Integrations tab under Discord Upload.
   - Config key: `astro_schedule.delete_video_after_discord_upload`.
-- "Minimize to tray on startup" option: launches the app into the system tray for headless or
-  always-running setups (config key `ui.minimize_to_tray_on_startup`).
+- **Minimize to tray** option (Integrations tab): hides the window to the system tray instead of the
+  taskbar — the app can start minimized in the tray on launch, and the minimize button also sends it
+  there (config key `ui.minimize_to_tray`).
 - Custom application icon (`assets/icon.svg`) for the window, taskbar, tray, and executable, with a
   build script (`scripts/build_icon.py`) to regenerate `icon.ico`/`icon.png` from the SVG.
 

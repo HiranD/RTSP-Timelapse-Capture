@@ -714,13 +714,13 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 
 ## Version History
 
-### v3.3.0 (2026-06-19)
+### v3.3.0 (2026-06-20)
 **Integrations: Discord Upload, Tray & Custom Icon**
 
 - **New**: **Integrations tab** consolidating optional, set-once integrations and unattended-operation options (Discord upload + application/startup options).
 - **New**: Discord webhook upload — automatically posts the generated timelapse video to a Discord channel after each night's session. Includes a configurable max upload size, optional auto quality reduction (re-encodes to fit the limit), and an export-resolution selector.
 - **New**: "Delete video after successful Discord upload" option to remove the exported MP4 once it has been posted.
-- **New**: "Minimize to tray on startup" option — the app launches into the system tray for headless or always-running setups; restore it from the tray icon.
+- **New**: **Minimize to tray** option — sends the window to the system tray instead of the taskbar; the app can start minimized in the tray and the minimize button also hides it there (restore from the tray icon).
 - **New**: Custom application icon (`assets/icon.svg`) for the window, taskbar, tray, and executable, plus a build script (`scripts/build_icon.py`) to regenerate `icon.ico`/`icon.png` from the SVG.
 - **New**: Hover tooltips on every Integrations control (44 tooltips total across the app).
 - **Changed**: "Start automatically when Windows starts" (added in v3.2.0) moved from the Scheduling tab to the Integrations tab.
