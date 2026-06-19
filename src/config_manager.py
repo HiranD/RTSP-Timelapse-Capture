@@ -66,7 +66,7 @@ class UIConfig:
     window_height: int = 700
     preview_size: str = "medium"  # small/medium/large
     preview_enabled: bool = True
-    minimize_to_tray_on_startup: bool = False
+    minimize_to_tray: bool = False
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
     last_video_preset: str = "Standard 24fps"  # Last selected video export preset
@@ -144,7 +144,12 @@ class ConfigManager:
             self.capture = CaptureConfig(**config_dict["capture"])
 
         if "ui" in config_dict:
-            self.ui = UIConfig(**config_dict["ui"])
+            ui_data = dict(config_dict["ui"])
+            # Backward compat: "minimize_to_tray_on_startup" was renamed to
+            # "minimize_to_tray" (it now also governs the minimize button).
+            if "minimize_to_tray_on_startup" in ui_data:
+                ui_data.setdefault("minimize_to_tray", ui_data.pop("minimize_to_tray_on_startup"))
+            self.ui = UIConfig(**ui_data)
 
         if "astro_schedule" in config_dict:
             self.astro_schedule = AstroScheduleConfig(**config_dict["astro_schedule"])
@@ -365,7 +370,7 @@ class ConfigManager:
             "UI:",
             f"  Window Size: {self.ui.window_width}x{self.ui.window_height}",
             f"  Preview: {self.ui.preview_size} ({'enabled' if self.ui.preview_enabled else 'disabled'})",
-            f"  Minimize to Tray on Startup: {self.ui.minimize_to_tray_on_startup}",
+            f"  Minimize to Tray: {self.ui.minimize_to_tray}",
             f"  Auto-start: {self.ui.auto_start}",
             "",
             "Astro Schedule:",

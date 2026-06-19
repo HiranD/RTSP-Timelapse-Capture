@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Generalized "Minimize to tray on startup" into a single **Minimize to tray** option: when enabled,
+  the minimize button now also hides the window to the tray (not only at startup). Renamed the config
+  key `ui.minimize_to_tray_on_startup` → `ui.minimize_to_tray` (existing configs migrate automatically).
+
 ## [3.3.0] - 2026-06-19
 
 ### Added

@@ -170,18 +170,20 @@ class IntegrationsPanel(ttk.Frame):
         """Application / unattended-startup options."""
         parent.columnconfigure(0, weight=1)
 
-        # Minimize to tray on startup
+        # Minimize to tray
         self.minimize_to_tray_var = tk.BooleanVar(value=False)
         self.minimize_to_tray_checkbox = ttk.Checkbutton(
             parent,
-            text="Minimize to tray on startup",
+            text="Minimize to tray",
             variable=self.minimize_to_tray_var,
             command=self._on_minimize_to_tray_toggle
         )
         self.minimize_to_tray_checkbox.grid(row=0, column=0, sticky="w")
         ToolTip(self.minimize_to_tray_checkbox,
-            "Start the application minimized to the system tray on launch.\n"
-            "Use the tray icon to restore the window."
+            "Send the window to the system tray instead of the taskbar.\n"
+            "When enabled, the app starts minimized in the tray on startup,\n"
+            "and the minimize button also hides the window to the tray.\n"
+            "Restore it from the tray icon."
         )
 
         # Start automatically when Windows starts
@@ -218,7 +220,7 @@ class IntegrationsPanel(ttk.Frame):
         self.discord_auto_quality_var.set(cfg.discord_auto_quality_reduction)
         self.delete_video_after_discord_var.set(cfg.delete_video_after_discord_upload)
 
-        self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray_on_startup)
+        self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray)
 
         # "Start with Windows" reflects the live registry state, not config.
         self.start_with_windows_var.set(startup_manager.is_enabled())
@@ -241,7 +243,7 @@ class IntegrationsPanel(ttk.Frame):
         cfg.discord_auto_quality_reduction = self.discord_auto_quality_var.get()
         cfg.delete_video_after_discord_upload = self.delete_video_after_discord_var.get()
 
-        self.config_manager.ui.minimize_to_tray_on_startup = self.minimize_to_tray_var.get()
+        self.config_manager.ui.minimize_to_tray = self.minimize_to_tray_var.get()
 
         self.config_manager.save_to_file()
 

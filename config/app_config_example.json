@@ -44,7 +44,7 @@
     "window_height": 700,
     "preview_size": "medium",
     "preview_enabled": true,
-    "minimize_to_tray_on_startup": false,
+    "minimize_to_tray": false,
     "auto_start": false,
     "last_video_export_dir": ""
   },

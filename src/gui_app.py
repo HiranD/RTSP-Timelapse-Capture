@@ -120,8 +120,12 @@ class RTSPTimelapseGUI:
 
         # Setup tray icon and optionally start minimized
         self.setup_system_tray()
-        if self.config_manager.ui.minimize_to_tray_on_startup:
+        if self.config_manager.ui.minimize_to_tray:
             self.root.after(100, self.hide_window_to_tray)
+
+        # When "Minimize to tray" is enabled, the native minimize button hides
+        # the window to the tray instead of the taskbar.
+        self.root.bind("<Unmap>", self._on_minimize)
 
     def create_widgets(self):
         """Create all GUI widgets with tabbed interface"""
@@ -800,7 +804,7 @@ class RTSPTimelapseGUI:
 
     def setup_system_tray(self):
         """Initialize the system tray icon if tray support is enabled."""
-        if not self.config_manager.ui.minimize_to_tray_on_startup:
+        if not self.config_manager.ui.minimize_to_tray:
             return
         if self.tray_icon is not None:
             return
@@ -854,6 +858,13 @@ class RTSPTimelapseGUI:
         self.root.attributes('-topmost', True)
         self.root.attributes('-topmost', False)
         self.root.focus_force()
+
+    def _on_minimize(self, event):
+        """Divert the native minimize to the tray when 'Minimize to tray' is on."""
+        if (event.widget is self.root
+                and self.root.state() == 'iconic'
+                and self.config_manager.ui.minimize_to_tray):
+            self.hide_window_to_tray()
 
     def _on_tray_open(self, icon, item):
         self.root.after(0, self.restore_from_tray)

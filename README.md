@@ -50,7 +50,7 @@
 - **Discord webhook upload** automatically posts each night's generated timelapse to a Discord channel.
 - **Upload size handling** with a configurable max size, optional auto quality reduction (re-encodes to fit), and an export-resolution selector.
 - **Delete video after successful Discord upload** to remove the exported MP4 once it has been posted.
-- **Minimize to tray on startup** for headless or always-running setups.
+- **Minimize to tray** — start in the tray and/or send the window there with the minimize button (headless or always-running setups).
 - **Start automatically when Windows starts** (per-user, no admin) for unattended rigs.
 
 ### User Experience
@@ -80,7 +80,7 @@
 
 ### Integrations Tab (NEW in v3.3)
 ![Integrations Interface](screenshots/Integrations_tab.jpg)
-*Integrations tab: Discord webhook upload of the nightly video (max upload size, auto quality reduction, export resolution, delete-after-upload) plus application options — minimize to tray on startup and start automatically with Windows.*
+*Integrations tab: Discord webhook upload of the nightly video (max upload size, auto quality reduction, export resolution, delete-after-upload) plus application options — minimize to tray and start automatically with Windows.*
 
 ---
 
@@ -289,7 +289,7 @@ Choose between two scheduling modes:
    - Capture stops automatically when darkness ends
    - Videos are created automatically if enabled
 5. **Startup & Tray Options**
-   - **Minimize to tray on startup** and **Start automatically when Windows starts** now live on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - **Minimize to tray** and **Start automatically when Windows starts** now live on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
    - Restore a tray-minimized window by double-clicking the tray icon or choosing `Open`.
 
 ### Scheduler Status
@@ -329,7 +329,7 @@ Automatically post each night's generated timelapse to a Discord channel.
 
 | Setting | Description |
 |---------|-------------|
-| **Minimize to tray on startup** | Launches the app into the system tray; restore it from the tray icon (`Open`). |
+| **Minimize to tray** | Starts the app minimized in the system tray, and hides the window to the tray when you minimize it; restore from the tray icon (`Open`). |
 | **Start automatically when Windows starts** | Registers the app to launch at logon (per-user, no admin). Pair with persistent scheduling for an unattended rig. Note: a GUI needs a desktop session, so enable Windows auto-login on a headless machine. |
 
 *Discord and tray settings are saved to `config/app_config.json`; "Start automatically when Windows starts" is stored in the Windows registry (per-user Run key), not in the config file.*
@@ -389,7 +389,7 @@ Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, ex
 | Auto reduce quality         | `astro_schedule.discord_auto_quality_reduction`  | `false`        | Re-encode CRF 20→45 to fit                  |
 | Export resolution           | `astro_schedule.discord_export_resolution`       | `"original"`   | `original` / `720p` / `480p` / `360p`       |
 | Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the MP4 after a successful upload   |
-| Minimize to tray on startup | `ui.minimize_to_tray_on_startup`                 | `false`        |                                             |
+| Minimize to tray | `ui.minimize_to_tray`                 | `false`        |                                             |
 | Start with Windows          | *(Windows registry, per-user Run key)*           | off            | Not stored in the JSON config               |
 
 ---
