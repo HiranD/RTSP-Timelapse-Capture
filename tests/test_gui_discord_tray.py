@@ -13,6 +13,7 @@ These cover pure, side-effect-free helpers, so they construct the app via
 
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -26,6 +27,18 @@ def _bare_app():
 
 
 class CreateTrayImageTests(unittest.TestCase):
+    """Cover the generated-badge fallback path of _create_tray_image."""
+
+    def setUp(self):
+        # Force the fallback by pointing the icon lookup at a path that doesn't
+        # exist — otherwise the committed assets/icon.ico loads and returns a
+        # 256x256 image instead of the 64x64 generated badge.
+        patcher = mock.patch.object(
+            gui_app, "get_app_icon_path", return_value=Path("does-not-exist.ico")
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_returns_valid_rgba_icon(self):
         img = _bare_app()._create_tray_image()
         self.assertIsInstance(img, Image.Image)
@@ -38,6 +51,17 @@ class CreateTrayImageTests(unittest.TestCase):
         img = _bare_app()._create_tray_image()
         _, max_alpha = img.getchannel("A").getextrema()
         self.assertGreater(max_alpha, 0)
+
+
+class TrayImageFromAssetTests(unittest.TestCase):
+    """Cover the path where the committed app icon is loaded for the tray."""
+
+    def test_loads_committed_icon_when_present(self):
+        if not gui_app.get_app_icon_path().exists():
+            self.skipTest("assets/icon.ico not present")
+        img = _bare_app()._create_tray_image()
+        self.assertIsInstance(img, Image.Image)
+        self.assertEqual(img.mode, "RGBA")
 
 
 class EncodeMultipartTests(unittest.TestCase):

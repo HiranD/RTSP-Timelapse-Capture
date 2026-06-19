@@ -239,7 +239,6 @@ class RTSPTimelapseGUI:
         )
 
         try:
-            import subprocess
             from ffmpeg_wrapper import FFmpegWrapper
 
             ffmpeg_wrapper = FFmpegWrapper()
@@ -412,15 +411,10 @@ class RTSPTimelapseGUI:
             request.add_header("User-Agent", "RTSP-Timelapse-Capture")
 
             with urllib.request.urlopen(request, timeout=60) as response:
-                if 200 <= response.status < 300:
-                    self.log_message("INFO", "Discord upload successful")
-                    return True
-                else:
-                    self.log_message(
-                        "ERROR",
-                        f"Discord upload failed: HTTP {response.status} {response.reason}"
-                    )
-                    return False
+                # urlopen raises HTTPError for any non-2xx response (handled by the
+                # except below), so reaching here means the upload succeeded.
+                self.log_message("INFO", "Discord upload successful")
+                return True
 
         except urllib.error.HTTPError as e:
             self.log_message("ERROR", f"Discord upload failed: HTTP {e.code} {e.reason}")
@@ -768,7 +762,8 @@ class RTSPTimelapseGUI:
         try:
             icon_path = get_app_icon_path()
             if icon_path.exists():
-                return Image.open(str(icon_path)).convert("RGBA")
+                with Image.open(str(icon_path)) as im:
+                    return im.convert("RGBA")
         except Exception as e:
             self.log_message("WARNING", f"Could not load tray icon, using fallback: {e}")
 
@@ -1452,20 +1447,19 @@ class RTSPTimelapseGUI:
 
     def on_closing(self):
         """Handle window close event"""
-        # Clean up scheduler
+        # Confirm first when capturing; only tear down once the user commits to
+        # quitting, so Cancel leaves the window, tray icon, and scheduler intact.
+        if self.is_capturing:
+            if not messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):
+                return
+            self.stop_capture()
+
+        # Clean up scheduler and auto-save all settings before closing.
         if hasattr(self, 'scheduling_panel'):
             self.scheduling_panel.cleanup()
-
-        # Auto-save all settings before closing
         self.save_config()
         self.cleanup_tray()
-
-        if self.is_capturing:
-            if messagebox.askokcancel("Quit", "Capture is running. Stop and quit?"):
-                self.stop_capture()
-                self.root.destroy()
-        else:
-            self.root.destroy()
+        self.root.destroy()
 
 
 def main():
