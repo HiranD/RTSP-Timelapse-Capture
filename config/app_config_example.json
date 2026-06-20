@@ -48,10 +48,15 @@
     "auto_start": false,
     "last_video_export_dir": ""
   },
+  "remote_api": {
+    "enabled": false,
+    "port": 8787
+  },
   "_comments": {
     "buffer_frames": "OpenCV buffer size (2 recommended for IP cameras, reduced from 4)",
     "proactive_reconnect_seconds": "Reconnect interval to prevent camera timeout (0=disabled, 420=recommended for Annke I81EM)",
     "flush_buffer_count": "Number of frames to flush before capture for fresh frames (10=default)",
-    "last_video_export_dir": "Last directory used for video export (auto-saved by GUI)"
+    "last_video_export_dir": "Last directory used for video export (auto-saved by GUI)",
+    "remote_api": "Local-only HTTP API for external control (e.g. NINA). enabled=false by default; bound to 127.0.0.1 on the given port (1024-65535). Mutually exclusive with automatic scheduling."
   }
 }

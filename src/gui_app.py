@@ -8,6 +8,7 @@ and video export capabilities.
 
 import os
 import sys
+import re
 import json
 import mimetypes
 import uuid
@@ -66,6 +67,11 @@ from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
+from remote_api import RemoteControlServer
+
+# App version reported by the remote API's /health endpoint. Keep in sync with
+# src/__init__.py / version_info.txt on release.
+APP_VERSION = "3.4.0"
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -93,6 +99,7 @@ class RTSPTimelapseGUI:
         self.config_manager = ConfigManager()
         self.capture_engine = None
         self.is_capturing = False
+        self.remote_server = None
         self.tray_icon = None
         self.pystray = None
         self._pystray_available = None
@@ -186,6 +193,10 @@ class RTSPTimelapseGUI:
         self.video_export_panel.set_snapshots_dir_callback(
             lambda: self.output_entry.get()
         )
+
+        # Remote-control HTTP API + mutual exclusion with the scheduler.
+        # (After both panels exist and the scheduler state is restored.)
+        self._setup_remote_api()
 
     def _encode_multipart_formdata(self, fields):
         """Encode a multipart/form-data request body.
@@ -1057,11 +1068,17 @@ class RTSPTimelapseGUI:
         else:
             self.stop_capture()
 
-    def start_capture(self, from_scheduler: bool = False):
+    def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True):
         """Start the capture process
 
         Args:
             from_scheduler: If True, called from astronomical scheduler (don't override schedule times)
+            show_dialogs: If False (remote API / scheduler triggers), route failures
+                to the log and return instead of popping a modal dialog that would
+                block an unattended/headless run.
+
+        Returns:
+            (success: bool, error: str | None)
         """
         # Update config from UI (skip schedule times if from scheduler)
         self.update_config_from_ui(skip_schedule_times=from_scheduler)
@@ -1071,8 +1088,9 @@ class RTSPTimelapseGUI:
         if not valid:
             error_msg = "\n".join(errors)
             self.log_message("ERROR", f"Invalid configuration: {error_msg}")
-            messagebox.showerror("Invalid Configuration", error_msg)
-            return
+            if show_dialogs:
+                messagebox.showerror("Invalid Configuration", error_msg)
+            return False, error_msg
 
         # Reset statistics for new session
         self.total_captures = 0
@@ -1103,9 +1121,13 @@ class RTSPTimelapseGUI:
             # Start status update timer
             self.update_status()
 
+            return True, None
+
         except Exception as e:
             self.log_message("ERROR", f"Failed to start capture: {e}")
-            messagebox.showerror("Error", f"Failed to start capture: {e}")
+            if show_dialogs:
+                messagebox.showerror("Error", f"Failed to start capture: {e}")
+            return False, str(e)
 
     def stop_capture(self):
         """Stop the capture process"""
@@ -1123,6 +1145,155 @@ class RTSPTimelapseGUI:
 
         # Update status one last time
         self.update_status()
+
+    # ------------------------------------------------- Remote control HTTP API
+
+    def _setup_remote_api(self):
+        """Create the remote-control server and enforce scheduler exclusivity.
+
+        Called once at startup after both the Scheduling and Integrations panels
+        exist (and the scheduler state has been restored).
+        """
+        self.remote_server = RemoteControlServer(
+            on_start=self._remote_start_capture,
+            on_stop=self._remote_stop_capture,
+            on_create_video=self._remote_create_video,
+            get_status=self._remote_status,
+            version=APP_VERSION,
+            host="127.0.0.1",
+            port=self.config_manager.remote_api.port,
+            log=self.log_message,
+        )
+
+        # Let the Integrations panel drive the server + the mutual-exclusion lock,
+        # and let the Scheduling panel tell us when its toggle changes.
+        self.integrations_panel.set_remote_api_callback(self._on_remote_api_toggle)
+        self.scheduling_panel.set_toggle_callback(self._on_scheduler_toggled)
+
+        api_on = self.config_manager.remote_api.enabled
+        scheduler_on = self.config_manager.astro_schedule.scheduler_enabled
+
+        # Auto-start on launch if enabled. A busy port logs + unticks (no dialog
+        # during startup); the scheduler stays available in that case.
+        if api_on:
+            try:
+                self.remote_server.start()
+            except OSError as e:
+                self.log_message("ERROR", f"Remote control API failed to start: {e}")
+                self.integrations_panel.sync_remote_api_enabled(False)
+                api_on = False
+
+        # Enforce mutual exclusion from the effective states. If both were somehow
+        # enabled in config, the API wins (this turns the scheduler off).
+        if api_on:
+            self.scheduling_panel.set_scheduler_control_enabled(False)
+        elif scheduler_on:
+            self.integrations_panel.set_remote_api_control_enabled(False)
+
+    def _on_remote_api_toggle(self, enabled):
+        """Start/stop the server when the Integrations checkbox toggles.
+
+        Returns (ok, error) so the panel can resync its checkbox if start fails.
+        """
+        if enabled:
+            try:
+                self.remote_server.port = self.config_manager.remote_api.port
+                self.remote_server.start()
+            except OSError as e:
+                return False, str(e)
+            self.scheduling_panel.set_scheduler_control_enabled(False)
+            return True, None
+        else:
+            if self.remote_server:
+                self.remote_server.stop()
+            self.scheduling_panel.set_scheduler_control_enabled(True)
+            return True, None
+
+    def _on_scheduler_toggled(self, enabled):
+        """Lock/unlock the Remote API control so the two stay mutually exclusive."""
+        self.integrations_panel.set_remote_api_control_enabled(not enabled)
+
+    def _run_on_ui(self, func, timeout=20):
+        """Run func on the Tk main thread and return its result.
+
+        The HTTP server runs on daemon threads and Tk is not thread-safe, so we
+        hop onto the main loop via after() and block the caller until it finishes.
+        """
+        result = {}
+        done = threading.Event()
+
+        def runner():
+            try:
+                result["value"] = func()
+            except Exception as e:  # propagate to the HTTP handler
+                result["error"] = e
+            finally:
+                done.set()
+
+        self.root.after(0, runner)
+        if not done.wait(timeout):
+            raise TimeoutError("UI call timed out")
+        if "error" in result:
+            raise result["error"]
+        return result["value"]
+
+    def _remote_start_capture(self):
+        """Thread-safe capture start for the remote API. Returns (ok, error)."""
+        return self._run_on_ui(lambda: self.start_capture(show_dialogs=False))
+
+    def _remote_stop_capture(self):
+        """Thread-safe capture stop for the remote API. Returns (ok, error)."""
+        def _stop():
+            self.stop_capture()
+            return True, None
+        return self._run_on_ui(_stop)
+
+    def _remote_status(self):
+        """Thread-safe status snapshot for the remote API."""
+        return self._run_on_ui(self._build_status)
+
+    def _build_status(self):
+        """Build the /status payload (runs on the Tk thread)."""
+        if self.is_capturing and self.capture_engine:
+            stats = self.capture_engine.get_stats()
+        else:
+            stats = {
+                "state": "Stopped", "frame_count": 0, "failed_frame_count": 0,
+                "uptime_seconds": 0, "last_error": None,
+            }
+        return {
+            "capturing": self.is_capturing,
+            "state": stats.get("state"),
+            "frame_count": stats.get("frame_count", 0),
+            "failed_frame_count": stats.get("failed_frame_count", 0),
+            "uptime_seconds": stats.get("uptime_seconds", 0),
+            "last_error": stats.get("last_error"),
+            "scheduler_enabled": self.config_manager.astro_schedule.scheduler_enabled,
+        }
+
+    def _remote_create_video(self, date):
+        """Thread-safe video-creation trigger. Returns (ok, message, http_code)."""
+        return self._run_on_ui(lambda: self._start_remote_video(date))
+
+    def _start_remote_video(self, date):
+        """Resolve the target date and kick off video creation (Tk thread)."""
+        output_folder = Path(self.config_manager.capture.output_folder)
+        if date:
+            if not re.fullmatch(r"\d{8}", date):
+                return False, "invalid date (expected YYYYMMDD)", 400
+            target = date
+        else:
+            folders = VideoExportController().get_available_date_folders(output_folder)
+            if not folders:
+                return False, "no capture folders found", 404
+            target = folders[0].name
+
+        if not (output_folder / target).exists():
+            return False, f"no snapshots for {target}", 404
+
+        # _auto_create_video_for_date returns immediately (runs ffmpeg in a thread).
+        self._auto_create_video_for_date(target)
+        return True, f"video creation started for {target}", 202
 
     def set_config_inputs_state(self, state):
         """Enable or disable configuration inputs"""
@@ -1471,9 +1642,11 @@ class RTSPTimelapseGUI:
                 return
             self.stop_capture()
 
-        # Clean up scheduler and auto-save all settings before closing.
+        # Clean up scheduler and remote API, then auto-save all settings.
         if hasattr(self, 'scheduling_panel'):
             self.scheduling_panel.cleanup()
+        if getattr(self, 'remote_server', None):
+            self.remote_server.stop()
         self.save_config()
         self.cleanup_tray()
         self.root.destroy()

@@ -95,6 +95,18 @@ class AstroScheduleConfig:
     scheduler_enabled: bool = False  # Persist "Enable automatic scheduling" toggle state
 
 
+@dataclass
+class RemoteApiConfig:
+    """Localhost HTTP API for external control (e.g. NINA). See issue #12.
+
+    Opt-in and off by default. The server binds to 127.0.0.1 only (no token);
+    'enabled' also governs whether it auto-starts on launch. Mutually exclusive
+    with automatic scheduling (enforced in the UI).
+    """
+    enabled: bool = False  # Start the local HTTP server on launch
+    port: int = 8787  # TCP port (bound to 127.0.0.1 only)
+
+
 class ConfigManager:
     """
     Manages application configuration.
@@ -111,6 +123,7 @@ class ConfigManager:
         self.capture = CaptureConfig()
         self.ui = UIConfig()
         self.astro_schedule = AstroScheduleConfig()
+        self.remote_api = RemoteApiConfig()
 
     def to_dict(self) -> dict:
         """
@@ -124,7 +137,8 @@ class ConfigManager:
             "schedule": asdict(self.schedule),
             "capture": asdict(self.capture),
             "ui": asdict(self.ui),
-            "astro_schedule": asdict(self.astro_schedule)
+            "astro_schedule": asdict(self.astro_schedule),
+            "remote_api": asdict(self.remote_api)
         }
 
     def from_dict(self, config_dict: dict):
@@ -153,6 +167,9 @@ class ConfigManager:
 
         if "astro_schedule" in config_dict:
             self.astro_schedule = AstroScheduleConfig(**config_dict["astro_schedule"])
+
+        if "remote_api" in config_dict:
+            self.remote_api = RemoteApiConfig(**config_dict["remote_api"])
 
     def save_to_file(self, filepath: Optional[str] = None) -> tuple[bool, str]:
         """
@@ -315,6 +332,10 @@ class ConfigManager:
                 f"Discord export resolution must be original/720p/480p/360p, got {self.astro_schedule.discord_export_resolution}"
             )
 
+        # Validate remote API
+        if self.remote_api.enabled and not 1024 <= self.remote_api.port <= 65535:
+            errors.append(f"Remote API port must be 1024-65535, got {self.remote_api.port}")
+
         return len(errors) == 0, errors
 
     def _is_valid_time(self, time_str: str) -> bool:
@@ -382,6 +403,10 @@ class ConfigManager:
             f"  Manual Times: {self.astro_schedule.manual_start_time} - {self.astro_schedule.manual_end_time}",
             f"  Scheduled Dates: {len(self.astro_schedule.scheduled_dates)} dates",
             f"  Auto Video: {'enabled' if self.astro_schedule.auto_create_video else 'disabled'}",
+            "",
+            "Remote API:",
+            f"  Enabled: {self.remote_api.enabled}",
+            f"  Port: {self.remote_api.port}",
         ]
 
         return "\n".join(lines)
