@@ -81,6 +81,15 @@ echo 1. LAUNCH APPLICATION
 echo    ^> Double-click RTSP_Timelapse.exe
 echo    ^> No installation needed - everything is bundled!
 echo.
+echo UPGRADING FROM A PREVIOUS VERSION
+echo    ^> Easiest - in your existing app folder, replace the old
+echo      RTSP_Timelapse.exe with this one and restart. Your settings
+echo      in config\app_config.json and history in user_data\ are kept.
+echo    ^> Fresh copy - extract this ZIP to a new folder, then copy your
+echo      old config\ and user_data\ folders next to the new exe.
+echo    ^> Old settings carry over automatically; new options use
+echo      sensible defaults - nothing is lost.
+echo.
 echo 2. CONFIGURE CAMERA ^(Capture Tab^)
 echo    ^> Enter camera IP address ^(e.g., 192.168.0.101^)
 echo    ^> Enter username and password
