@@ -71,6 +71,21 @@ def is_enabled() -> bool:
         return False
 
 
+def _stored_command():
+    """Return the command currently registered under the Run key, or None."""
+    if not is_supported():
+        return None
+
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, APP_NAME)
+            return value
+    except (FileNotFoundError, OSError):
+        return None
+
+
 def enable() -> tuple[bool, str]:
     """Register the app to launch at logon. Returns (success, message)."""
     if not is_supported():
@@ -109,3 +124,27 @@ def disable() -> tuple[bool, str]:
         return True, "App will no longer start automatically with Windows."
     except OSError as e:
         return False, f"Could not disable start with Windows: {e}"
+
+
+def sync() -> bool:
+    """Ensure the auto-start command points at the current executable.
+
+    Self-heals the registry path after the app is moved/upgraded to a new folder,
+    so "Start with Windows" survives upgrades without a manual re-toggle. Returns
+    True if it updated a stale entry. Best-effort: never raises.
+    """
+    if not is_supported():
+        return False
+    # Only self-heal for the frozen exe — a source/dev run must NOT overwrite a
+    # real exe-based entry with a dev launcher command.
+    if not getattr(sys, "frozen", False):
+        return False
+    try:
+        if not is_enabled():
+            return False
+        if _stored_command() == _launch_command():
+            return False
+        enable()  # rewrites APP_NAME with the current exe command
+        return True
+    except Exception:
+        return False

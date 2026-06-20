@@ -68,6 +68,7 @@ from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
 from remote_api import RemoteControlServer
+import startup_manager
 
 # App version reported by the remote API's /health endpoint. Keep in sync with
 # src/__init__.py / version_info.txt on release.
@@ -133,6 +134,14 @@ class RTSPTimelapseGUI:
         # When "Minimize to tray" is enabled, the native minimize button hides
         # the window to the tray instead of the taskbar.
         self.root.bind("<Unmap>", self._on_minimize)
+
+        # If "Start with Windows" is on, ensure its registry entry points at this
+        # exe — self-heals after an upgrade/move so auto-start keeps working.
+        try:
+            if startup_manager.sync():
+                self.log_message("INFO", "Updated 'Start with Windows' to the current app location.")
+        except Exception:
+            pass
 
     def create_widgets(self):
         """Create all GUI widgets with tabbed interface"""
