@@ -388,7 +388,8 @@ Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, ex
 | Max upload size (MB)        | `astro_schedule.discord_max_video_size_mb`       | `8`            | Skip upload if exceeded (unless auto-reduce)|
 | Auto reduce quality         | `astro_schedule.discord_auto_quality_reduction`  | `false`        | Re-encode CRF 20→45 to fit                  |
 | Export resolution           | `astro_schedule.discord_export_resolution`       | `"original"`   | `original` / `720p` / `480p` / `360p`       |
-| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the MP4 after a successful upload   |
+| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the original MP4 after a successful upload |
+| Keep re-encoded Discord copy| `astro_schedule.discord_keep_reencoded`          | `false`        | Keep the uploaded re-encode in `.discord_encode/`  |
 | Minimize to tray | `ui.minimize_to_tray`                 | `false`        |                                             |
 | Start with Windows          | *(Windows registry, per-user Run key)*           | off            | Not stored in the JSON config               |
 
@@ -720,6 +721,7 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 - **New**: **Integrations tab** consolidating optional, set-once integrations and unattended-operation options (Discord upload + application/startup options).
 - **New**: Discord webhook upload — automatically posts the generated timelapse video to a Discord channel after each night's session. Includes a configurable max upload size, optional auto quality reduction (re-encodes to fit the limit), and an export-resolution selector.
 - **New**: "Delete video after successful Discord upload" option to remove the exported MP4 once it has been posted.
+- **New**: "Keep the re-encoded copy sent to Discord" option — keep the smaller uploaded video (date-stamped, inside the `.discord_encode` folder) instead of deleting it.
 - **New**: **Minimize to tray** option — sends the window to the system tray instead of the taskbar; the app can start minimized in the tray and the minimize button also hides it there (restore from the tray icon).
 - **New**: Custom application icon (`assets/icon.svg`) for the window, taskbar, tray, and executable, plus a build script (`scripts/build_icon.py`) to regenerate `icon.ico`/`icon.png` from the SVG.
 - **New**: Hover tooltips on every Integrations control (44 tooltips total across the app).

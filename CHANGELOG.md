@@ -13,6 +13,9 @@ All notable changes to this project are documented in this file.
 - Option to delete the generated video file after a successful Discord webhook upload.
   - Configurable on the Integrations tab under Discord Upload.
   - Config key: `astro_schedule.delete_video_after_discord_upload`.
+- Option to keep the re-encoded copy that was uploaded to Discord — saved as a date-stamped file
+  inside the `.discord_encode` folder instead of being deleted (config key
+  `astro_schedule.discord_keep_reencoded`).
 - **Minimize to tray** option (Integrations tab): hides the window to the system tray instead of the
   taskbar — the app can start minimized in the tray on launch, and the minimize button also sends it
   there (config key `ui.minimize_to_tray`).

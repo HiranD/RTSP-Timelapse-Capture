@@ -437,6 +437,17 @@ class RTSPTimelapseGUI:
                 # urlopen raises HTTPError for any non-2xx response (handled by the
                 # except below), so reaching here means the upload succeeded.
                 self.log_message("INFO", "Discord upload successful")
+                # Optionally keep the re-encoded copy that was just uploaded, as a
+                # date-stamped file inside .discord_encode (the finally below then
+                # only clears the scratch attempts, not this kept copy).
+                if (self.config_manager.astro_schedule.discord_keep_reencoded
+                        and temp_dir is not None and upload_file != output_file):
+                    try:
+                        kept = temp_dir / output_file.name
+                        upload_file.replace(kept)
+                        self.log_message("INFO", f"Kept Discord copy: {kept}")
+                    except Exception as e:
+                        self.log_message("WARNING", f"Could not keep Discord copy: {e}")
                 return True
 
         except urllib.error.HTTPError as e:
@@ -446,11 +457,16 @@ class RTSPTimelapseGUI:
         except Exception as e:
             self.log_message("ERROR", f"Discord upload error: {e}")
         finally:
-            # Always remove the re-encode scratch folder so temp files never accumulate,
-            # regardless of whether the upload succeeded or the original is later deleted.
+            # Clean up the re-encode scratch folder: always drop the scratch attempts,
+            # then remove the folder only if it is now empty. This preserves any kept
+            # date-stamped copies (even if "keep re-encoded" was turned off afterwards)
+            # while never leaving stray temp files behind.
             if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
                 try:
-                    shutil.rmtree(temp_dir)
+                    for f in temp_dir.glob("discord_crf*.mp4"):
+                        f.unlink(missing_ok=True)
+                    if not any(temp_dir.iterdir()):
+                        temp_dir.rmdir()
                 except Exception:
                     pass
 
