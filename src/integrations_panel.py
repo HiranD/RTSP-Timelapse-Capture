@@ -161,9 +161,28 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.delete_video_after_discord_check.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.delete_video_after_discord_check,
-            "Automatically delete the exported video file after a successful upload "
-            "to the configured Discord webhook. Use with caution: this removes the "
-            "generated video permanently."
+            "After a SUCCESSFUL Discord upload, delete the original full-quality video "
+            "(timelapse_YYYYMMDD.mp4). This does NOT affect the smaller re-encoded copy "
+            "that's actually posted to Discord. Only triggers on success — a skipped or "
+            "failed upload never deletes. Use with caution: the full-quality video is "
+            "permanently removed."
+        )
+
+        # Keep the re-encoded copy that was uploaded to Discord
+        self.discord_keep_reencoded_var = tk.BooleanVar(value=False)
+        self.discord_keep_reencoded_check = ttk.Checkbutton(
+            parent,
+            text="Keep the re-encoded copy sent to Discord",
+            variable=self.discord_keep_reencoded_var,
+            command=self._on_discord_settings_change
+        )
+        self.discord_keep_reencoded_check.grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ToolTip(self.discord_keep_reencoded_check,
+            "After a successful upload, keep the smaller re-encoded video that was posted "
+            "to Discord — saved as timelapse_YYYYMMDD.mp4 inside the .discord_encode folder "
+            "(next to your videos) — instead of deleting it. Only applies when 'Auto reduce "
+            "quality' actually re-encoded the video; if the original was small enough to "
+            "upload as-is, there's no separate copy to keep."
         )
 
     def _create_application_section(self, parent: ttk.LabelFrame):
@@ -218,6 +237,7 @@ class IntegrationsPanel(ttk.Frame):
         self.discord_resolution_var.set(cfg.discord_export_resolution)
         self.discord_auto_quality_var.set(cfg.discord_auto_quality_reduction)
         self.delete_video_after_discord_var.set(cfg.delete_video_after_discord_upload)
+        self.discord_keep_reencoded_var.set(cfg.discord_keep_reencoded)
 
         self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray)
 
@@ -241,6 +261,7 @@ class IntegrationsPanel(ttk.Frame):
         cfg.discord_export_resolution = self.discord_resolution_var.get()
         cfg.discord_auto_quality_reduction = self.discord_auto_quality_var.get()
         cfg.delete_video_after_discord_upload = self.delete_video_after_discord_var.get()
+        cfg.discord_keep_reencoded = self.discord_keep_reencoded_var.get()
 
         self.config_manager.ui.minimize_to_tray = self.minimize_to_tray_var.get()
 

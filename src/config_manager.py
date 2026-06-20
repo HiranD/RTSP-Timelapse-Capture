@@ -88,6 +88,7 @@ class AstroScheduleConfig:
     discord_export_resolution: str = "original"  # Resolution for Discord export: original/720p/480p/360p
     discord_auto_quality_reduction: bool = False  # Auto re-encode with lower quality if file exceeds limit
     delete_video_after_discord_upload: bool = False  # Delete generated video after successful Discord upload
+    discord_keep_reencoded: bool = False  # Keep the re-encoded copy uploaded to Discord (in .discord_encode/)
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time

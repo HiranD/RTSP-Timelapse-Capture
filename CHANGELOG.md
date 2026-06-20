@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- "Keep the re-encoded copy sent to Discord" option (Integrations tab): after a successful upload,
+  keep the smaller re-encoded video that was posted to Discord as a date-stamped file inside the
+  `.discord_encode` folder, instead of deleting it (config key `astro_schedule.discord_keep_reencoded`).
+
+### Changed
+- Clarified the "Delete video after successful Discord upload" tooltip — it removes the original
+  full-quality video (not the re-encoded copy that's posted), and only on a successful upload.
+
 ## [3.3.0] - 2026-06-20
 
 ### Added

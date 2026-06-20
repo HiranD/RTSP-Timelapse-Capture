@@ -388,7 +388,8 @@ Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, ex
 | Max upload size (MB)        | `astro_schedule.discord_max_video_size_mb`       | `8`            | Skip upload if exceeded (unless auto-reduce)|
 | Auto reduce quality         | `astro_schedule.discord_auto_quality_reduction`  | `false`        | Re-encode CRF 20→45 to fit                  |
 | Export resolution           | `astro_schedule.discord_export_resolution`       | `"original"`   | `original` / `720p` / `480p` / `360p`       |
-| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the MP4 after a successful upload   |
+| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the original MP4 after a successful upload |
+| Keep re-encoded Discord copy| `astro_schedule.discord_keep_reencoded`          | `false`        | Keep the uploaded re-encode in `.discord_encode/`  |
 | Minimize to tray | `ui.minimize_to_tray`                 | `false`        |                                             |
 | Start with Windows          | *(Windows registry, per-user Run key)*           | off            | Not stored in the JSON config               |
 
