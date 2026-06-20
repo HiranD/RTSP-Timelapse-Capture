@@ -66,6 +66,7 @@ from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
+import startup_manager
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -126,6 +127,14 @@ class RTSPTimelapseGUI:
         # When "Minimize to tray" is enabled, the native minimize button hides
         # the window to the tray instead of the taskbar.
         self.root.bind("<Unmap>", self._on_minimize)
+
+        # If "Start with Windows" is on, ensure its registry entry points at this
+        # exe — self-heals after an upgrade/move so auto-start keeps working.
+        try:
+            if startup_manager.sync():
+                self.log_message("INFO", "Updated 'Start with Windows' to the current app location.")
+        except Exception:
+            pass
 
     def create_widgets(self):
         """Create all GUI widgets with tabbed interface"""
