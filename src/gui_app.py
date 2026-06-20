@@ -446,16 +446,16 @@ class RTSPTimelapseGUI:
         except Exception as e:
             self.log_message("ERROR", f"Discord upload error: {e}")
         finally:
-            # Clean up the re-encode scratch folder. When "keep re-encoded" is on we
-            # remove only the scratch attempts and preserve the kept date-stamped copies;
-            # otherwise the whole folder is removed so temp files never accumulate.
+            # Clean up the re-encode scratch folder: always drop the scratch attempts,
+            # then remove the folder only if it is now empty. This preserves any kept
+            # date-stamped copies (even if "keep re-encoded" was turned off afterwards)
+            # while never leaving stray temp files behind.
             if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
                 try:
-                    if self.config_manager.astro_schedule.discord_keep_reencoded:
-                        for f in temp_dir.glob("discord_crf*.mp4"):
-                            f.unlink(missing_ok=True)
-                    else:
-                        shutil.rmtree(temp_dir)
+                    for f in temp_dir.glob("discord_crf*.mp4"):
+                        f.unlink(missing_ok=True)
+                    if not any(temp_dir.iterdir()):
+                        temp_dir.rmdir()
                 except Exception:
                     pass
 
