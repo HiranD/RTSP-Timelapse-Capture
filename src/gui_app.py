@@ -1093,7 +1093,8 @@ class RTSPTimelapseGUI:
         else:
             self.stop_capture()
 
-    def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True):
+    def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True,
+                      immediate: bool = False):
         """Start the capture process
 
         Args:
@@ -1101,6 +1102,9 @@ class RTSPTimelapseGUI:
             show_dialogs: If False (remote API / scheduler triggers), route failures
                 to the log and return instead of popping a modal dialog that would
                 block an unattended/headless run.
+            immediate: If True (remote API / NINA), ignore the Capture-tab schedule
+                window and capture right away until explicitly stopped. Transient —
+                does not change the saved schedule.
 
         Returns:
             (success: bool, error: str | None)
@@ -1125,7 +1129,11 @@ class RTSPTimelapseGUI:
 
         # Create capture engine
         try:
-            self.capture_engine = CaptureEngine(self.config_manager.to_dict())
+            cfg = self.config_manager.to_dict()
+            if immediate:
+                # Remote/NINA-triggered: bypass the schedule window, run until stopped.
+                cfg["schedule"]["ignore_window"] = True
+            self.capture_engine = CaptureEngine(cfg)
 
             # Set up callbacks
             self.capture_engine.set_status_callback(self.on_status_update)
@@ -1263,8 +1271,12 @@ class RTSPTimelapseGUI:
         return result["value"]
 
     def _remote_start_capture(self):
-        """Thread-safe capture start for the remote API. Returns (ok, error)."""
-        return self._run_on_ui(lambda: self.start_capture(show_dialogs=False))
+        """Thread-safe capture start for the remote API. Returns (ok, error).
+
+        Uses immediate=True so an API/NINA trigger starts capturing right away
+        and runs until /capture/stop, ignoring the Capture-tab schedule window.
+        """
+        return self._run_on_ui(lambda: self.start_capture(show_dialogs=False, immediate=True))
 
     def _remote_stop_capture(self):
         """Thread-safe capture stop for the remote API. Returns (ok, error)."""
