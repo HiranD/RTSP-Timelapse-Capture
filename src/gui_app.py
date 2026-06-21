@@ -1309,7 +1309,12 @@ class RTSPTimelapseGUI:
         }
 
     def _remote_create_video(self, date):
-        """Thread-safe video-creation trigger. Returns (ok, message, http_code)."""
+        """Thread-safe video-creation trigger.
+
+        Returns (ok, message, http_code, resolved_date) - resolved_date is the
+        date actually targeted (e.g. the newest session when none was given), or
+        None when no date could be resolved.
+        """
         return self._run_on_ui(lambda: self._start_remote_video(date))
 
     def _start_remote_video(self, date):
@@ -1317,20 +1322,20 @@ class RTSPTimelapseGUI:
         output_folder = Path(self.config_manager.capture.output_folder)
         if date:
             if not re.fullmatch(r"\d{8}", date):
-                return False, "invalid date (expected YYYYMMDD)", 400
+                return False, "invalid date (expected YYYYMMDD)", 400, None
             target = date
         else:
             folders = VideoExportController().get_available_date_folders(output_folder)
             if not folders:
-                return False, "no capture folders found", 404
+                return False, "no capture folders found", 404, None
             target = folders[0].name
 
         if not (output_folder / target).exists():
-            return False, f"no snapshots for {target}", 404
+            return False, f"no snapshots for {target}", 404, target
 
         # _auto_create_video_for_date returns immediately (runs ffmpeg in a thread).
         self._auto_create_video_for_date(target)
-        return True, f"video creation started for {target}", 202
+        return True, f"video creation started for {target}", 202, target
 
     def set_config_inputs_state(self, state):
         """Enable or disable configuration inputs"""

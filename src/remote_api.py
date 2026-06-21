@@ -45,7 +45,7 @@ class RemoteControlServer:
             on_start():  () -> (ok: bool, error: str | None)
             on_stop():   () -> (ok: bool, error: str | None)
             on_create_video(date): (date: str | None)
-                         -> (ok: bool, message: str, http_code: int)
+                         -> (ok: bool, message: str, http_code: int, resolved_date: str | None)
             get_status(): () -> dict (serialised verbatim for GET /status)
             version: app version string reported by GET /health.
             host: bind address (loopback).
@@ -221,8 +221,10 @@ class RemoteControlServer:
 
             def _video(self):
                 date = self._read_date()
-                ok, message, code = server._on_create_video(date)
+                ok, message, code, resolved = server._on_create_video(date)
                 key = "status" if ok else "error"
-                self._send_json(code, {key: message, "date": date})
+                # Echo the resolved target (e.g. the newest session) when known,
+                # else fall back to whatever the caller sent.
+                self._send_json(code, {key: message, "date": resolved or date})
 
         return Handler

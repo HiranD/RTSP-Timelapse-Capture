@@ -23,7 +23,7 @@ class RemoteApiTests(unittest.TestCase):
         self.on_start = mock.Mock(return_value=(True, None))
         self.on_stop = mock.Mock(return_value=(True, None))
         self.on_create_video = mock.Mock(
-            return_value=(True, "video creation started for 20250620", 202)
+            return_value=(True, "video creation started for 20250620", 202, "20250620")
         )
         self.get_status = mock.Mock(return_value={
             "capturing": False, "state": "Stopped", "frame_count": 0,
@@ -97,6 +97,8 @@ class RemoteApiTests(unittest.TestCase):
         code, payload = self._request("/video/create", method="POST")
         self.assertEqual(code, 202)
         self.on_create_video.assert_called_once_with(None)
+        # No body sent, but the response echoes the resolved date, not null.
+        self.assertEqual(payload["date"], "20250620")
 
     def test_video_explicit_date(self):
         code, payload = self._request("/video/create", method="POST", body={"date": "20250620"})
@@ -105,7 +107,7 @@ class RemoteApiTests(unittest.TestCase):
         self.assertEqual(payload["date"], "20250620")
 
     def test_video_missing_folder_404(self):
-        self.on_create_video.return_value = (False, "no snapshots for 20200101", 404)
+        self.on_create_video.return_value = (False, "no snapshots for 20200101", 404, "20200101")
         code, payload = self._request("/video/create", method="POST", body={"date": "20200101"})
         self.assertEqual(code, 404)
         self.assertIn("error", payload)
