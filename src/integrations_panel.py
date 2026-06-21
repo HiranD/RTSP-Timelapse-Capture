@@ -236,16 +236,15 @@ class IntegrationsPanel(ttk.Frame):
         """Localhost HTTP API for external control (e.g. NINA). See issue #12."""
         parent.columnconfigure(1, weight=1)
 
-        # What it is / the scheduler exclusivity.
+        # What it is / the scheduler exclusivity. No wraplength: like the Discord
+        # hint above, let it sit on one line instead of breaking mid-sentence.
         hint = ttk.Label(
             parent,
             text="Let external scripts (e.g. NINA) start/stop capture and create "
                  "videos over a local-only HTTP API. Mutually exclusive with "
                  "“Enable automatic scheduling”.",
             font=("Segoe UI", 8),
-            foreground="gray",
-            wraplength=560,
-            justify="left",
+            foreground="gray"
         )
         hint.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
@@ -259,9 +258,9 @@ class IntegrationsPanel(ttk.Frame):
         )
         self.remote_api_enabled_check.grid(row=1, column=0, columnspan=2, sticky="w")
         ToolTip(self.remote_api_enabled_check,
-            "Start a small HTTP server bound to 127.0.0.1 (this machine only).\n"
-            "External tools can then POST to /capture/start, /capture/stop and\n"
-            "/video/create, or GET /status. Not exposed to the network and there\n"
+            "Start a small HTTP server bound to 127.0.0.1 (this machine only). "
+            "External tools can then POST to /capture/start, /capture/stop and "
+            "/video/create, or GET /status. Not exposed to the network and there "
             "is no auth token — only programs running on this PC can reach it."
         )
 
@@ -273,7 +272,7 @@ class IntegrationsPanel(ttk.Frame):
 
         # Port
         port_tip = (
-            "TCP port for the local API (1024–65535). Default 8787.\n"
+            "TCP port for the local API (1024–65535). Default 8787. "
             "Change it if another program already uses this port."
         )
         port_label = ttk.Label(parent, text="Port:")
@@ -287,7 +286,7 @@ class IntegrationsPanel(ttk.Frame):
         ToolTip(self.remote_api_port_entry, port_tip)
 
         # Base URL (read-only display)
-        url_tip = ("Point your external script at this address, e.g.\n"
+        url_tip = ("Point your external script at this address, e.g.\n\n"
                    "curl -X POST http://127.0.0.1:8787/capture/start")
         url_label = ttk.Label(parent, text="Base URL:")
         url_label.grid(row=4, column=0, sticky="w", pady=(10, 0))
@@ -298,6 +297,18 @@ class IntegrationsPanel(ttk.Frame):
         self.remote_base_url_entry.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         ToolTip(url_label, url_tip)
         ToolTip(self.remote_base_url_entry, url_tip)
+
+        # Where to find the ready-made scripts + setup steps (single source of
+        # truth is examples/README.md; this just points there). No wraplength so
+        # it stays on one line like the other hints.
+        examples_hint = ttk.Label(
+            parent,
+            text="Example scripts for NINA & curl are in the “examples” folder included "
+                 "with the app — open examples\\README.md for setup steps.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        examples_hint.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     # ------------------------------------------------------------- config
 

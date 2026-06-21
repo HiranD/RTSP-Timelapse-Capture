@@ -336,6 +336,18 @@ Automatically post each night's generated timelapse to a Discord channel.
 
 ---
 
+## Remote Control / API (NEW in v3.4)
+
+Trigger capture from external software (e.g. **N.I.N.A.**'s *External Script* instruction) over a small, opt-in HTTP API that runs inside the app.
+
+- Enable it on the **Integrations** tab → **Remote Control** (off by default).
+- **Local only**: the server binds to `127.0.0.1` and rejects non-loopback requests — there is no auth token, so only programs on this PC can reach it.
+- **Mutually exclusive** with automatic scheduling: turning one on greys out the other.
+
+Ready-to-use scripts (NINA `.bat` files and a PowerShell variant) plus the full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)** — shipped in the `examples/` folder next to the app.
+
+---
+
 ## Configuration Reference
 
 ### Camera Settings
