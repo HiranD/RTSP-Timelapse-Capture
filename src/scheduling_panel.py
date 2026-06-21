@@ -379,6 +379,12 @@ class SchedulingPanel(ttk.Frame):
             "at darkness and stop at dawn for scheduled dates."
         )
 
+        # Lock note (shown when disabled because the Remote Control API is on).
+        self.scheduler_lock_label = ttk.Label(
+            control_frame, text="", font=("Segoe UI", 8), foreground="#CC6600"
+        )
+        self.scheduler_lock_label.pack(side="left", padx=(12, 0))
+
         # Status indicator
         self.scheduler_status_label = ttk.Label(
             control_frame,
@@ -878,12 +884,16 @@ class SchedulingPanel(ttk.Frame):
         """
         if enabled:
             self.scheduler_checkbox.config(state="normal")
+            self.scheduler_lock_label.config(text="")
         else:
             if self.scheduler_enabled_var.get():
                 self.scheduler_enabled_var.set(False)
                 self._stop_scheduler()
                 self._save_to_config()
             self.scheduler_checkbox.config(state="disabled")
+            self.scheduler_lock_label.config(
+                text="Disabled while the Remote Control API is on (Integrations tab)."
+            )
 
     def restore_scheduler_state(self):
         """Re-arm AstroScheduler if it was enabled at last shutdown.

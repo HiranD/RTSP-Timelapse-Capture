@@ -395,13 +395,15 @@ class IntegrationsPanel(ttk.Frame):
 
     def _on_remote_api_port_change(self, event=None):
         """Persist the port, refresh the base-URL display, and bounce if running."""
+        old_port = self.config_manager.remote_api.port
         self._save_to_config()
         port = self.config_manager.remote_api.port
         self.remote_api_port_var.set(str(port))  # reflect clamping
         self.remote_base_url_var.set(f"http://127.0.0.1:{port}")
 
-        # If the API is currently running, restart it onto the new port.
-        if self.remote_api_enabled_var.get() and self._remote_toggle_cb:
+        # Restart onto the new port only if it actually changed and the API is
+        # running - <FocusOut> fires on every focus change, not just real edits.
+        if port != old_port and self.remote_api_enabled_var.get() and self._remote_toggle_cb:
             self._remote_toggle_cb(False)
             ok, err = self._remote_toggle_cb(True)
             if not ok:
