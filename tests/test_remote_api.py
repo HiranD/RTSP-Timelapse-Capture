@@ -96,15 +96,24 @@ class RemoteApiTests(unittest.TestCase):
     def test_video_default_date(self):
         code, payload = self._request("/video/create", method="POST")
         self.assertEqual(code, 202)
-        self.on_create_video.assert_called_once_with(None)
+        self.on_create_video.assert_called_once_with(None, None)
         # No body sent, but the response echoes the resolved date, not null.
         self.assertEqual(payload["date"], "20250620")
 
     def test_video_explicit_date(self):
         code, payload = self._request("/video/create", method="POST", body={"date": "20250620"})
         self.assertEqual(code, 202)
-        self.on_create_video.assert_called_once_with("20250620")
+        self.on_create_video.assert_called_once_with("20250620", None)
         self.assertEqual(payload["date"], "20250620")
+
+    def test_video_with_since(self):
+        # `since` (YYYYMMDD-HHMMSS) is parsed from the body and forwarded so the
+        # app can render only frames from one session in a shared date folder.
+        code, payload = self._request(
+            "/video/create", method="POST", body={"since": "20250620-210000"})
+        self.assertEqual(code, 202)
+        self.on_create_video.assert_called_once_with(None, "20250620-210000")
+        self.assertEqual(payload["since"], "20250620-210000")
 
     def test_video_missing_folder_404(self):
         self.on_create_video.return_value = (False, "no snapshots for 20200101", 404, "20200101")

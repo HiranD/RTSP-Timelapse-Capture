@@ -19,8 +19,9 @@ Endpoints (all JSON):
     GET  /status         -> {"capturing", "state", "frame_count", ...}
     POST /capture/start  -> 202 {"status": "starting", ...}  | 400 {"error"}
     POST /capture/stop   -> 200 {"status": "stopping", ...}  | 400 {"error"}
-    POST /video/create   -> 202 {"status", "date"}           | 400/404 {"error"}
-        optional JSON body: {"date": "YYYYMMDD"} (defaults to newest session)
+    POST /video/create   -> 202 {"status", "date", "since"}  | 400/404 {"error"}
+        optional JSON body: {"date": "YYYYMMDD", "since": "YYYYMMDD-HHMMSS"}
+        (no date -> newest session; since -> only frames captured at/after it)
 """
 
 import json
@@ -44,7 +45,7 @@ class RemoteControlServer:
         Args:
             on_start():  () -> (ok: bool, error: str | None)
             on_stop():   () -> (ok: bool, error: str | None)
-            on_create_video(date): (date: str | None)
+            on_create_video(date, since): (date, since: str | None)
                          -> (ok: bool, message: str, http_code: int, resolved_date: str | None)
             get_status(): () -> dict (serialised verbatim for GET /status)
             version: app version string reported by GET /health.
@@ -137,20 +138,24 @@ class RemoteControlServer:
                 hostname = host.rsplit(":", 1)[0] if ":" in host else host
                 return hostname in _ALLOWED_HOSTS
 
-            def _read_date(self):
-                """Parse optional {"date": "YYYYMMDD"} body; None if absent/blank."""
+            def _read_body(self):
+                """Parse the optional JSON request body; {} if absent/invalid."""
                 length = int(self.headers.get("Content-Length") or 0)
                 if length <= 0:
-                    return None
+                    return {}
                 raw = self.rfile.read(length)
                 try:
                     data = json.loads(raw.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError):
-                    return None
-                if isinstance(data, dict):
-                    date = data.get("date")
-                    if isinstance(date, str) and date.strip():
-                        return date.strip()
+                    return {}
+                return data if isinstance(data, dict) else {}
+
+            @staticmethod
+            def _opt_str(data, key):
+                """Return a stripped, non-empty string field, else None."""
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
                 return None
 
             # -- dispatch ---------------------------------------------------
@@ -220,11 +225,13 @@ class RemoteControlServer:
                     self._send_json(400, {"error": err or "failed to stop capture"})
 
             def _video(self):
-                date = self._read_date()
-                ok, message, code, resolved = server._on_create_video(date)
+                body = self._read_body()
+                date = self._opt_str(body, "date")
+                since = self._opt_str(body, "since")
+                ok, message, code, resolved = server._on_create_video(date, since)
                 key = "status" if ok else "error"
                 # Echo the resolved target (e.g. the newest session) when known,
                 # else fall back to whatever the caller sent.
-                self._send_json(code, {key: message, "date": resolved or date})
+                self._send_json(code, {key: message, "date": resolved or date, "since": since})
 
         return Handler

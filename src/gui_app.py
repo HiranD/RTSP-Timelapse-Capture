@@ -1308,17 +1308,26 @@ class RTSPTimelapseGUI:
             "scheduler_enabled": self.config_manager.astro_schedule.scheduler_enabled,
         }
 
-    def _remote_create_video(self, date):
+    def _remote_create_video(self, date, since=None):
         """Thread-safe video-creation trigger.
 
         Returns (ok, message, http_code, resolved_date) - resolved_date is the
         date actually targeted (e.g. the newest session when none was given), or
-        None when no date could be resolved.
+        None when no date could be resolved. `since` (YYYYMMDD-HHMMSS) restricts
+        the render to frames captured at/after it, so one session can be rendered
+        even when several sessions share a date folder.
         """
-        return self._run_on_ui(lambda: self._start_remote_video(date))
+        return self._run_on_ui(lambda: self._start_remote_video(date, since))
 
-    def _start_remote_video(self, date):
+    def _start_remote_video(self, date, since=None):
         """Resolve the target date and kick off video creation (Tk thread)."""
+        since_dt = None
+        if since:
+            try:
+                since_dt = datetime.strptime(since, "%Y%m%d-%H%M%S")
+            except ValueError:
+                return False, "invalid since (expected YYYYMMDD-HHMMSS)", 400, None
+
         output_folder = Path(self.config_manager.capture.output_folder)
         if date:
             if not re.fullmatch(r"\d{8}", date):
@@ -1333,9 +1342,11 @@ class RTSPTimelapseGUI:
         if not (output_folder / target).exists():
             return False, f"no snapshots for {target}", 404, target
 
-        # _auto_create_video_for_date returns immediately (runs ffmpeg in a thread).
-        self._auto_create_video_for_date(target)
-        return True, f"video creation started for {target}", 202, target
+        # _auto_create_video_for_date does the synchronous prep (scan/preset/ffmpeg)
+        # then runs the encode in a thread; surface that synchronous outcome so a
+        # bad 'since', empty folder, etc. become real 404/500s instead of a 202.
+        ok, message, code = self._auto_create_video_for_date(target, since=since_dt)
+        return ok, message, code, target
 
     def set_config_inputs_state(self, state):
         """Enable or disable configuration inputs"""
@@ -1546,12 +1557,22 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
-    def _auto_create_video_for_date(self, date_str: str):
+    def _auto_create_video_for_date(self, date_str: str, since=None):
         """
         Automatically create a timelapse video for a specific date's captures.
 
         Args:
             date_str: Date string in YYYYMMDD format
+            since: Optional datetime; if set, only frames captured at/after it are
+                included, so a session that shares a date folder with earlier
+                frames (e.g. a test run) renders only its own footage.
+
+        Returns:
+            (ok: bool, message: str, http_code: int) for the synchronous outcome.
+            ok=True (202) means the encode was kicked off in the background;
+            synchronous failures (missing folder/preset/ffmpeg, no frames, prepare
+            error) are reported so the remote API can surface them. The scheduler
+            ignores the return value.
         """
         self.log_message("INFO", f"[Auto Video] Starting video creation for {date_str}")
 
@@ -1562,7 +1583,7 @@ class RTSPTimelapseGUI:
 
             if not date_folder.exists():
                 self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
-                return
+                return False, f"no snapshots folder for {date_str}", 404
 
             # Get video settings from Video Export tab
             preset_name = self.video_export_panel.preset_var.get()
@@ -1581,7 +1602,7 @@ class RTSPTimelapseGUI:
             settings = preset_manager.get_preset(preset_name)
             if not settings:
                 self.log_message("ERROR", f"[Auto Video] Preset not found: {preset_name}")
-                return
+                return False, f"video preset not found: {preset_name}", 500
 
             # Don't open video automatically when creating via scheduler
             settings.open_when_done = False
@@ -1593,13 +1614,13 @@ class RTSPTimelapseGUI:
             ffmpeg_ok, ffmpeg_msg = controller.check_ffmpeg()
             if not ffmpeg_ok:
                 self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
-                return
+                return False, ffmpeg_msg, 500
 
             # Scan folder for images
-            success, collection, msg = controller.scan_folder(date_folder)
+            success, collection, msg = controller.scan_folder(date_folder, since=since)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
-                return
+                return False, msg, 404
 
             self.log_message("INFO", f"[Auto Video] Found {collection.total_count} images")
 
@@ -1615,7 +1636,7 @@ class RTSPTimelapseGUI:
             success, job, msg = controller.prepare_export(settings, collection, output_file)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
-                return
+                return False, msg, 500
 
             # Progress callback for logging
             def progress_callback(status: str, progress: float, info):
@@ -1671,9 +1692,11 @@ class RTSPTimelapseGUI:
 
             # Run in a thread to avoid blocking UI
             threading.Thread(target=run_export, daemon=True).start()
+            return True, f"video creation started for {date_str}", 202
 
         except Exception as e:
             self.log_message("ERROR", f"[Auto Video] Failed: {e}")
+            return False, f"video creation failed: {e}", 500
 
     def on_closing(self):
         """Handle window close event"""
