@@ -31,6 +31,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # Hostnames accepted in the Host header (loopback only).
 _ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
 
+# Frequently-polled read endpoints (e.g. by a client's live status panel). Consecutive
+# successful GETs to these collapse to a single log line (see log_message), so polling
+# doesn't spam the log; writes, errors, and any other request are always logged.
+_QUIET_GET_PATHS = {"/health", "/status"}
+
 
 class RemoteControlServer:
     """A small localhost HTTP server exposing capture/video controls.
@@ -63,6 +68,9 @@ class RemoteControlServer:
         self._log = log or (lambda level, msg: None)
         self._server = None
         self._thread = None
+        # Collapse consecutive routine status polls in the access log (see log_message).
+        self._log_lock = threading.Lock()
+        self._last_quiet_poll = False
 
     # -------------------------------------------------------------- lifecycle
 
@@ -114,9 +122,29 @@ class RemoteControlServer:
         server = self  # closure for the request handler
 
         class Handler(BaseHTTPRequestHandler):
-            # Keep the default access logging out of stderr; route to our log.
+            # Route access logging to our log, collapsing runs of routine status polls
+            # (successful GET /health and /status). The first poll in a run is logged;
+            # consecutive repeats are suppressed until a different request breaks the run,
+            # so the log shows changes without the every-few-seconds poll spam.
             def log_message(self, fmt, *args):
+                quiet = self._is_quiet_poll(args)
+                with server._log_lock:
+                    suppress = quiet and server._last_quiet_poll
+                    server._last_quiet_poll = quiet
+                if suppress:
+                    return
                 server._log("DEBUG", "%s - %s" % (self.address_string(), fmt % args))
+
+            @staticmethod
+            def _is_quiet_poll(args):
+                # log_request passes (requestline, code, size),
+                # e.g. ("GET /status HTTP/1.1", "200", "-").
+                try:
+                    parts = str(args[0]).split()
+                    method, path = parts[0], parts[1].split("?", 1)[0]
+                    return method == "GET" and path in _QUIET_GET_PATHS and str(args[1]) == "200"
+                except (IndexError, ValueError, TypeError):
+                    return False
 
             # -- helpers ----------------------------------------------------
 
