@@ -36,7 +36,7 @@ Notes:
 | Method | Path             | Purpose                                                        |
 |--------|------------------|---------------------------------------------------------------|
 | GET    | `/health`        | Liveness check → `{"ok": true, "version": "..."}`             |
-| GET    | `/status`        | `{capturing, state, frame_count, uptime_seconds, last_error, scheduler_enabled}` |
+| GET    | `/status`        | `{capturing, state, frame_count, uptime_seconds, last_error, scheduler_enabled, session_start_time}` |
 | POST   | `/capture/start`    | Start capture                                               |
 | POST   | `/capture/stop`     | Stop capture                                                |
 | POST   | `/capture/schedule` | Start capture (if needed) and auto-stop at `stop_at`        |
@@ -54,12 +54,17 @@ sends a separate stop. Body:
 `stop_at` is `YYYYMMDD-HHMMSS` (local time) and must be in the future. This is
 what the NINA plugin's "scheduled timelapse" uses.
 
-`/video/create` accepts an optional JSON body to target a specific night;
-otherwise it uses the most recent capture folder:
+`/video/create` accepts an optional JSON body. With no body it renders the most
+recent capture folder; `date` targets a specific night and `since`
+(`YYYYMMDD-HHMMSS`) keeps only frames captured at/after that time — so one session
+renders cleanly even when several share a date folder:
 
 ```
-{"date": "20250620"}
+{"date": "20250620", "since": "20250620-210000"}
 ```
+
+Tip: read `session_start_time` from `/status` (the current/most-recent session's
+start) and pass it back as `since` to render exactly that session.
 
 It honours your **Video Export** preset and **Discord** upload settings.
 

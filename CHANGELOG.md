@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [3.4.0] - 2026-06-28
+
+### Added
+- **Remote Control HTTP API** (opt-in, localhost-only) so external software (e.g. **N.I.N.A.**) can
+  drive capture — enable it on the Integrations tab → Remote Control. Bound to `127.0.0.1` with no
+  auth token; mutually exclusive with automatic scheduling (enforced in the UI). Endpoints:
+  `GET /health`, `GET /status`, `POST /capture/start`, `POST /capture/stop`,
+  `POST /capture/schedule`, `POST /video/create`.
+- **`/capture/schedule`** — starts capture if needed and arms an app-owned timer that auto-stops at
+  a given time (and optionally renders the video), so the stop fires regardless of the external
+  sequence.
+- **`/video/create`** — trigger video creation for the newest or a given session, with an optional
+  `since` filter so one session renders cleanly when several share a date folder.
+- **`/status`** exposes `session_start_time` so a client can render exactly the current/most-recent
+  session (read it, pass it back as `since`).
+- Ready-to-use NINA example scripts (`.bat` + a PowerShell variant) bundled under `examples/`, with
+  setup steps in `examples/README.md`.
+
 ## [3.3.0] - 2026-06-20
 
 ### Added
