@@ -338,13 +338,19 @@ Automatically post each night's generated timelapse to a Discord channel.
 
 ## Remote Control / API (NEW in v3.4)
 
-Trigger capture from external software (e.g. **N.I.N.A.**'s *External Script* instruction) over a small, opt-in HTTP API that runs inside the app.
+Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in HTTP API that runs inside the app.
 
 - Enable it on the **Integrations** tab → **Remote Control** (off by default).
 - **Local only**: the server binds to `127.0.0.1` and rejects non-loopback requests — there is no auth token, so only programs on this PC can reach it.
 - **Mutually exclusive** with automatic scheduling: turning one on greys out the other.
 
-Ready-to-use scripts (NINA `.bat` files and a PowerShell variant) plus the full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)** — shipped in the `examples/` folder next to the app.
+**Using it with NINA:**
+
+- **Example scripts** *(available now)* — ready-to-use `.bat` files and a PowerShell variant (no install; they use `curl`), wired into NINA via the *External Script* instruction. The full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)**, shipped in the `examples/` folder next to the app.
+<!-- PLUGIN-STATUS: plugin not yet published. When it's released, delete the "in development" bullet below and uncomment this one:
+- **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
+-->
+- **NINA plugin** *(in development)* — *RTSP Timelapse Control*, a native plugin that will drive this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Not yet released; progress at **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
 
 ---
 
