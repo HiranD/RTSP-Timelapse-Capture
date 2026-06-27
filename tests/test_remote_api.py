@@ -7,6 +7,7 @@ server is Tk-agnostic by design.
 """
 
 import json
+import socket
 import sys
 import unittest
 import urllib.error
@@ -156,6 +157,20 @@ class RemoteApiTests(unittest.TestCase):
         code, payload = self._request("/status", headers={"Host": "evil.example.com"})
         self.assertEqual(code, 403)
         self.on_start.assert_not_called()
+
+    def test_http10_no_host_allowed(self):
+        # HTTP/1.0 clients omit the Host header. The socket is already loopback-bound,
+        # so an absent header must be allowed (not the confusing 403).
+        with socket.create_connection(("127.0.0.1", self.server.port), timeout=5) as s:
+            s.sendall(b"GET /health HTTP/1.0\r\n\r\n")
+            raw = b""
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                raw += chunk
+        status_line = raw.split(b"\r\n", 1)[0].decode("latin-1")
+        self.assertIn("200", status_line)
 
 
 if __name__ == "__main__":

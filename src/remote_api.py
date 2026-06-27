@@ -171,8 +171,12 @@ class RemoteControlServer:
 
             def _host_ok(self) -> bool:
                 # Host header may include a port; strip it. Reject anything that
-                # isn't loopback (blocks DNS-rebinding from a browser).
+                # isn't loopback (blocks DNS-rebinding from a browser). An absent
+                # Host header (HTTP/1.0 / minimal clients) carries no rebinding risk
+                # since the socket is already bound to loopback, so allow it.
                 host = self.headers.get("Host", "")
+                if not host:
+                    return True
                 hostname = host.rsplit(":", 1)[0] if ":" in host else host
                 return hostname in _ALLOWED_HOSTS
 

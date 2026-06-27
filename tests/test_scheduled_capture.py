@@ -15,6 +15,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from gui_app import RTSPTimelapseGUI  # noqa: E402
+from capture_engine import CaptureState  # noqa: E402
 
 
 def _fake_gui(**overrides):
@@ -128,6 +129,17 @@ class RemoteStartCaptureTests(unittest.TestCase):
         self.assertTrue(ok)
         # Already capturing: don't call start_capture (which would orphan the engine).
         g.start_capture.assert_not_called()
+
+
+class NaturalStopTests(unittest.TestCase):
+    """A natural/automatic stop (disconnect, error, end_dt) must cancel a pending auto-stop."""
+
+    def test_natural_stop_cancels_scheduled_timer(self):
+        g = _fake_gui(is_capturing=True)
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.ERROR, {"frame_count": 3, "uptime_seconds": 42})
+        g._cancel_scheduled_stop.assert_called_once()
+        self.assertFalse(g.is_capturing)
 
 
 if __name__ == "__main__":

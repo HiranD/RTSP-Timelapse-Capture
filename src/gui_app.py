@@ -1506,7 +1506,10 @@ class RTSPTimelapseGUI:
 
         # Handle automatic stop when capture ends naturally (reached end time or error)
         if (state == CaptureState.STOPPED or state == CaptureState.ERROR) and self.is_capturing:
-            # Clean up GUI state
+            # Clean up GUI state. A natural/automatic stop (end_dt, disconnect, error) also
+            # cancels any pending /capture/schedule auto-stop, so a stale timer can't later
+            # stop a manually-restarted session or render with the old 'since'.
+            self._cancel_scheduled_stop()
             self.is_capturing = False
             self.start_stop_btn.configure(text="Start Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
