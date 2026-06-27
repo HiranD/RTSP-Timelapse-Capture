@@ -1277,42 +1277,50 @@ class RTSPTimelapseGUI:
         return result["value"]
 
     def _remote_start_capture(self):
-        """Thread-safe capture start for the remote API. Returns (ok, error).
+        """Thread-safe capture start for the remote API. Returns (ok, error, status).
 
         Uses immediate=True so an API/NINA trigger starts capturing right away
         and runs until /capture/stop, ignoring the Capture-tab schedule window.
+        A start while already capturing is an idempotent no-op (don't replace the
+        running engine and orphan its thread). The status snapshot is built in the
+        same UI hop so the HTTP handler needs only one round-trip.
         """
-        return self._run_on_ui(lambda: self.start_capture(show_dialogs=False, immediate=True))
+        def _start():
+            if self.is_capturing:
+                return True, None, self._build_status()  # already capturing — idempotent
+            ok, err = self.start_capture(show_dialogs=False, immediate=True)
+            return ok, err, (self._build_status() if ok else None)
+        return self._run_on_ui(_start)
 
     def _remote_stop_capture(self):
-        """Thread-safe capture stop for the remote API. Returns (ok, error)."""
+        """Thread-safe capture stop for the remote API. Returns (ok, error, status)."""
         def _stop():
             self.stop_capture()
-            return True, None
+            return True, None, self._build_status()
         return self._run_on_ui(_stop)
 
     def _remote_schedule(self, stop_at, create_video):
         """Thread-safe scheduled capture: start now and auto-stop at stop_at (optionally
         rendering). The app owns the stop timer, so it fires regardless of the NINA
-        sequence. Returns (ok, error).
+        sequence. Returns (ok, error, status) - status built in the same UI hop.
         """
         def _do():
             try:
                 stop_at_dt = datetime.strptime(stop_at, "%Y%m%d-%H%M%S")
             except (ValueError, TypeError):
-                return False, "invalid stop_at (expected YYYYMMDD-HHMMSS)"
+                return False, "invalid stop_at (expected YYYYMMDD-HHMMSS)", None
             if stop_at_dt <= datetime.now():
-                return False, "stop_at is in the past"
+                return False, "stop_at is in the past", None
             if not self.is_capturing:
                 ok, err = self.start_capture(show_dialogs=False, immediate=True)
                 if not ok:
-                    return False, err
+                    return False, err, None
             # Derive 'since' from the live session start (not "now"), so the render covers the whole
             # session whether we just started it or adopted a capture that was already running.
             started = self.capture_engine.session_start_time if self.capture_engine else None
             since = (started or datetime.now()).strftime("%Y%m%d-%H%M%S")
             self._schedule_auto_stop(stop_at_dt, create_video, since)
-            return True, None
+            return True, None, self._build_status()
         return self._run_on_ui(_do)
 
     def _schedule_auto_stop(self, stop_at_dt, create_video, since):

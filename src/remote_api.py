@@ -51,13 +51,16 @@ class RemoteControlServer:
                  on_schedule=None, version="", host="127.0.0.1", port=8787, log=None):
         """
         Args:
-            on_start():  () -> (ok: bool, error: str | None)
-            on_stop():   () -> (ok: bool, error: str | None)
+            on_start():  () -> (ok: bool, error: str | None, status: dict | None)
+            on_stop():   () -> (ok: bool, error: str | None, status: dict | None)
             on_create_video(date, since): (date, since: str | None)
                          -> (ok: bool, message: str, http_code: int, resolved_date: str | None)
             on_schedule(stop_at, create_video): (stop_at: str, create_video: bool)
-                         -> (ok: bool, error: str | None). Start capture (if needed) and have
-                         the app auto-stop at stop_at, rendering the video if create_video.
+                         -> (ok: bool, error: str | None, status: dict | None). Start capture
+                         (if needed) and have the app auto-stop at stop_at, rendering the video
+                         if create_video.
+                The action callbacks return the status snapshot alongside (ok, error) so the
+                handler needs a single round-trip instead of a second get_status() hop.
             get_status(): () -> dict (serialised verbatim for GET /status)
             version: app version string reported by GET /health.
             host: bind address (loopback).
@@ -253,16 +256,16 @@ class RemoteControlServer:
                 self._send_json(200, server._get_status())
 
             def _start(self):
-                ok, err = server._on_start()
+                ok, err, status = server._on_start()
                 if ok:
-                    self._send_json(202, {"status": "starting", **server._get_status()})
+                    self._send_json(202, {"status": "starting", **(status or {})})
                 else:
                     self._send_json(400, {"error": err or "failed to start capture"})
 
             def _stop(self):
-                ok, err = server._on_stop()
+                ok, err, status = server._on_stop()
                 if ok:
-                    self._send_json(200, {"status": "stopping", **server._get_status()})
+                    self._send_json(200, {"status": "stopping", **(status or {})})
                 else:
                     self._send_json(400, {"error": err or "failed to stop capture"})
 
@@ -276,9 +279,9 @@ class RemoteControlServer:
                 if server._on_schedule is None:
                     self._send_json(400, {"error": "scheduling not supported"})
                     return
-                ok, err = server._on_schedule(stop_at, create_video)
+                ok, err, status = server._on_schedule(stop_at, create_video)
                 if ok:
-                    self._send_json(202, {"status": "scheduling", "stop_at": stop_at, **server._get_status()})
+                    self._send_json(202, {"status": "scheduling", "stop_at": stop_at, **(status or {})})
                 else:
                     self._send_json(400, {"error": err or "failed to schedule capture"})
 

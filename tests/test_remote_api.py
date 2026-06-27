@@ -20,17 +20,20 @@ from remote_api import RemoteControlServer  # noqa: E402
 
 class RemoteApiTests(unittest.TestCase):
     def setUp(self):
-        self.on_start = mock.Mock(return_value=(True, None))
-        self.on_stop = mock.Mock(return_value=(True, None))
-        self.on_create_video = mock.Mock(
-            return_value=(True, "video creation started for 20250620", 202, "20250620")
-        )
-        self.on_schedule = mock.Mock(return_value=(True, None))
-        self.get_status = mock.Mock(return_value={
+        # Status snapshot the action callbacks return alongside (ok, error) in a
+        # single UI hop; also what GET /status reports.
+        self.status = {
             "capturing": False, "state": "Stopped", "frame_count": 0,
             "failed_frame_count": 0, "uptime_seconds": 0, "last_error": None,
             "scheduler_enabled": False,
-        })
+        }
+        self.on_start = mock.Mock(return_value=(True, None, self.status))
+        self.on_stop = mock.Mock(return_value=(True, None, self.status))
+        self.on_create_video = mock.Mock(
+            return_value=(True, "video creation started for 20250620", 202, "20250620")
+        )
+        self.on_schedule = mock.Mock(return_value=(True, None, self.status))
+        self.get_status = mock.Mock(return_value=self.status)
 
         self.server = RemoteControlServer(
             on_start=self.on_start,
@@ -90,7 +93,7 @@ class RemoteApiTests(unittest.TestCase):
         self.on_stop.assert_called_once()
 
     def test_start_failure_returns_400(self):
-        self.on_start.return_value = (False, "Invalid configuration")
+        self.on_start.return_value = (False, "Invalid configuration", None)
         code, payload = self._request("/capture/start", method="POST")
         self.assertEqual(code, 400)
         self.assertEqual(payload["error"], "Invalid configuration")

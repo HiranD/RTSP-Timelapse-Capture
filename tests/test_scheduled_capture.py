@@ -35,7 +35,7 @@ class RemoteScheduleTests(unittest.TestCase):
 
     def test_invalid_stop_at(self):
         g = _fake_gui()
-        ok, err = self._schedule(g, "not-a-time")
+        ok, err, _status = self._schedule(g, "not-a-time")
         self.assertFalse(ok)
         self.assertIn("invalid stop_at", err)
         g.start_capture.assert_not_called()
@@ -44,7 +44,7 @@ class RemoteScheduleTests(unittest.TestCase):
     def test_past_stop_at_rejected(self):
         g = _fake_gui()
         past = (datetime.now() - timedelta(minutes=5)).strftime("%Y%m%d-%H%M%S")
-        ok, err = self._schedule(g, past)
+        ok, err, _status = self._schedule(g, past)
         self.assertFalse(ok)
         self.assertIn("past", err)
         g.start_capture.assert_not_called()
@@ -55,7 +55,7 @@ class RemoteScheduleTests(unittest.TestCase):
         g = _fake_gui(is_capturing=False)
         g.capture_engine.session_start_time = session_start
         future = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d-%H%M%S")
-        ok, _err = self._schedule(g, future, create_video=True)
+        ok, _err, _status = self._schedule(g, future, create_video=True)
         self.assertTrue(ok)
         g.start_capture.assert_called_once()
         # 'since' is derived from the live session start, not "now".
@@ -68,7 +68,7 @@ class RemoteScheduleTests(unittest.TestCase):
         g = _fake_gui(is_capturing=True)
         g.capture_engine.session_start_time = session_start
         future = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d-%H%M%S")
-        ok, _err = self._schedule(g, future, create_video=True)
+        ok, _err, _status = self._schedule(g, future, create_video=True)
         self.assertTrue(ok)
         g.start_capture.assert_not_called()  # already running - don't restart
         self.assertEqual(g._schedule_auto_stop.call_args[0][2],
@@ -111,6 +111,23 @@ class DoScheduledStopTests(unittest.TestCase):
         self._run(g, cancel, create_video=False)
         g.stop_capture.assert_called_once()
         g._start_remote_video.assert_not_called()
+
+
+class RemoteStartCaptureTests(unittest.TestCase):
+    """POST /capture/start must not replace/orphan a running engine (idempotent)."""
+
+    def test_start_while_idle_starts_capture(self):
+        g = _fake_gui(is_capturing=False)
+        ok, _err, _status = RTSPTimelapseGUI._remote_start_capture(g)
+        self.assertTrue(ok)
+        g.start_capture.assert_called_once()
+
+    def test_start_while_capturing_is_idempotent_noop(self):
+        g = _fake_gui(is_capturing=True)
+        ok, _err, _status = RTSPTimelapseGUI._remote_start_capture(g)
+        self.assertTrue(ok)
+        # Already capturing: don't call start_capture (which would orphan the engine).
+        g.start_capture.assert_not_called()
 
 
 if __name__ == "__main__":
