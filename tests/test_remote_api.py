@@ -127,6 +127,20 @@ class RemoteApiTests(unittest.TestCase):
         self.assertEqual(code, 404)
         self.assertIn("error", payload)
 
+    def test_malformed_json_body_returns_400(self):
+        # A non-empty body that isn't valid JSON must be rejected, not silently
+        # dropped (which would mislead the caller with a 202 ignoring their filter).
+        req = urllib.request.Request(
+            self.base + "/video/create", method="POST",
+            data=b"{not valid json", headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                code = resp.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        self.assertEqual(code, 400)
+        self.on_create_video.assert_not_called()
+
     def test_schedule_calls_callback(self):
         code, payload = self._request(
             "/capture/schedule", method="POST",

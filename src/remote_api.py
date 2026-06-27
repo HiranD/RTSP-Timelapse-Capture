@@ -181,7 +181,8 @@ class RemoteControlServer:
                 return hostname in _ALLOWED_HOSTS
 
             def _read_body(self):
-                """Parse the optional JSON request body; {} if absent/invalid."""
+                """Parse the optional JSON request body: {} if absent, None if a
+                non-empty body fails to parse (callers turn that into a 400)."""
                 # Cap the read: bodies are tiny JSON, and an oversized/lying Content-Length
                 # would otherwise block this handler thread on rfile.read(). A malformed
                 # (non-numeric) header is treated as no body rather than erroring.
@@ -195,7 +196,7 @@ class RemoteControlServer:
                 try:
                     data = json.loads(raw.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError):
-                    return {}
+                    return None  # malformed body -> caller returns 400
                 return data if isinstance(data, dict) else {}
 
             @staticmethod
@@ -281,6 +282,9 @@ class RemoteControlServer:
 
             def _schedule(self):
                 body = self._read_body()
+                if body is None:
+                    self._send_json(400, {"error": "malformed JSON body"})
+                    return
                 stop_at = self._opt_str(body, "stop_at")
                 create_video = self._opt_bool(body, "create_video")
                 if not stop_at:
@@ -297,6 +301,9 @@ class RemoteControlServer:
 
             def _video(self):
                 body = self._read_body()
+                if body is None:
+                    self._send_json(400, {"error": "malformed JSON body"})
+                    return
                 date = self._opt_str(body, "date")
                 since = self._opt_str(body, "since")
                 ok, message, code, resolved = server._on_create_video(date, since)
