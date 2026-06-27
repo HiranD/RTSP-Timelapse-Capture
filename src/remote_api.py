@@ -182,7 +182,9 @@ class RemoteControlServer:
 
             def _read_body(self):
                 """Parse the optional JSON request body; {} if absent/invalid."""
-                length = int(self.headers.get("Content-Length") or 0)
+                # Cap the read: bodies are tiny JSON, and an oversized/lying Content-Length
+                # would otherwise block this handler thread on rfile.read().
+                length = min(int(self.headers.get("Content-Length") or 0), 65536)
                 if length <= 0:
                     return {}
                 raw = self.rfile.read(length)

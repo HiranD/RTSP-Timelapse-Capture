@@ -1413,7 +1413,9 @@ class RTSPTimelapseGUI:
                 return False, "invalid date (expected YYYYMMDD)", 400, None
             target = date
         else:
-            folders = VideoExportController().get_available_date_folders(output_folder)
+            # Reuse the panel's controller: listing folders needs no ffmpeg, and a fresh
+            # VideoExportController() would run `ffmpeg -version` (subprocess) on this Tk thread.
+            folders = self.video_export_panel.controller.get_available_date_folders(output_folder)
             if not folders:
                 return False, "no capture folders found", 404, None
             target = folders[0].name
@@ -1689,8 +1691,9 @@ class RTSPTimelapseGUI:
             # Don't open video automatically when creating via scheduler
             settings.open_when_done = False
 
-            # Create video export controller
-            controller = VideoExportController()
+            # Fresh controller (isolated export state) but reuse the already-probed
+            # ffmpeg wrapper so we don't run `ffmpeg -version` again on the Tk thread.
+            controller = VideoExportController(self.video_export_panel.controller.ffmpeg_wrapper)
 
             # Check FFmpeg
             ffmpeg_ok, ffmpeg_msg = controller.check_ffmpeg()

@@ -142,5 +142,21 @@ class NaturalStopTests(unittest.TestCase):
         self.assertFalse(g.is_capturing)
 
 
+class RemoteVideoControllerReuseTests(unittest.TestCase):
+    """Listing date folders must reuse the panel's controller, not build a fresh one
+    (a fresh VideoExportController() runs `ffmpeg -version` on the Tk thread)."""
+
+    def test_listing_reuses_panel_controller(self):
+        g = _fake_gui()
+        g.config_manager.capture.output_folder = "."
+        g.video_export_panel.controller.get_available_date_folders.return_value = []
+        with mock.patch("gui_app.VideoExportController") as MockVEC:
+            ok, _msg, code, _resolved = RTSPTimelapseGUI._start_remote_video(g, None, None)
+        self.assertFalse(ok)
+        self.assertEqual(code, 404)  # no folders -> resolved before any encode
+        g.video_export_panel.controller.get_available_date_folders.assert_called_once()
+        MockVEC.assert_not_called()  # no fresh controller (no ffmpeg subprocess) for listing
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
