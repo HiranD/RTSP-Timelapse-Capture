@@ -101,6 +101,9 @@ class RTSPTimelapseGUI:
         self.capture_engine = None
         self.is_capturing = False
         self.remote_server = None
+        # App-owned timer for a scheduled (/capture/schedule) auto-stop.
+        self._sched_cancel = None
+        self._sched_thread = None
         self.tray_icon = None
         self.pystray = None
         self._pystray_available = None
@@ -1164,6 +1167,8 @@ class RTSPTimelapseGUI:
 
     def stop_capture(self):
         """Stop the capture process"""
+        # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
+        self._cancel_scheduled_stop()
         if self.capture_engine:
             self.capture_engine.stop_capture()
             self.capture_engine = None
@@ -1191,6 +1196,7 @@ class RTSPTimelapseGUI:
             on_start=self._remote_start_capture,
             on_stop=self._remote_stop_capture,
             on_create_video=self._remote_create_video,
+            on_schedule=self._remote_schedule,
             get_status=self._remote_status,
             version=APP_VERSION,
             host="127.0.0.1",
@@ -1284,6 +1290,71 @@ class RTSPTimelapseGUI:
             self.stop_capture()
             return True, None
         return self._run_on_ui(_stop)
+
+    def _remote_schedule(self, stop_at, create_video):
+        """Thread-safe scheduled capture: start now and auto-stop at stop_at (optionally
+        rendering). The app owns the stop timer, so it fires regardless of the NINA
+        sequence. Returns (ok, error).
+        """
+        def _do():
+            try:
+                stop_at_dt = datetime.strptime(stop_at, "%Y%m%d-%H%M%S")
+            except (ValueError, TypeError):
+                return False, "invalid stop_at (expected YYYYMMDD-HHMMSS)"
+            if stop_at_dt <= datetime.now():
+                return False, "stop_at is in the past"
+            if not self.is_capturing:
+                ok, err = self.start_capture(show_dialogs=False, immediate=True)
+                if not ok:
+                    return False, err
+            # Derive 'since' from the live session start (not "now"), so the render covers the whole
+            # session whether we just started it or adopted a capture that was already running.
+            started = self.capture_engine.session_start_time if self.capture_engine else None
+            since = (started or datetime.now()).strftime("%Y%m%d-%H%M%S")
+            self._schedule_auto_stop(stop_at_dt, create_video, since)
+            return True, None
+        return self._run_on_ui(_do)
+
+    def _schedule_auto_stop(self, stop_at_dt, create_video, since):
+        """(Re)arm an app-owned daemon timer that stops capture (and optionally renders)
+        at stop_at_dt, replacing any existing scheduled stop."""
+        self._cancel_scheduled_stop()
+        cancel = threading.Event()
+        self._sched_cancel = cancel
+
+        def _waiter():
+            delay = (stop_at_dt - datetime.now()).total_seconds()
+            if not cancel.wait(timeout=max(0, delay)):
+                self.root.after(0, lambda: self._do_scheduled_stop(cancel, create_video, since))
+
+        self._sched_thread = threading.Thread(target=_waiter, name="ScheduledStop", daemon=True)
+        self._sched_thread.start()
+        self.log_message("INFO", f"Scheduled capture stop at {stop_at_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    def _do_scheduled_stop(self, cancel, create_video, since):
+        """Fire the scheduled stop on the Tk thread: stop capture and optionally render."""
+        # Race guard: bail if this timer was cancelled or superseded right at the deadline (the
+        # cancel Event may be set, or a new schedule may have replaced self._sched_cancel, after the
+        # waiter already queued this call).
+        if cancel.is_set() or self._sched_cancel is not cancel:
+            return
+        self._sched_cancel = None
+        self._sched_thread = None
+        if self.is_capturing:
+            self.stop_capture()
+        if create_video:
+            # Renders the newest date folder filtered by `since`. With the default rollover (noon) a
+            # dusk->dawn session is a single folder; a non-default folder_rollover_hour could split a
+            # midnight-crossing session so only the latest part renders.
+            ok, message, _code, _resolved = self._start_remote_video(None, since)
+            self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
+
+    def _cancel_scheduled_stop(self):
+        """Cancel a pending scheduled stop, if any (manual stop or a new schedule)."""
+        if self._sched_cancel is not None:
+            self._sched_cancel.set()
+        self._sched_cancel = None
+        self._sched_thread = None
 
     def _remote_status(self):
         """Thread-safe status snapshot for the remote API."""
@@ -1710,6 +1781,7 @@ class RTSPTimelapseGUI:
         # Clean up scheduler and remote API, then auto-save all settings.
         if hasattr(self, 'scheduling_panel'):
             self.scheduling_panel.cleanup()
+        self._cancel_scheduled_stop()  # drop any pending auto-stop so its timer can't fire mid-shutdown
         if getattr(self, 'remote_server', None):
             self.remote_server.stop()
         self.save_config()

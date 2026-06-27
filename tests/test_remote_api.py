@@ -25,6 +25,7 @@ class RemoteApiTests(unittest.TestCase):
         self.on_create_video = mock.Mock(
             return_value=(True, "video creation started for 20250620", 202, "20250620")
         )
+        self.on_schedule = mock.Mock(return_value=(True, None))
         self.get_status = mock.Mock(return_value={
             "capturing": False, "state": "Stopped", "frame_count": 0,
             "failed_frame_count": 0, "uptime_seconds": 0, "last_error": None,
@@ -35,6 +36,7 @@ class RemoteApiTests(unittest.TestCase):
             on_start=self.on_start,
             on_stop=self.on_stop,
             on_create_video=self.on_create_video,
+            on_schedule=self.on_schedule,
             get_status=self.get_status,
             version="9.9.9",
             host="127.0.0.1",
@@ -120,6 +122,22 @@ class RemoteApiTests(unittest.TestCase):
         code, payload = self._request("/video/create", method="POST", body={"date": "20200101"})
         self.assertEqual(code, 404)
         self.assertIn("error", payload)
+
+    def test_schedule_calls_callback(self):
+        code, payload = self._request(
+            "/capture/schedule", method="POST",
+            body={"stop_at": "20250620-233000", "create_video": True})
+        self.assertEqual(code, 202)
+        self.assertEqual(payload["status"], "scheduling")
+        self.assertEqual(payload["stop_at"], "20250620-233000")
+        self.on_schedule.assert_called_once_with("20250620-233000", True)
+
+    def test_schedule_missing_stop_at_400(self):
+        code, payload = self._request(
+            "/capture/schedule", method="POST", body={"create_video": True})
+        self.assertEqual(code, 400)
+        self.assertIn("error", payload)
+        self.on_schedule.assert_not_called()
 
     def test_unknown_path_404(self):
         code, payload = self._request("/does-not-exist")

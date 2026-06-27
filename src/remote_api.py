@@ -17,9 +17,12 @@ Tkinter.
 Endpoints (all JSON):
     GET  /health         -> {"ok": true, "version": "..."}
     GET  /status         -> {"capturing", "state", "frame_count", ...}
-    POST /capture/start  -> 202 {"status": "starting", ...}  | 400 {"error"}
-    POST /capture/stop   -> 200 {"status": "stopping", ...}  | 400 {"error"}
-    POST /video/create   -> 202 {"status", "date", "since"}  | 400/404 {"error"}
+    POST /capture/start    -> 202 {"status": "starting", ...}  | 400 {"error"}
+    POST /capture/stop     -> 200 {"status": "stopping", ...}  | 400 {"error"}
+    POST /capture/schedule -> 202 {"status": "scheduling", "stop_at", ...} | 400 {"error"}
+        JSON body: {"stop_at": "YYYYMMDD-HHMMSS", "create_video": bool}
+        (starts capture if needed; the app auto-stops at stop_at and renders if create_video)
+    POST /video/create     -> 202 {"status", "date", "since"}  | 400/404 {"error"}
         optional JSON body: {"date": "YYYYMMDD", "since": "YYYYMMDD-HHMMSS"}
         (no date -> newest session; since -> only frames captured at/after it)
 """
@@ -45,13 +48,16 @@ class RemoteControlServer:
     """
 
     def __init__(self, *, on_start, on_stop, on_create_video, get_status,
-                 version="", host="127.0.0.1", port=8787, log=None):
+                 on_schedule=None, version="", host="127.0.0.1", port=8787, log=None):
         """
         Args:
             on_start():  () -> (ok: bool, error: str | None)
             on_stop():   () -> (ok: bool, error: str | None)
             on_create_video(date, since): (date, since: str | None)
                          -> (ok: bool, message: str, http_code: int, resolved_date: str | None)
+            on_schedule(stop_at, create_video): (stop_at: str, create_video: bool)
+                         -> (ok: bool, error: str | None). Start capture (if needed) and have
+                         the app auto-stop at stop_at, rendering the video if create_video.
             get_status(): () -> dict (serialised verbatim for GET /status)
             version: app version string reported by GET /health.
             host: bind address (loopback).
@@ -61,6 +67,7 @@ class RemoteControlServer:
         self._on_start = on_start
         self._on_stop = on_stop
         self._on_create_video = on_create_video
+        self._on_schedule = on_schedule
         self._get_status = get_status
         self._version = version
         self.host = host
@@ -186,6 +193,12 @@ class RemoteControlServer:
                     return value.strip()
                 return None
 
+            @staticmethod
+            def _opt_bool(data, key, default=False):
+                """Return a bool field, else the default."""
+                value = data.get(key)
+                return value if isinstance(value, bool) else default
+
             # -- dispatch ---------------------------------------------------
 
             def do_GET(self):
@@ -218,6 +231,7 @@ class RemoteControlServer:
                     ("GET", "/status"): self._status,
                     ("POST", "/capture/start"): self._start,
                     ("POST", "/capture/stop"): self._stop,
+                    ("POST", "/capture/schedule"): self._schedule,
                     ("POST", "/video/create"): self._video,
                 }
                 handler = routes.get((method, path))
@@ -251,6 +265,22 @@ class RemoteControlServer:
                     self._send_json(200, {"status": "stopping", **server._get_status()})
                 else:
                     self._send_json(400, {"error": err or "failed to stop capture"})
+
+            def _schedule(self):
+                body = self._read_body()
+                stop_at = self._opt_str(body, "stop_at")
+                create_video = self._opt_bool(body, "create_video")
+                if not stop_at:
+                    self._send_json(400, {"error": "missing stop_at (expected YYYYMMDD-HHMMSS)"})
+                    return
+                if server._on_schedule is None:
+                    self._send_json(400, {"error": "scheduling not supported"})
+                    return
+                ok, err = server._on_schedule(stop_at, create_video)
+                if ok:
+                    self._send_json(202, {"status": "scheduling", "stop_at": stop_at, **server._get_status()})
+                else:
+                    self._send_json(400, {"error": err or "failed to schedule capture"})
 
             def _video(self):
                 body = self._read_body()
