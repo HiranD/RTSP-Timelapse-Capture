@@ -1245,6 +1245,9 @@ class RTSPTimelapseGUI:
         else:
             if self.remote_server:
                 self.remote_server.stop()
+            # Disabling the integration also drops any pending /capture/schedule auto-stop,
+            # so a stale timer can't later stop capture or render after the user turned it off.
+            self._cancel_scheduled_stop()
             self.scheduling_panel.set_scheduler_control_enabled(True)
             return True, None
 

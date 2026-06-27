@@ -172,6 +172,24 @@ class RemoteApiTests(unittest.TestCase):
         status_line = raw.split(b"\r\n", 1)[0].decode("latin-1")
         self.assertIn("200", status_line)
 
+    def test_malformed_content_length_treated_as_empty(self):
+        # A non-numeric Content-Length must be treated as no body, not a 500.
+        req = (b"POST /video/create HTTP/1.0\r\n"
+               b"Host: 127.0.0.1\r\n"
+               b"Content-Length: abc\r\n"
+               b"\r\n")
+        with socket.create_connection(("127.0.0.1", self.server.port), timeout=5) as s:
+            s.sendall(req)
+            raw = b""
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                raw += chunk
+        status_line = raw.split(b"\r\n", 1)[0].decode("latin-1")
+        self.assertIn("202", status_line)  # body treated as absent -> newest-session render
+        self.on_create_video.assert_called_once_with(None, None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

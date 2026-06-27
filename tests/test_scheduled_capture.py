@@ -158,5 +158,15 @@ class RemoteVideoControllerReuseTests(unittest.TestCase):
         MockVEC.assert_not_called()  # no fresh controller (no ffmpeg subprocess) for listing
 
 
+class RemoteApiDisableTests(unittest.TestCase):
+    """Disabling the Remote API must drop any pending /capture/schedule auto-stop."""
+
+    def test_disable_cancels_pending_scheduled_stop(self):
+        g = _fake_gui()
+        ok, _err = RTSPTimelapseGUI._on_remote_api_toggle(g, False)
+        self.assertTrue(ok)
+        g._cancel_scheduled_stop.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
