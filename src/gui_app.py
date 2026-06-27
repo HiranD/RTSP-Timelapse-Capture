@@ -1388,6 +1388,13 @@ class RTSPTimelapseGUI:
             "uptime_seconds": stats.get("uptime_seconds", 0),
             "last_error": stats.get("last_error"),
             "scheduler_enabled": self.config_manager.astro_schedule.scheduler_enabled,
+            # The current/most-recent session's start (survives a stop; None after an app
+            # restart). Lets a remote client render exactly this session without tracking the
+            # start itself - the app is the single source of truth.
+            "session_start_time": (
+                self.session_start_time.strftime("%Y%m%d-%H%M%S")
+                if self.session_start_time else None
+            ),
         }
 
     def _remote_create_video(self, date, since=None):

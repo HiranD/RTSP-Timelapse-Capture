@@ -168,5 +168,36 @@ class RemoteApiDisableTests(unittest.TestCase):
         g._cancel_scheduled_stop.assert_called_once()
 
 
+class BuildStatusTests(unittest.TestCase):
+    """GET /status must expose the app-owned session_start_time - the single source of truth a
+    remote client (the NINA plugin) uses to render exactly the current/most-recent session."""
+
+    def _status(self, g):
+        return RTSPTimelapseGUI._build_status(g)
+
+    def test_session_start_time_present_while_capturing(self):
+        g = _fake_gui(is_capturing=True)
+        g.session_start_time = datetime(2026, 6, 25, 21, 0, 0)
+        g.capture_engine.get_stats.return_value = {
+            "state": "Capturing", "frame_count": 5, "failed_frame_count": 0,
+            "uptime_seconds": 10, "last_error": None,
+        }
+        self.assertEqual(self._status(g)["session_start_time"], "20260625-210000")
+
+    def test_session_start_time_survives_stop(self):
+        # After a stop the engine is gone and is_capturing is False, but session_start_time
+        # persists so a Stop + "Create video" can still target the just-ended session.
+        g = _fake_gui(is_capturing=False)
+        g.capture_engine = None
+        g.session_start_time = datetime(2026, 6, 25, 21, 0, 0)
+        self.assertEqual(self._status(g)["session_start_time"], "20260625-210000")
+
+    def test_session_start_time_none_before_first_capture(self):
+        g = _fake_gui(is_capturing=False)
+        g.capture_engine = None
+        g.session_start_time = None
+        self.assertIsNone(self._status(g)["session_start_time"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
