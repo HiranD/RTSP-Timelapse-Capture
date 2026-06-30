@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.3.0"
+set "VERSION=3.4.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,14 +69,15 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Astronomical Scheduling - Automated Long-Term Capture Planning
+echo    Remote Control / External API - Drive capture from NINA ^& other tools
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * New Integrations tab: Discord webhook upload of the nightly video, with
-echo     max upload size, auto quality reduction, and delete-after-upload.
-echo   * Minimize to tray on startup and Start automatically with Windows.
-echo   * New custom application icon.
+echo   * Remote Control HTTP API: drive capture from external scripts ^(e.g. NINA^) -
+echo     start/stop, scheduled timelapse ^(auto-stop + optional render^), and video creation.
+echo   * Local-only ^(127.0.0.1^), opt-in on the Integrations tab; mutually exclusive
+echo     with automatic scheduling. Ready-to-use NINA scripts in the examples\ folder.
+echo   * Coming soon: a native NINA plugin ^(RTSP Timelapse Control^) - in development.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
