@@ -58,7 +58,7 @@ echo Bundling FFmpeg...
 if not exist "release\RTSP_Timelapse_v%VERSION%_Windows\bin" mkdir "release\RTSP_Timelapse_v%VERSION%_Windows\bin"
 copy "C:\Users\wande\Tools\ffmpeg-shared\bin\*" "release\RTSP_Timelapse_v%VERSION%_Windows\bin\" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo   - FFmpeg bundled successfully with all DLLs (~150 MB)
+    echo   - FFmpeg bundled successfully with all DLLs ^(~150 MB^)
     echo   - Users don't need to install anything!
 ) else (
     echo   - Warning: FFmpeg not found, users will need to install it separately
