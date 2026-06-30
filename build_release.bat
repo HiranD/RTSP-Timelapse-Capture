@@ -48,6 +48,11 @@ REM Copy files to release folder
 copy "dist\RTSP_Timelapse.exe" "release\RTSP_Timelapse_v%VERSION%_Windows\"
 copy "README.md" "release\RTSP_Timelapse_v%VERSION%_Windows\"
 
+REM Bundle the Remote Control / NINA example scripts
+echo Bundling example scripts...
+if not exist "release\RTSP_Timelapse_v%VERSION%_Windows\examples" mkdir "release\RTSP_Timelapse_v%VERSION%_Windows\examples"
+copy "examples\*" "release\RTSP_Timelapse_v%VERSION%_Windows\examples\" >nul
+
 REM Bundle FFmpeg with all DLLs (no separate install needed!)
 echo Bundling FFmpeg...
 if not exist "release\RTSP_Timelapse_v%VERSION%_Windows\bin" mkdir "release\RTSP_Timelapse_v%VERSION%_Windows\bin"
@@ -139,6 +144,10 @@ echo    3. SCHEDULING TAB:
 echo       - Set location ^(twilight mode^) OR start/end times ^(manual mode^)
 echo       - Select at least one date on calendar
 echo       - Check "Enable automatic scheduling"
+echo.
+echo 7. REMOTE CONTROL / NINA ^(NEW in v3.4^)
+echo    ^> Control capture from external scripts ^(e.g. NINA^) via a local HTTP API.
+echo    ^> Enable it on the Integrations tab, then see examples\README.md for setup.
 echo.
 echo ================================================================================
 echo KEY FEATURES

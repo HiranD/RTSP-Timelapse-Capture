@@ -65,6 +65,9 @@ class SchedulingPanel(ttk.Frame):
         self.stop_capture_callback = None
         self.create_video_callback = None
         self.log_callback = None
+        # Notified when the "Enable automatic scheduling" toggle changes, so the
+        # app can keep it mutually exclusive with the Remote Control API.
+        self._on_toggle_callback = None
 
         # Session tracking for capture history. Invariant: session_start_time is
         # only ever written and read on the scheduler's monitor thread
@@ -376,6 +379,12 @@ class SchedulingPanel(ttk.Frame):
             "at darkness and stop at dawn for scheduled dates."
         )
 
+        # Lock note (shown when disabled because the Remote Control API is on).
+        self.scheduler_lock_label = ttk.Label(
+            control_frame, text="", font=("Segoe UI", 8), foreground="#CC6600"
+        )
+        self.scheduler_lock_label.pack(side="left", padx=(12, 0))
+
         # Status indicator
         self.scheduler_status_label = ttk.Label(
             control_frame,
@@ -667,6 +676,10 @@ class SchedulingPanel(ttk.Frame):
         else:
             self._stop_scheduler()
         self._save_to_config()
+        # Notify the app so it can lock/unlock the Remote Control API. Read the
+        # var's *actual* value: _start_scheduler() may have unchecked it on failure.
+        if self._on_toggle_callback:
+            self._on_toggle_callback(self.scheduler_enabled_var.get())
 
     def _start_scheduler(self):
         """Start the astronomical scheduler"""
@@ -744,8 +757,10 @@ class SchedulingPanel(ttk.Frame):
         self.session_start_time = datetime.now()
         if self.start_capture_callback:
             # Use after() to call on main thread with from_scheduler=True
-            # This tells start_capture to use the scheduler's times, not the UI times
-            self.after(0, lambda: self.start_capture_callback(from_scheduler=True))
+            # This tells start_capture to use the scheduler's times, not the UI times.
+            # show_dialogs=False: an unattended scheduler run must never block on a
+            # modal error dialog (e.g. bad config) - errors go to the log instead.
+            self.after(0, lambda: self.start_capture_callback(from_scheduler=True, show_dialogs=False))
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
@@ -851,6 +866,34 @@ class SchedulingPanel(ttk.Frame):
         self.stop_capture_callback = stop_capture
         self.create_video_callback = create_video
         self.log_callback = log
+
+    def set_toggle_callback(self, on_toggle):
+        """Register a callback(enabled: bool) fired when the scheduler toggle changes.
+
+        Used by the app to keep automatic scheduling mutually exclusive with the
+        Remote Control API.
+        """
+        self._on_toggle_callback = on_toggle
+
+    def set_scheduler_control_enabled(self, enabled: bool):
+        """Enable or disable the "Enable automatic scheduling" checkbox.
+
+        The app calls this to enforce mutual exclusion with the Remote Control
+        API: while the API is on, scheduling is locked off. Disabling it while it
+        is currently on also turns the scheduler off (and stops it).
+        """
+        if enabled:
+            self.scheduler_checkbox.config(state="normal")
+            self.scheduler_lock_label.config(text="")
+        else:
+            if self.scheduler_enabled_var.get():
+                self.scheduler_enabled_var.set(False)
+                self._stop_scheduler()
+                self._save_to_config()
+            self.scheduler_checkbox.config(state="disabled")
+            self.scheduler_lock_label.config(
+                text="Disabled while the Remote Control API is on (Integrations tab)."
+            )
 
     def restore_scheduler_state(self):
         """Re-arm AstroScheduler if it was enabled at last shutdown.

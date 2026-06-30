@@ -8,6 +8,7 @@ and video export capabilities.
 
 import os
 import sys
+import re
 import json
 import mimetypes
 import uuid
@@ -66,7 +67,12 @@ from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
+from remote_api import RemoteControlServer
 import startup_manager
+
+# App version reported by the remote API's /health endpoint. Keep in sync with
+# src/__init__.py / version_info.txt on release.
+APP_VERSION = "3.4.0"
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -94,6 +100,10 @@ class RTSPTimelapseGUI:
         self.config_manager = ConfigManager()
         self.capture_engine = None
         self.is_capturing = False
+        self.remote_server = None
+        # App-owned timer for a scheduled (/capture/schedule) auto-stop.
+        self._sched_cancel = None
+        self._sched_thread = None
         self.tray_icon = None
         self.pystray = None
         self._pystray_available = None
@@ -195,6 +205,10 @@ class RTSPTimelapseGUI:
         self.video_export_panel.set_snapshots_dir_callback(
             lambda: self.output_entry.get()
         )
+
+        # Remote-control HTTP API + mutual exclusion with the scheduler.
+        # (After both panels exist and the scheduler state is restored.)
+        self._setup_remote_api()
 
     def _encode_multipart_formdata(self, fields):
         """Encode a multipart/form-data request body.
@@ -1082,11 +1096,21 @@ class RTSPTimelapseGUI:
         else:
             self.stop_capture()
 
-    def start_capture(self, from_scheduler: bool = False):
+    def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True,
+                      immediate: bool = False):
         """Start the capture process
 
         Args:
             from_scheduler: If True, called from astronomical scheduler (don't override schedule times)
+            show_dialogs: If False (remote API / scheduler triggers), route failures
+                to the log and return instead of popping a modal dialog that would
+                block an unattended/headless run.
+            immediate: If True (remote API / NINA), ignore the Capture-tab schedule
+                window and capture right away until explicitly stopped. Transient —
+                does not change the saved schedule.
+
+        Returns:
+            (success: bool, error: str | None)
         """
         # Update config from UI (skip schedule times if from scheduler)
         self.update_config_from_ui(skip_schedule_times=from_scheduler)
@@ -1096,8 +1120,9 @@ class RTSPTimelapseGUI:
         if not valid:
             error_msg = "\n".join(errors)
             self.log_message("ERROR", f"Invalid configuration: {error_msg}")
-            messagebox.showerror("Invalid Configuration", error_msg)
-            return
+            if show_dialogs:
+                messagebox.showerror("Invalid Configuration", error_msg)
+            return False, error_msg
 
         # Reset statistics for new session
         self.total_captures = 0
@@ -1107,7 +1132,11 @@ class RTSPTimelapseGUI:
 
         # Create capture engine
         try:
-            self.capture_engine = CaptureEngine(self.config_manager.to_dict())
+            cfg = self.config_manager.to_dict()
+            if immediate:
+                # Remote/NINA-triggered: bypass the schedule window, run until stopped.
+                cfg["schedule"]["ignore_window"] = True
+            self.capture_engine = CaptureEngine(cfg)
 
             # Set up callbacks
             self.capture_engine.set_status_callback(self.on_status_update)
@@ -1128,12 +1157,18 @@ class RTSPTimelapseGUI:
             # Start status update timer
             self.update_status()
 
+            return True, None
+
         except Exception as e:
             self.log_message("ERROR", f"Failed to start capture: {e}")
-            messagebox.showerror("Error", f"Failed to start capture: {e}")
+            if show_dialogs:
+                messagebox.showerror("Error", f"Failed to start capture: {e}")
+            return False, str(e)
 
     def stop_capture(self):
         """Stop the capture process"""
+        # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
+        self._cancel_scheduled_stop()
         if self.capture_engine:
             self.capture_engine.stop_capture()
             self.capture_engine = None
@@ -1148,6 +1183,261 @@ class RTSPTimelapseGUI:
 
         # Update status one last time
         self.update_status()
+
+    # ------------------------------------------------- Remote control HTTP API
+
+    def _setup_remote_api(self):
+        """Create the remote-control server and enforce scheduler exclusivity.
+
+        Called once at startup after both the Scheduling and Integrations panels
+        exist (and the scheduler state has been restored).
+        """
+        self.remote_server = RemoteControlServer(
+            on_start=self._remote_start_capture,
+            on_stop=self._remote_stop_capture,
+            on_create_video=self._remote_create_video,
+            on_schedule=self._remote_schedule,
+            get_status=self._remote_status,
+            version=APP_VERSION,
+            host="127.0.0.1",
+            port=self.config_manager.remote_api.port,
+            log=self.log_message,
+        )
+
+        # Let the Integrations panel drive the server + the mutual-exclusion lock,
+        # and let the Scheduling panel tell us when its toggle changes.
+        self.integrations_panel.set_remote_api_callback(self._on_remote_api_toggle)
+        self.scheduling_panel.set_toggle_callback(self._on_scheduler_toggled)
+
+        api_on = self.config_manager.remote_api.enabled
+        scheduler_on = self.config_manager.astro_schedule.scheduler_enabled
+
+        # Auto-start on launch if enabled. A busy port logs + unticks (no dialog
+        # during startup); the scheduler stays available in that case.
+        if api_on:
+            try:
+                self.remote_server.start()
+            except OSError as e:
+                self.log_message("ERROR", f"Remote control API failed to start: {e}")
+                self.integrations_panel.sync_remote_api_enabled(False)
+                api_on = False
+
+        # Enforce mutual exclusion from the effective states. If both were somehow
+        # enabled in config, the API wins (this turns the scheduler off).
+        if api_on:
+            self.scheduling_panel.set_scheduler_control_enabled(False)
+        elif scheduler_on:
+            self.integrations_panel.set_remote_api_control_enabled(False)
+
+    def _on_remote_api_toggle(self, enabled):
+        """Start/stop the server when the Integrations checkbox toggles.
+
+        Returns (ok, error) so the panel can resync its checkbox if start fails.
+        """
+        if enabled:
+            try:
+                self.remote_server.port = self.config_manager.remote_api.port
+                self.remote_server.start()
+            except OSError as e:
+                return False, str(e)
+            self.scheduling_panel.set_scheduler_control_enabled(False)
+            return True, None
+        else:
+            if self.remote_server:
+                self.remote_server.stop()
+            # Disabling the integration also drops any pending /capture/schedule auto-stop,
+            # so a stale timer can't later stop capture or render after the user turned it off.
+            self._cancel_scheduled_stop()
+            self.scheduling_panel.set_scheduler_control_enabled(True)
+            return True, None
+
+    def _on_scheduler_toggled(self, enabled):
+        """Lock/unlock the Remote API control so the two stay mutually exclusive."""
+        self.integrations_panel.set_remote_api_control_enabled(not enabled)
+
+    def _run_on_ui(self, func, timeout=20):
+        """Run func on the Tk main thread and return its result.
+
+        The HTTP server runs on daemon threads and Tk is not thread-safe, so we
+        hop onto the main loop via after() and block the caller until it finishes.
+        """
+        result = {}
+        done = threading.Event()
+
+        def runner():
+            try:
+                result["value"] = func()
+            except Exception as e:  # propagate to the HTTP handler
+                result["error"] = e
+            finally:
+                done.set()
+
+        self.root.after(0, runner)
+        if not done.wait(timeout):
+            raise TimeoutError("UI call timed out")
+        if "error" in result:
+            raise result["error"]
+        return result["value"]
+
+    def _remote_start_capture(self):
+        """Thread-safe capture start for the remote API. Returns (ok, error, status).
+
+        Uses immediate=True so an API/NINA trigger starts capturing right away
+        and runs until /capture/stop, ignoring the Capture-tab schedule window.
+        A start while already capturing is an idempotent no-op (don't replace the
+        running engine and orphan its thread). The status snapshot is built in the
+        same UI hop so the HTTP handler needs only one round-trip.
+        """
+        def _start():
+            if self.is_capturing:
+                return True, None, self._build_status()  # already capturing — idempotent
+            ok, err = self.start_capture(show_dialogs=False, immediate=True)
+            return ok, err, (self._build_status() if ok else None)
+        return self._run_on_ui(_start)
+
+    def _remote_stop_capture(self):
+        """Thread-safe capture stop for the remote API. Returns (ok, error, status)."""
+        def _stop():
+            self.stop_capture()
+            return True, None, self._build_status()
+        return self._run_on_ui(_stop)
+
+    def _remote_schedule(self, stop_at, create_video):
+        """Thread-safe scheduled capture: start now and auto-stop at stop_at (optionally
+        rendering). The app owns the stop timer, so it fires regardless of the NINA
+        sequence. Returns (ok, error, status) - status built in the same UI hop.
+        """
+        def _do():
+            try:
+                stop_at_dt = datetime.strptime(stop_at, "%Y%m%d-%H%M%S")
+            except (ValueError, TypeError):
+                return False, "invalid stop_at (expected YYYYMMDD-HHMMSS)", None
+            if stop_at_dt <= datetime.now():
+                return False, "stop_at is in the past", None
+            if not self.is_capturing:
+                ok, err = self.start_capture(show_dialogs=False, immediate=True)
+                if not ok:
+                    return False, err, None
+            # Derive 'since' from the live session start (not "now"), so the render covers the whole
+            # session whether we just started it or adopted a capture that was already running.
+            started = self.capture_engine.session_start_time if self.capture_engine else None
+            since = (started or datetime.now()).strftime("%Y%m%d-%H%M%S")
+            self._schedule_auto_stop(stop_at_dt, create_video, since)
+            return True, None, self._build_status()
+        return self._run_on_ui(_do)
+
+    def _schedule_auto_stop(self, stop_at_dt, create_video, since):
+        """(Re)arm an app-owned daemon timer that stops capture (and optionally renders)
+        at stop_at_dt, replacing any existing scheduled stop."""
+        self._cancel_scheduled_stop()
+        cancel = threading.Event()
+        self._sched_cancel = cancel
+
+        def _waiter():
+            delay = (stop_at_dt - datetime.now()).total_seconds()
+            if not cancel.wait(timeout=max(0, delay)):
+                self.root.after(0, lambda: self._do_scheduled_stop(cancel, create_video, since))
+
+        self._sched_thread = threading.Thread(target=_waiter, name="ScheduledStop", daemon=True)
+        self._sched_thread.start()
+        self.log_message("INFO", f"Scheduled capture stop at {stop_at_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    def _do_scheduled_stop(self, cancel, create_video, since):
+        """Fire the scheduled stop on the Tk thread: stop capture and optionally render."""
+        # Race guard: bail if this timer was cancelled or superseded right at the deadline (the
+        # cancel Event may be set, or a new schedule may have replaced self._sched_cancel, after the
+        # waiter already queued this call).
+        if cancel.is_set() or self._sched_cancel is not cancel:
+            return
+        self._sched_cancel = None
+        self._sched_thread = None
+        if self.is_capturing:
+            self.stop_capture()
+        if create_video:
+            # Renders the newest date folder filtered by `since`. With the default rollover (noon) a
+            # dusk->dawn session is a single folder; a non-default folder_rollover_hour could split a
+            # midnight-crossing session so only the latest part renders.
+            ok, message, _code, _resolved = self._start_remote_video(None, since)
+            self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
+
+    def _cancel_scheduled_stop(self):
+        """Cancel a pending scheduled stop, if any (manual stop or a new schedule)."""
+        if self._sched_cancel is not None:
+            self._sched_cancel.set()
+        self._sched_cancel = None
+        self._sched_thread = None
+
+    def _remote_status(self):
+        """Thread-safe status snapshot for the remote API."""
+        return self._run_on_ui(self._build_status)
+
+    def _build_status(self):
+        """Build the /status payload (runs on the Tk thread)."""
+        if self.is_capturing and self.capture_engine:
+            stats = self.capture_engine.get_stats()
+        else:
+            stats = {
+                "state": "Stopped", "frame_count": 0, "failed_frame_count": 0,
+                "uptime_seconds": 0, "last_error": None,
+            }
+        return {
+            "capturing": self.is_capturing,
+            "state": stats.get("state"),
+            "frame_count": stats.get("frame_count", 0),
+            "failed_frame_count": stats.get("failed_frame_count", 0),
+            "uptime_seconds": stats.get("uptime_seconds", 0),
+            "last_error": stats.get("last_error"),
+            "scheduler_enabled": self.config_manager.astro_schedule.scheduler_enabled,
+            # The current/most-recent session's start (survives a stop; None after an app
+            # restart). Lets a remote client render exactly this session without tracking the
+            # start itself - the app is the single source of truth.
+            "session_start_time": (
+                self.session_start_time.strftime("%Y%m%d-%H%M%S")
+                if self.session_start_time else None
+            ),
+        }
+
+    def _remote_create_video(self, date, since=None):
+        """Thread-safe video-creation trigger.
+
+        Returns (ok, message, http_code, resolved_date) - resolved_date is the
+        date actually targeted (e.g. the newest session when none was given), or
+        None when no date could be resolved. `since` (YYYYMMDD-HHMMSS) restricts
+        the render to frames captured at/after it, so one session can be rendered
+        even when several sessions share a date folder.
+        """
+        return self._run_on_ui(lambda: self._start_remote_video(date, since))
+
+    def _start_remote_video(self, date, since=None):
+        """Resolve the target date and kick off video creation (Tk thread)."""
+        since_dt = None
+        if since:
+            try:
+                since_dt = datetime.strptime(since, "%Y%m%d-%H%M%S")
+            except ValueError:
+                return False, "invalid since (expected YYYYMMDD-HHMMSS)", 400, None
+
+        output_folder = Path(self.config_manager.capture.output_folder)
+        if date:
+            if not re.fullmatch(r"\d{8}", date):
+                return False, "invalid date (expected YYYYMMDD)", 400, None
+            target = date
+        else:
+            # Reuse the panel's controller: listing folders needs no ffmpeg, and a fresh
+            # VideoExportController() would run `ffmpeg -version` (subprocess) on this Tk thread.
+            folders = self.video_export_panel.controller.get_available_date_folders(output_folder)
+            if not folders:
+                return False, "no capture folders found", 404, None
+            target = folders[0].name
+
+        if not (output_folder / target).exists():
+            return False, f"no snapshots for {target}", 404, target
+
+        # _auto_create_video_for_date does the synchronous prep (scan/preset/ffmpeg)
+        # then runs the encode in a thread; surface that synchronous outcome so a
+        # bad 'since', empty folder, etc. become real 404/500s instead of a 202.
+        ok, message, code = self._auto_create_video_for_date(target, since=since_dt)
+        return ok, message, code, target
 
     def set_config_inputs_state(self, state):
         """Enable or disable configuration inputs"""
@@ -1228,7 +1518,10 @@ class RTSPTimelapseGUI:
 
         # Handle automatic stop when capture ends naturally (reached end time or error)
         if (state == CaptureState.STOPPED or state == CaptureState.ERROR) and self.is_capturing:
-            # Clean up GUI state
+            # Clean up GUI state. A natural/automatic stop (end_dt, disconnect, error) also
+            # cancels any pending /capture/schedule auto-stop, so a stale timer can't later
+            # stop a manually-restarted session or render with the old 'since'.
+            self._cancel_scheduled_stop()
             self.is_capturing = False
             self.start_stop_btn.configure(text="Start Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
@@ -1358,12 +1651,22 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
-    def _auto_create_video_for_date(self, date_str: str):
+    def _auto_create_video_for_date(self, date_str: str, since=None):
         """
         Automatically create a timelapse video for a specific date's captures.
 
         Args:
             date_str: Date string in YYYYMMDD format
+            since: Optional datetime; if set, only frames captured at/after it are
+                included, so a session that shares a date folder with earlier
+                frames (e.g. a test run) renders only its own footage.
+
+        Returns:
+            (ok: bool, message: str, http_code: int) for the synchronous outcome.
+            ok=True (202) means the encode was kicked off in the background;
+            synchronous failures (missing folder/preset/ffmpeg, no frames, prepare
+            error) are reported so the remote API can surface them. The scheduler
+            ignores the return value.
         """
         self.log_message("INFO", f"[Auto Video] Starting video creation for {date_str}")
 
@@ -1374,7 +1677,7 @@ class RTSPTimelapseGUI:
 
             if not date_folder.exists():
                 self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
-                return
+                return False, f"no snapshots folder for {date_str}", 404
 
             # Get video settings from Video Export tab
             preset_name = self.video_export_panel.preset_var.get()
@@ -1393,25 +1696,26 @@ class RTSPTimelapseGUI:
             settings = preset_manager.get_preset(preset_name)
             if not settings:
                 self.log_message("ERROR", f"[Auto Video] Preset not found: {preset_name}")
-                return
+                return False, f"video preset not found: {preset_name}", 500
 
             # Don't open video automatically when creating via scheduler
             settings.open_when_done = False
 
-            # Create video export controller
-            controller = VideoExportController()
+            # Fresh controller (isolated export state) but reuse the already-probed
+            # ffmpeg wrapper so we don't run `ffmpeg -version` again on the Tk thread.
+            controller = VideoExportController(self.video_export_panel.controller.ffmpeg_wrapper)
 
             # Check FFmpeg
             ffmpeg_ok, ffmpeg_msg = controller.check_ffmpeg()
             if not ffmpeg_ok:
                 self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
-                return
+                return False, ffmpeg_msg, 500
 
             # Scan folder for images
-            success, collection, msg = controller.scan_folder(date_folder)
+            success, collection, msg = controller.scan_folder(date_folder, since=since)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
-                return
+                return False, msg, 404
 
             self.log_message("INFO", f"[Auto Video] Found {collection.total_count} images")
 
@@ -1427,7 +1731,7 @@ class RTSPTimelapseGUI:
             success, job, msg = controller.prepare_export(settings, collection, output_file)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
-                return
+                return False, msg, 500
 
             # Progress callback for logging
             def progress_callback(status: str, progress: float, info):
@@ -1483,9 +1787,11 @@ class RTSPTimelapseGUI:
 
             # Run in a thread to avoid blocking UI
             threading.Thread(target=run_export, daemon=True).start()
+            return True, f"video creation started for {date_str}", 202
 
         except Exception as e:
             self.log_message("ERROR", f"[Auto Video] Failed: {e}")
+            return False, f"video creation failed: {e}", 500
 
     def on_closing(self):
         """Handle window close event"""
@@ -1496,9 +1802,12 @@ class RTSPTimelapseGUI:
                 return
             self.stop_capture()
 
-        # Clean up scheduler and auto-save all settings before closing.
+        # Clean up scheduler and remote API, then auto-save all settings.
         if hasattr(self, 'scheduling_panel'):
             self.scheduling_panel.cleanup()
+        self._cancel_scheduled_stop()  # drop any pending auto-stop so its timer can't fire mid-shutdown
+        if getattr(self, 'remote_server', None):
+            self.remote_server.stop()
         self.save_config()
         self.cleanup_tray()
         self.root.destroy()

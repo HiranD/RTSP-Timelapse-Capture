@@ -21,6 +21,7 @@ a = Analysis(
         'tooltip',
         'capture_tooltips',
         'scheduling_tooltips',
+        'remote_api',
         # pystray is loaded via importlib.import_module() (dynamic), which
         # PyInstaller's static analysis can't see. hook-pystray then bundles
         # the platform backend (pystray._win32 on Windows).

@@ -101,12 +101,15 @@ class VideoExportController:
         else:
             return False, "FFmpeg not found. Please install FFmpeg to use video export."
 
-    def scan_folder(self, folder_path: Path) -> Tuple[bool, Optional[ImageCollection], str]:
+    def scan_folder(self, folder_path: Path, since: Optional[datetime] = None) -> Tuple[bool, Optional[ImageCollection], str]:
         """
         Scan folder for images and extract metadata
 
         Args:
             folder_path: Path to folder containing images
+            since: If set, only include frames captured at/after this time
+                (filenames are YYYYMMDD-HHMMSS). Lets a single session be rendered
+                even when several sessions share one date folder.
 
         Returns:
             (success, ImageCollection, message) tuple
@@ -125,6 +128,17 @@ class VideoExportController:
 
             if len(images) == 0:
                 return False, None, f"No .jpg files found in {folder_path}"
+
+            # Optionally keep only frames captured at/after `since`.
+            if since is not None:
+                filtered = []
+                for img in images:
+                    ts = self._extract_timestamp(img)
+                    if ts is not None and ts >= since:
+                        filtered.append(img)
+                images = filtered
+                if not images:
+                    return False, None, f"No images captured at/after {since:%Y%m%d-%H%M%S}"
 
             # Extract timestamps from filenames (format: YYYYMMDD-HHMMSS.jpg)
             first_timestamp = self._extract_timestamp(images[0])

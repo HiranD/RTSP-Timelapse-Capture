@@ -14,7 +14,7 @@ ConfigManager and persists via save_to_file(). "Start with Windows" is registry-
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 try:
     from src.config_manager import ConfigManager
@@ -44,6 +44,10 @@ class IntegrationsPanel(ttk.Frame):
         # Log callback to the main GUI (set by the app via set_log_callback).
         self.log_callback = None
 
+        # Remote-control toggle callback (set by the app). Called with the
+        # desired enabled state; returns (ok, error) so we can resync on failure.
+        self._remote_toggle_cb = None
+
         self._create_widgets()
         self._load_from_config()
 
@@ -63,8 +67,10 @@ class IntegrationsPanel(ttk.Frame):
         app_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         self._create_application_section(app_frame)
 
-        # v3.4.0 (issue #12): a "Remote control" LabelFrame (enable HTTP API + port)
-        # will be added here as row=2.
+        # === Remote Control Section ===
+        remote_frame = ttk.LabelFrame(self, text="Remote Control", padding=10)
+        remote_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        self._create_remote_control_section(remote_frame)
 
     def _create_discord_section(self, parent: ttk.LabelFrame):
         """Discord webhook upload settings."""
@@ -226,6 +232,84 @@ class IntegrationsPanel(ttk.Frame):
         if not startup_manager.is_supported():
             self.start_with_windows_checkbox.config(state="disabled")
 
+    def _create_remote_control_section(self, parent: ttk.LabelFrame):
+        """Localhost HTTP API for external control (e.g. NINA). See issue #12."""
+        parent.columnconfigure(1, weight=1)
+
+        # What it is / the scheduler exclusivity. No wraplength: like the Discord
+        # hint above, let it sit on one line instead of breaking mid-sentence.
+        hint = ttk.Label(
+            parent,
+            text="Let external scripts (e.g. NINA) start/stop capture and create "
+                 "videos over a local-only HTTP API. Mutually exclusive with "
+                 "“Enable automatic scheduling”.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        hint.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        # Enable checkbox
+        self.remote_api_enabled_var = tk.BooleanVar(value=False)
+        self.remote_api_enabled_check = ttk.Checkbutton(
+            parent,
+            text="Enable remote control API",
+            variable=self.remote_api_enabled_var,
+            command=self._on_remote_api_toggle
+        )
+        self.remote_api_enabled_check.grid(row=1, column=0, columnspan=2, sticky="w")
+        ToolTip(self.remote_api_enabled_check,
+            "Start a small HTTP server bound to 127.0.0.1 (this machine only). "
+            "External tools can then POST to /capture/start, /capture/stop and "
+            "/video/create, or GET /status. Not exposed to the network and there "
+            "is no auth token — only programs running on this PC can reach it."
+        )
+
+        # Lock note (shown when disabled because the scheduler is on).
+        self.remote_api_lock_label = ttk.Label(
+            parent, text="", font=("Segoe UI", 8), foreground="#CC6600"
+        )
+        self.remote_api_lock_label.grid(row=2, column=0, columnspan=2, sticky="w")
+
+        # Port
+        port_tip = (
+            "TCP port for the local API (1024–65535). Default 8787. "
+            "Change it if another program already uses this port."
+        )
+        port_label = ttk.Label(parent, text="Port:")
+        port_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        self.remote_api_port_var = tk.StringVar(value="8787")
+        self.remote_api_port_entry = ttk.Entry(parent, textvariable=self.remote_api_port_var, width=8)
+        self.remote_api_port_entry.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.remote_api_port_entry.bind("<FocusOut>", self._on_remote_api_port_change)
+        self.remote_api_port_entry.bind("<Return>", self._on_remote_api_port_change)
+        ToolTip(port_label, port_tip)
+        ToolTip(self.remote_api_port_entry, port_tip)
+
+        # Base URL (read-only display)
+        url_tip = ("Point your external script at this address, e.g.\n\n"
+                   "curl -X POST http://127.0.0.1:8787/capture/start")
+        url_label = ttk.Label(parent, text="Base URL:")
+        url_label.grid(row=4, column=0, sticky="w", pady=(10, 0))
+        self.remote_base_url_var = tk.StringVar(value="http://127.0.0.1:8787")
+        self.remote_base_url_entry = ttk.Entry(
+            parent, textvariable=self.remote_base_url_var, state="readonly", width=32
+        )
+        self.remote_base_url_entry.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        ToolTip(url_label, url_tip)
+        ToolTip(self.remote_base_url_entry, url_tip)
+
+        # Where to find the ready-made scripts + setup steps (single source of
+        # truth is examples/README.md; this just points there). No wraplength so
+        # it stays on one line like the other hints.
+        examples_hint = ttk.Label(
+            parent,
+            text="Example scripts for NINA & curl are in the “examples” folder included "
+                 "with the app — open examples\\README.md for setup steps.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        examples_hint.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
     # ------------------------------------------------------------- config
 
     def _load_from_config(self):
@@ -240,6 +324,12 @@ class IntegrationsPanel(ttk.Frame):
         self.discord_keep_reencoded_var.set(cfg.discord_keep_reencoded)
 
         self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray)
+
+        # Remote control API
+        remote = self.config_manager.remote_api
+        self.remote_api_enabled_var.set(remote.enabled)
+        self.remote_api_port_var.set(str(remote.port))
+        self.remote_base_url_var.set(f"http://127.0.0.1:{remote.port}")
 
         # "Start with Windows" reflects the live registry state, not config.
         self.start_with_windows_var.set(startup_manager.is_enabled())
@@ -264,6 +354,14 @@ class IntegrationsPanel(ttk.Frame):
         cfg.discord_keep_reencoded = self.discord_keep_reencoded_var.get()
 
         self.config_manager.ui.minimize_to_tray = self.minimize_to_tray_var.get()
+
+        # Remote control API
+        self.config_manager.remote_api.enabled = self.remote_api_enabled_var.get()
+        try:
+            port = int(self.remote_api_port_var.get())
+        except ValueError:
+            port = 8787
+        self.config_manager.remote_api.port = max(1024, min(65535, port))
 
         self.config_manager.save_to_file()
 
@@ -291,6 +389,62 @@ class IntegrationsPanel(ttk.Frame):
             # Resync the checkbox to the registry's actual state and report why.
             self.start_with_windows_var.set(startup_manager.is_enabled())
             self._log("ERROR", message)
+
+    def _on_remote_api_toggle(self):
+        """Start/stop the remote control server when the checkbox toggles."""
+        enabled = self.remote_api_enabled_var.get()
+        self._save_to_config()
+        if not self._remote_toggle_cb:
+            return
+        ok, err = self._remote_toggle_cb(enabled)
+        if not ok:
+            # Couldn't start (e.g. port already in use): resync + report.
+            self.remote_api_enabled_var.set(False)
+            self._save_to_config()
+            self._log("ERROR", f"Remote API: {err}")
+            messagebox.showerror("Remote Control", f"Could not start the remote API:\n{err}")
+
+    def _on_remote_api_port_change(self, event=None):
+        """Persist the port, refresh the base-URL display, and bounce if running."""
+        old_port = self.config_manager.remote_api.port
+        self._save_to_config()
+        port = self.config_manager.remote_api.port
+        self.remote_api_port_var.set(str(port))  # reflect clamping
+        self.remote_base_url_var.set(f"http://127.0.0.1:{port}")
+
+        # Restart onto the new port only if it actually changed and the API is
+        # running - <FocusOut> fires on every focus change, not just real edits.
+        if port != old_port and self.remote_api_enabled_var.get() and self._remote_toggle_cb:
+            self._remote_toggle_cb(False)
+            ok, err = self._remote_toggle_cb(True)
+            if not ok:
+                self.remote_api_enabled_var.set(False)
+                self._save_to_config()
+                self._log("ERROR", f"Remote API: {err}")
+                messagebox.showerror("Remote Control", f"Could not restart the remote API:\n{err}")
+
+    # --------------------------------------------------------- remote control
+
+    def set_remote_api_callback(self, on_toggle):
+        """Wire the Remote Control section to the app (start/stop + mutual lock)."""
+        self._remote_toggle_cb = on_toggle
+
+    def set_remote_api_control_enabled(self, enabled: bool):
+        """Enable/disable the API enable checkbox (mutual exclusion with scheduler)."""
+        if enabled:
+            self.remote_api_enabled_check.config(state="normal")
+            self.remote_api_lock_label.config(text="")
+        else:
+            self.remote_api_enabled_check.config(state="disabled")
+            self.remote_api_lock_label.config(
+                text="Disabled while automatic scheduling is on (Scheduling tab)."
+            )
+
+    def sync_remote_api_enabled(self, enabled: bool):
+        """Reflect an externally-changed enabled state (e.g. autostart failed)."""
+        self.remote_api_enabled_var.set(enabled)
+        self.config_manager.remote_api.enabled = enabled
+        self.config_manager.save_to_file()
 
     # ------------------------------------------------------------ logging
 

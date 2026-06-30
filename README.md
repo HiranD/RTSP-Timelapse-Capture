@@ -6,7 +6,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -52,6 +52,12 @@
 - **Delete video after successful Discord upload** to remove the exported MP4 once it has been posted.
 - **Minimize to tray** — start in the tray and/or send the window there with the minimize button (headless or always-running setups).
 - **Start automatically when Windows starts** (per-user, no admin) for unattended rigs.
+
+### Remote Control / External API (NEW in v3.4)
+- **Opt-in localhost HTTP API** to start/stop capture and create videos from external software (e.g. **N.I.N.A.**).
+- **Scheduled timelapse** — a single call starts capture and auto-stops (and optionally renders the video) at a set time.
+- **Local-only, no auth token** — bound to `127.0.0.1`; mutually exclusive with automatic scheduling.
+- Ready-to-use NINA scripts in `examples/` (see [`examples/README.md`](examples/README.md)).
 
 ### User Experience
 - Four-tab interface: **Capture**, **Video Export**, **Scheduling**, and **Integrations**.
@@ -333,6 +339,24 @@ Automatically post each night's generated timelapse to a Discord channel.
 | **Start automatically when Windows starts** | Registers the app to launch at logon (per-user, no admin). Pair with persistent scheduling for an unattended rig. Note: a GUI needs a desktop session, so enable Windows auto-login on a headless machine. |
 
 *Discord and tray settings are saved to `config/app_config.json`; "Start automatically when Windows starts" is stored in the Windows registry (per-user Run key), not in the config file.*
+
+---
+
+## Remote Control / API (NEW in v3.4)
+
+Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in HTTP API that runs inside the app.
+
+- Enable it on the **Integrations** tab → **Remote Control** (off by default).
+- **Local only**: the server binds to `127.0.0.1` and rejects non-loopback requests — there is no auth token, so only programs on this PC can reach it.
+- **Mutually exclusive** with automatic scheduling: turning one on greys out the other.
+
+**Using it with NINA:**
+
+- **Example scripts** *(available now)* — ready-to-use `.bat` files and a PowerShell variant (no install; they use `curl`), wired into NINA via the *External Script* instruction. The full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)**, shipped in the `examples/` folder next to the app.
+<!-- PLUGIN-STATUS: plugin not yet published. When it's released, delete the "in development" bullet below and uncomment this one:
+- **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
+-->
+- **NINA plugin** *(in development)* — *RTSP Timelapse Control*, a native plugin that will drive this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Not yet released; progress at **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
 
 ---
 
@@ -714,6 +738,18 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 ---
 
 ## Version History
+
+### v3.4.0 (2026-06-28)
+**Remote Control / External API for NINA & other tools**
+
+- **New**: Opt-in, localhost-only **Remote Control HTTP API** so external software (e.g. **N.I.N.A.**) can drive capture — enable it on the Integrations tab → Remote Control. Bound to `127.0.0.1` with no auth token; mutually exclusive with automatic scheduling.
+- **New**: Endpoints — `GET /health`, `GET /status`, `POST /capture/start`, `POST /capture/stop`, `POST /capture/schedule`, `POST /video/create`.
+- **New**: **`/capture/schedule`** starts capture if needed and arms an app-owned timer that auto-stops at a set time (optionally rendering the video), so the stop fires regardless of the external sequence.
+- **New**: **`/video/create`** triggers video creation for the newest or a given session, with an optional `since` filter so one session renders cleanly when several share a date folder.
+- **New**: **`/status`** exposes `session_start_time` so a client can render exactly the current/most-recent session (read it, pass it back as `since`).
+- **New**: Ready-to-use NINA example scripts (`.bat` + a PowerShell variant) bundled under `examples/` (see `examples/README.md`).
+
+---
 
 ### v3.3.0 (2026-06-20)
 **Integrations: Discord Upload, Tray & Custom Icon**

@@ -330,9 +330,14 @@ class CaptureEngine:
             self._log("INFO", "Connected to RTSP stream successfully")
             self._update_state(CaptureState.RUNNING)
 
-            # Calculate end time for overnight schedules
-            end_dt = self._calculate_end_time()
-            self._log("INFO", f"Capture will run until {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            # Calculate end time for overnight schedules. In remote-control mode
+            # there is no schedule end - run until explicitly stopped.
+            if self.config["schedule"].get("ignore_window"):
+                end_dt = datetime.max
+                self._log("INFO", "Capture will run until stopped (remote control)")
+            else:
+                end_dt = self._calculate_end_time()
+                self._log("INFO", f"Capture will run until {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
             # Main capture loop
             while not self.stop_event.is_set() and datetime.now() < end_dt:
@@ -430,6 +435,12 @@ class CaptureEngine:
         Returns:
             True if we should proceed, False if user stopped during wait
         """
+        # Remote-control (e.g. NINA) drives start/stop itself, so ignore the
+        # configured schedule window and begin immediately.
+        if self.config["schedule"].get("ignore_window"):
+            self._log("INFO", "Remote control: ignoring schedule window, starting immediately")
+            return True
+
         start_str = self.config["schedule"]["start_time"]
         end_str = self.config["schedule"]["end_time"]
 
