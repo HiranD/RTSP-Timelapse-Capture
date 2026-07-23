@@ -150,8 +150,7 @@
      IP Address:  192.168.0.101
      Username:    admin
      Password:    ********
-     Stream Path: /stream1
-     Force TCP:   Enabled (recommended for most IP cameras)
+     Stream Path: /stream1  (must match your camera - see Common RTSP Paths)
    ```
 
 2. **Set Schedule**
@@ -370,7 +369,9 @@ Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in 
 | Username    | RTSP authentication user   | `admin`                    |
 | Password    | RTSP authentication pass   | `YourPassword123`          |
 | Stream Path | Camera-specific RTSP path  | `/stream1`                 |
-| Force TCP   | Use TCP for stability      | `True` (recommended)       |
+
+The stream path is appended to the RTSP URL exactly as entered, including any query string. Leave it
+blank to fall back to `/stream1`. Connections always use TCP transport.
 
 **Common RTSP Paths**
 - **Hikvision**: `/Streaming/Channels/101`
@@ -422,7 +423,7 @@ Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, ex
 ## Camera Configuration Tips
 
 - **Verify credentials**: Use VLC or `ffplay` to confirm IP, username, password, and stream path before configuring the app.
-- **Prefer TCP**: Many consumer IP cameras are unreliable over UDP; keep **Force TCP** enabled unless the camera vendor recommends otherwise.
+- **TCP always**: Many consumer IP cameras are unreliable over UDP, so every connection uses TCP transport - there is nothing to configure.
 - **Mind network latency**: For remote cameras, increase `buffer_frames` (e.g., to 6-8) if you frequently see reconnect messages.
 - **Deal with overnight lighting**: Configure the camera's own exposure or IR settings; the app captures whatever the RTSP feed delivers.
 - **Multiple cameras**: Copy `config/app_config_example.json` per device and load them through the GUI to swap configurations quickly.
@@ -446,7 +447,6 @@ Based on extensive testing with Annke I81EM IP cameras, two configurations are r
 - Capture Interval: `30 seconds`
 - Buffer Frames: `1` (minimal buffer for freshest frames)
 - Proactive Reconnect: `300 seconds` (5 minutes - before 460s camera timeout)
-- Force TCP: `Enabled` (required for stability)
 
 **Performance Results:**
 - 100% capture success rate
@@ -518,12 +518,12 @@ Based on extensive testing with Annke I81EM IP cameras, two configurations are r
 
 **Cannot connect to camera:**
 - Verify camera IP with `ping 192.168.0.101`.
-- Test stream URL in VLC: `rtsp://user:pass@ip/stream1`.
+- Test the stream URL in VLC: `rtsp://user:pass@ip/stream1`. If VLC works and the app does not, copy
+  VLC's path (Media -> Open Network Stream) into **Stream Path** verbatim - the Activity Log prints
+  the exact URL the app dials (with the password masked), so compare the two.
 - Check port 554 (RTSP) is not blocked by firewall.
-- Enable **Force TCP** option if using UDP causes dropouts.
 
 **Connection drops frequently:**
-- Enable **Force TCP** for more stable connections.
 - Enable **Proactive Reconnect** to reconnect before camera timeout (recommended: 420 seconds for Annke cameras).
 - Check network stability between PC and camera.
 - Increase capture interval to reduce request frequency.

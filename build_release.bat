@@ -99,8 +99,10 @@ echo.
 echo 2. CONFIGURE CAMERA ^(Capture Tab^)
 echo    ^> Enter camera IP address ^(e.g., 192.168.0.101^)
 echo    ^> Enter username and password
-echo    ^> Set stream path ^(e.g., /stream1, /h264^)
-echo    ^> Enable "Force TCP" for stability
+echo    ^> Set stream path - must match your camera brand
+echo      ^(Hikvision /Streaming/Channels/101, Dahua
+echo       /cam/realmonitor?channel=1^&subtype=0, UniFi /s0,
+echo       generic /stream1^) - blank falls back to /stream1
 echo    ^> Click "Test Connection" to verify
 echo.
 echo 3. SET SCHEDULE
@@ -184,7 +186,6 @@ echo APPLICATION SETTINGS:
 echo   * Capture Interval: 30 seconds
 echo   * Buffer Frames: 1
 echo   * Proactive Reconnect: 300 seconds ^(5 minutes^)
-echo   * Force TCP: Enabled
 echo.
 echo RESULTS:
 echo   * 100%% capture success rate
@@ -198,7 +199,7 @@ echo ===========================================================================
 echo.
 echo * HOVER FOR HELP: All controls have tooltips - just hover your mouse!
 echo * TEST FIRST: Always click "Test Connection" before starting capture
-echo * TCP MODE: Keep "Force TCP" enabled for most IP cameras
+echo * TCP MODE: All connections use TCP transport - nothing to configure
 echo * DISK SPACE: At 30s interval, expect ~400KB per image ^(~1.4MB/min^)
 echo * VIDEO PRESETS: Try "Standard 24fps" first, then experiment
 echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+T=Test Connection
@@ -212,7 +213,8 @@ echo CAMERA WON'T CONNECT:
 echo   * Verify IP address with ping command
 echo   * Test RTSP URL in VLC: rtsp://user:pass@ip/path
 echo   * Check firewall isn't blocking port 554
-echo   * Enable "Force TCP" option
+echo   * If VLC works, copy its path into "Stream Path" verbatim -
+echo     the Activity Log prints the exact URL the app dials
 echo.
 echo FFMPEG NOT FOUND:
 echo   * FFmpeg is in bin/ folder next to the executable

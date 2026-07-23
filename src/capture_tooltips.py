@@ -33,11 +33,6 @@ CAPTURE_TOOLTIPS = {
         "Generic: /stream1 or /live"
     ),
 
-    "force_tcp": (
-        "Force TCP transport instead of UDP for more reliable streaming. "
-        "Recommended: Enable for IP cameras to prevent frame drops and disconnections."
-    ),
-
     # ========================================
     # Schedule Section
     # ========================================

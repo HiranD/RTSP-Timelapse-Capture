@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented in this file.
 
+## [3.4.1] - 2026-07-23
+
+### Fixed
+- **Stream Path is finally used** ([#16](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/16)).
+  The RTSP URL was built with a hardcoded `/stream1` and the configured **Stream Path** was
+  discarded, so every camera serving a different path — Hikvision `/Streaming/Channels/101`, Dahua
+  `/cam/realmonitor?channel=1&subtype=0`, UniFi `/s0` — failed to connect no matter what you typed,
+  in both **Test Connection** and **Start Capture**. The path is now used exactly as entered
+  (query strings included); a blank field falls back to `/stream1`, and a missing leading slash is
+  added for you.
+- The URL is no longer mangled by a `?tcp` suffix, which turned a Dahua path into a doubled query
+  string. It was never a real RTSP or FFmpeg option — transport is set by the FFmpeg options the app
+  applies at startup, not by anything in the URL.
+- The **Activity Log** now prints the stream URL being opened, with the password masked, for both
+  Test Connection and Start Capture. A wrong path used to fail with no indication of what was
+  actually dialled.
+- A config file containing settings this version no longer has is no longer rejected outright.
+  Previously one unknown key failed the entire load and silently reset every setting to defaults;
+  unknown keys are now ignored and disappear on the next save.
+
+### Removed
+- The **Force TCP** checkbox (and its `camera.force_tcp` config key). It never switched transport —
+  TCP is applied unconditionally to every connection through `OPENCV_FFMPEG_CAPTURE_OPTIONS` — so
+  its only effect was appending the bogus `?tcp`. Behavior is unchanged: connections were always
+  TCP, ticked or not. Existing config files load fine and the stale key is dropped automatically.
+
+### Note when upgrading
+If you previously typed a wrong Stream Path while troubleshooting a camera that also happens to
+serve `/stream1`, that camera was connecting by accident and will now fail, because your setting is
+finally being honored. The Activity Log shows the exact URL — correct the field, or clear it to fall
+back to `/stream1`.
+
 ## [3.4.0] - 2026-06-28
 
 ### Added

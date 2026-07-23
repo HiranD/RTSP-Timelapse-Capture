@@ -557,13 +557,6 @@ class RTSPTimelapseGUI:
         ToolTip(self.stream_path_entry, CAPTURE_TOOLTIPS["stream_path"])
         row += 1
 
-        # Force TCP
-        self.force_tcp_var = tk.BooleanVar(value=self.config_manager.camera.force_tcp)
-        force_tcp_check = ttk.Checkbutton(config_frame, text="Force TCP", variable=self.force_tcp_var)
-        force_tcp_check.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=2)
-        ToolTip(force_tcp_check, CAPTURE_TOOLTIPS["force_tcp"])
-        row += 1
-
         # Separator
         ttk.Separator(config_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
         row += 1
@@ -1009,7 +1002,6 @@ class RTSPTimelapseGUI:
         self.config_manager.camera.username = self.username_entry.get()
         self.config_manager.camera.password = self.password_entry.get()
         self.config_manager.camera.stream_path = self.stream_path_entry.get()
-        self.config_manager.camera.force_tcp = self.force_tcp_var.get()
 
         if not skip_schedule_times:
             self.config_manager.schedule.start_time = self.start_time_entry.get()
@@ -1034,8 +1026,6 @@ class RTSPTimelapseGUI:
 
         self.stream_path_entry.delete(0, tk.END)
         self.stream_path_entry.insert(0, self.config_manager.camera.stream_path)
-
-        self.force_tcp_var.set(self.config_manager.camera.force_tcp)
 
         self.start_time_entry.delete(0, tk.END)
         self.start_time_entry.insert(0, self.config_manager.schedule.start_time)
@@ -1067,6 +1057,9 @@ class RTSPTimelapseGUI:
         def test_thread():
             try:
                 test_engine = CaptureEngine(self.config_manager.to_dict())
+                # Without this the engine's log calls (including the target URL)
+                # go nowhere, which is what made issue #16 hard to diagnose.
+                test_engine.set_log_callback(self.on_log_message)
                 success, message = test_engine.test_connection()
 
                 # Update UI from main thread
