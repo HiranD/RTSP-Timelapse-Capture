@@ -51,6 +51,10 @@ import cv2
 import numpy as np
 
 
+# Used when the camera's stream path is left blank in the configuration.
+DEFAULT_STREAM_PATH = "/stream1"
+
+
 class RTSPBufferlessCapture:
     """
     Bufferless RTSP capture using background thread.
@@ -483,15 +487,25 @@ class CaptureEngine:
                 return True
 
     def _build_rtsp_url(self) -> str:
-        """Build RTSP URL from configuration with Annke-optimized parameters."""
+        """Build the RTSP URL from configuration.
+
+        The configured stream path is used verbatim (it may contain a query string,
+        e.g. Dahua's /cam/realmonitor?channel=1&subtype=0). Transport is pinned to
+        TCP process-wide via OPENCV_FFMPEG_CAPTURE_OPTIONS, so nothing is appended
+        here - appending would corrupt query-string paths.
+        """
         camera = self.config["camera"]
-        base = f"rtsp://{camera['username']}:{camera['password']}@{camera['ip_address']}/stream1"
 
-        # Force TCP transport for reliability (Annke cameras work better with TCP)
-        if camera.get("force_tcp", True):
-            base += "?tcp"
+        path = str(camera.get("stream_path") or "").strip()
+        if not path:
+            path = DEFAULT_STREAM_PATH
+        if not path.startswith("/"):
+            path = "/" + path
 
-        return base
+        return (
+            f"rtsp://{camera['username']}:{camera['password']}"
+            f"@{camera['ip_address']}{path}"
+        )
 
     def _sanitize_url(self, url: str) -> str:
         """Remove password from URL for logging."""
@@ -512,6 +526,9 @@ class CaptureEngine:
         """
         if retries is None:
             retries = self.config["capture"]["max_retries"]
+
+        # Log the actual target - a wrong stream path is otherwise invisible (issue #16)
+        self._log("INFO", f"Opening stream {self._sanitize_url(url)}")
 
         for attempt in range(1, retries + 1):
             if self.stop_event.is_set():

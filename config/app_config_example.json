@@ -3,8 +3,7 @@
     "ip_address": "192.168.1.100",
     "username": "admin",
     "password": "your_password_here",
-    "stream_path": "/stream1",
-    "force_tcp": true
+    "stream_path": "/stream1"
   },
   "schedule": {
     "start_time": "22:00",

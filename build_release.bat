@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.4.0"
+set "VERSION=3.4.1"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,15 +69,24 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Remote Control / External API - Drive capture from NINA ^& other tools
+echo    Stream Path fix - non-Annke cameras can finally connect
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * Remote Control HTTP API: drive capture from external scripts ^(e.g. NINA^) -
-echo     start/stop, scheduled timelapse ^(auto-stop + optional render^), and video creation.
-echo   * Local-only ^(127.0.0.1^), opt-in on the Integrations tab; mutually exclusive
-echo     with automatic scheduling. Ready-to-use NINA scripts in the examples\ folder.
-echo   * Coming soon: a native NINA plugin ^(RTSP Timelapse Control^) - in development.
+echo   * FIXED: the Stream Path setting was ignored - the app always requested
+echo     /stream1 no matter what you entered, so Hikvision, Dahua and UniFi
+echo     cameras could not connect. Your configured path is now used exactly
+echo     as typed, query string included. ^(issue #16^)
+echo   * The Activity Log now shows the stream URL being opened, with the
+echo     password masked, for both Test Connection and Start Capture.
+echo   * REMOVED: the "Force TCP" checkbox. It never switched transport - every
+echo     connection already used TCP - so nothing changes except that the box
+echo     no longer implies a choice that was not there.
+echo.
+echo   NOTE: if you once typed a wrong Stream Path while troubleshooting a
+echo   camera that also answers on /stream1, it was connecting by accident and
+echo   will now fail, because your setting is finally honoured. Check the URL
+echo   in the Activity Log, correct the field, or clear it to use /stream1.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
@@ -99,8 +108,10 @@ echo.
 echo 2. CONFIGURE CAMERA ^(Capture Tab^)
 echo    ^> Enter camera IP address ^(e.g., 192.168.0.101^)
 echo    ^> Enter username and password
-echo    ^> Set stream path ^(e.g., /stream1, /h264^)
-echo    ^> Enable "Force TCP" for stability
+echo    ^> Set stream path - must match your camera brand
+echo      ^(Hikvision /Streaming/Channels/101, Dahua
+echo       /cam/realmonitor?channel=1^&subtype=0, UniFi /s0,
+echo       generic /stream1^) - blank falls back to /stream1
 echo    ^> Click "Test Connection" to verify
 echo.
 echo 3. SET SCHEDULE
@@ -184,7 +195,6 @@ echo APPLICATION SETTINGS:
 echo   * Capture Interval: 30 seconds
 echo   * Buffer Frames: 1
 echo   * Proactive Reconnect: 300 seconds ^(5 minutes^)
-echo   * Force TCP: Enabled
 echo.
 echo RESULTS:
 echo   * 100%% capture success rate
@@ -198,7 +208,7 @@ echo ===========================================================================
 echo.
 echo * HOVER FOR HELP: All controls have tooltips - just hover your mouse!
 echo * TEST FIRST: Always click "Test Connection" before starting capture
-echo * TCP MODE: Keep "Force TCP" enabled for most IP cameras
+echo * TCP MODE: All connections use TCP transport - nothing to configure
 echo * DISK SPACE: At 30s interval, expect ~400KB per image ^(~1.4MB/min^)
 echo * VIDEO PRESETS: Try "Standard 24fps" first, then experiment
 echo * KEYBOARD SHORTCUTS: Space=Start, Esc=Stop, Ctrl+T=Test Connection
@@ -212,7 +222,8 @@ echo CAMERA WON'T CONNECT:
 echo   * Verify IP address with ping command
 echo   * Test RTSP URL in VLC: rtsp://user:pass@ip/path
 echo   * Check firewall isn't blocking port 554
-echo   * Enable "Force TCP" option
+echo   * If VLC works, copy its path into "Stream Path" verbatim -
+echo     the Activity Log prints the exact URL the app dials
 echo.
 echo FFMPEG NOT FOUND:
 echo   * FFmpeg is in bin/ folder next to the executable

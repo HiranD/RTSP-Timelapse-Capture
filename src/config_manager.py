@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional, Any
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from typing import List
 
 
@@ -36,7 +36,6 @@ class CameraConfig:
     username: str = "admin"
     password: str = ""
     stream_path: str = "/stream1"
-    force_tcp: bool = True
 
 
 @dataclass
@@ -108,6 +107,19 @@ class RemoteApiConfig:
     port: int = 8787  # TCP port (bound to 127.0.0.1 only)
 
 
+def _known_fields(config_class, data: dict) -> dict:
+    """Keep only the keys that are actual fields of `config_class`.
+
+    A config file written by another version can carry settings this one no
+    longer has (e.g. "force_tcp", removed in 3.4.1). Passing those straight to
+    the dataclass raises TypeError, which would fail the whole load and silently
+    reset every other setting - so unknown keys are dropped instead. They
+    disappear from the file on the next save.
+    """
+    valid = {f.name for f in fields(config_class)}
+    return {key: value for key, value in data.items() if key in valid}
+
+
 class ConfigManager:
     """
     Manages application configuration.
@@ -150,13 +162,13 @@ class ConfigManager:
             config_dict: Dictionary with configuration sections
         """
         if "camera" in config_dict:
-            self.camera = CameraConfig(**config_dict["camera"])
+            self.camera = CameraConfig(**_known_fields(CameraConfig, config_dict["camera"]))
 
         if "schedule" in config_dict:
-            self.schedule = ScheduleConfig(**config_dict["schedule"])
+            self.schedule = ScheduleConfig(**_known_fields(ScheduleConfig, config_dict["schedule"]))
 
         if "capture" in config_dict:
-            self.capture = CaptureConfig(**config_dict["capture"])
+            self.capture = CaptureConfig(**_known_fields(CaptureConfig, config_dict["capture"]))
 
         if "ui" in config_dict:
             ui_data = dict(config_dict["ui"])
@@ -164,13 +176,15 @@ class ConfigManager:
             # "minimize_to_tray" (it now also governs the minimize button).
             if "minimize_to_tray_on_startup" in ui_data:
                 ui_data.setdefault("minimize_to_tray", ui_data.pop("minimize_to_tray_on_startup"))
-            self.ui = UIConfig(**ui_data)
+            self.ui = UIConfig(**_known_fields(UIConfig, ui_data))
 
         if "astro_schedule" in config_dict:
-            self.astro_schedule = AstroScheduleConfig(**config_dict["astro_schedule"])
+            self.astro_schedule = AstroScheduleConfig(
+                **_known_fields(AstroScheduleConfig, config_dict["astro_schedule"])
+            )
 
         if "remote_api" in config_dict:
-            self.remote_api = RemoteApiConfig(**config_dict["remote_api"])
+            self.remote_api = RemoteApiConfig(**_known_fields(RemoteApiConfig, config_dict["remote_api"]))
 
     def save_to_file(self, filepath: Optional[str] = None) -> tuple[bool, str]:
         """
@@ -260,8 +274,6 @@ class ConfigManager:
                 self.capture.buffer_frames = config.rtsp_buffer_frames
             if hasattr(config, 'rtsp_max_retries'):
                 self.capture.max_retries = config.rtsp_max_retries
-            if hasattr(config, 'rtsp_force_tcp'):
-                self.camera.force_tcp = config.rtsp_force_tcp
 
             return True, "Successfully imported settings from config.py"
 
@@ -374,7 +386,7 @@ class ConfigManager:
             f"  IP Address: {self.camera.ip_address}",
             f"  Username: {self.camera.username}",
             f"  Password: {'*' * len(self.camera.password)}",
-            f"  Force TCP: {self.camera.force_tcp}",
+            f"  Stream Path: {self.camera.stream_path}",
             "",
             "Schedule:",
             f"  Start Time: {self.schedule.start_time}",
