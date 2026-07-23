@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [3.4.1] - 2026-07-23
+## [3.4.1] - 2026-07-24
 
 ### Fixed
 - **Stream Path is finally used** ([#16](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/16)).

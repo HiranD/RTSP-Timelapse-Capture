@@ -6,7 +6,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.4.1-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -738,6 +738,17 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 ---
 
 ## Version History
+
+### v3.4.1 (2026-07-24)
+**Stream Path fix — non-Annke cameras can finally connect**
+
+- **Fixed**: the **Stream Path** setting was never used — the app always requested `/stream1`, so Hikvision (`/Streaming/Channels/101`), Dahua (`/cam/realmonitor?channel=1&subtype=0`) and UniFi (`/s0`) cameras could not connect no matter what was entered, in both Test Connection and Start Capture ([#16](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/16)). The configured path is now used exactly as typed, query string included; a blank field falls back to `/stream1`.
+- **Fixed**: the URL is no longer mangled by a bogus `?tcp` suffix, which turned a Dahua path into a doubled query string.
+- **Fixed**: the **Activity Log** now shows the stream URL being opened (password masked) for both Test Connection and Start Capture, so a wrong path is visible instead of silent.
+- **Fixed**: a config file containing settings this version no longer has is no longer rejected outright — previously one unknown key failed the whole load and silently reset every setting to defaults.
+- **Removed**: the **Force TCP** checkbox. It never switched transport — every connection already used TCP — so behaviour is unchanged; existing configs load fine and the stale key is dropped automatically.
+
+---
 
 ### v3.4.0 (2026-06-28)
 **Remote Control / External API for NINA & other tools**
