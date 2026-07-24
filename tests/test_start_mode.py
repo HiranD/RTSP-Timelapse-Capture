@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from config_manager import ConfigManager  # noqa: E402
 from capture_engine import CaptureEngine  # noqa: E402
+import gui_app  # noqa: E402
 from gui_app import resolve_start_time  # noqa: E402
 
 
@@ -75,6 +76,54 @@ class StartNowEngineBehaviorTests(unittest.TestCase):
         self.assertGreater(end_dt, datetime.now())
         # And it should be within the next 24h (tomorrow's occurrence, not later).
         self.assertLess(end_dt, datetime.now() + timedelta(hours=24))
+
+
+class _FakeWidget:
+    """Minimal stand-in for a Tk entry/var exposing just .get()."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def get(self):
+        return self._value
+
+
+def _bare_app(mode, start_field, saved_start="22:40"):
+    """An app instance (no Tk) with the widgets update_config_from_ui() reads."""
+    app = gui_app.RTSPTimelapseGUI.__new__(gui_app.RTSPTimelapseGUI)
+    app.config_manager = ConfigManager()
+    app.config_manager.schedule.start_time = saved_start
+    app.start_mode_var = _FakeWidget(mode)
+    app.ip_entry = _FakeWidget("192.168.0.101")
+    app.username_entry = _FakeWidget("admin")
+    app.password_entry = _FakeWidget("pw")
+    app.stream_path_entry = _FakeWidget("/stream1")
+    app.start_time_entry = _FakeWidget(start_field)
+    app.end_time_entry = _FakeWidget("07:00")
+    app.interval_entry = _FakeWidget("30")
+    app.output_entry = _FakeWidget("snapshots")
+    app.jpeg_quality_entry = _FakeWidget("95")
+    app.proactive_reconnect_entry = _FakeWidget("300")
+    return app
+
+
+class UpdateConfigStartModeTests(unittest.TestCase):
+    """PR #18 review: 'Now' must ignore the greyed Start Time field entirely."""
+
+    def test_now_mode_does_not_copy_greyed_field(self):
+        # An invalid value left in the greyed field must neither overwrite the
+        # saved scheduled Start Time nor fail validation.
+        app = _bare_app(mode="now", start_field="08", saved_start="22:40")
+        app.update_config_from_ui()
+        self.assertEqual(app.config_manager.schedule.start_time, "22:40")
+        valid, errors = app.config_manager.validate()
+        self.assertTrue(valid, errors)
+
+    def test_at_time_mode_copies_the_field(self):
+        # In the normal path the typed Start Time is still saved.
+        app = _bare_app(mode="at_time", start_field="21:15", saved_start="22:40")
+        app.update_config_from_ui()
+        self.assertEqual(app.config_manager.schedule.start_time, "21:15")
 
 
 if __name__ == "__main__":

@@ -1052,7 +1052,11 @@ class RTSPTimelapseGUI:
         self.config_manager.camera.stream_path = self.stream_path_entry.get()
 
         if not skip_schedule_times:
-            self.config_manager.schedule.start_time = self.start_time_entry.get()
+            # In "Now" mode the Start Time field is greyed and ignored, so don't
+            # copy it: a stale/invalid value left there must not fail validation
+            # or overwrite the saved scheduled Start Time (which "At time" reuses).
+            if self.start_mode_var.get() != "now":
+                self.config_manager.schedule.start_time = self.start_time_entry.get()
             self.config_manager.schedule.end_time = self.end_time_entry.get()
 
         self.config_manager.capture.interval_seconds = int(self.interval_entry.get())
