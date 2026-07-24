@@ -605,8 +605,8 @@ class RTSPTimelapseGUI:
             value="now", command=self._apply_start_mode_ui)
         self.start_now_radio.grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
 
-        ToolTip(self.start_at_radio, CAPTURE_TOOLTIPS["start_mode"])
-        ToolTip(self.start_now_radio, CAPTURE_TOOLTIPS["start_mode"])
+        ToolTip(self.start_at_radio, CAPTURE_TOOLTIPS["start_mode_at_time"])
+        ToolTip(self.start_now_radio, CAPTURE_TOOLTIPS["start_mode_now"])
         row += 1
 
         # End Time

@@ -36,10 +36,14 @@ CAPTURE_TOOLTIPS = {
     # ========================================
     # Schedule Section
     # ========================================
-    "start_mode": (
-        "When to begin capturing.\n"
-        "At time: wait until the Start Time before capturing.\n"
-        "Now: begin immediately and stop at the End Time."
+    "start_mode_at_time": (
+        "Wait until the Start Time (below) before capturing. "
+        "Supports overnight windows (e.g., 22:40 to 07:00)."
+    ),
+
+    "start_mode_now": (
+        "Begin capturing immediately, then stop at the End Time. "
+        "The Start Time is ignored in this mode."
     ),
 
     "start_time": (
