@@ -111,7 +111,7 @@ def _known_fields(config_class, data: dict) -> dict:
     """Keep only the keys that are actual fields of `config_class`.
 
     A config file written by another version can carry settings this one no
-    longer has (e.g. "force_tcp", removed in 3.4.1). Passing those straight to
+    longer has (e.g. "force_tcp", removed in 3.5.0). Passing those straight to
     the dataclass raises TypeError, which would fail the whole load and silently
     reset every other setting - so unknown keys are dropped instead. They
     disappear from the file on the next save.

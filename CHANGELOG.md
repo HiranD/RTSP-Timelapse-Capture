@@ -2,7 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
-## [3.4.1] - 2026-07-24
+## [3.5.0] - 2026-07-24
+
+### Added
+- **Start Now** on the Capture tab. The Capture Window now offers a **Start** choice — *At time*
+  (wait until the Start Time, as before) or *Now* (begin capturing immediately). "Now" still
+  auto-stops at the End Time, and **Stop** ends it early at any point. No more setting a Start Time
+  in the past just to start right away. The choice is session-only and defaults to *At time*, so
+  scheduled behavior is unchanged.
+- **Reorganized Capture tab.** The single "Camera Configuration" box is split into three clearer
+  groups — **Camera** (connection), **Capture Window** (when capture runs), and **Capture Settings**
+  (how it captures) — so the schedule fields no longer sit under a "camera" heading.
 
 ### Fixed
 - **Stream Path is finally used** ([#16](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/16)).

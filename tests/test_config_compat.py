@@ -2,7 +2,7 @@
 Unit tests for loading configs written by a different app version.
 
 ConfigManager.from_dict() expands each section into a dataclass, so a key the
-current version no longer has (e.g. "force_tcp", removed in 3.4.1) used to raise
+current version no longer has (e.g. "force_tcp", removed in 3.5.0) used to raise
 TypeError - swallowed by load_from_file(), which silently reset every setting.
 Unknown keys must be dropped instead, leaving the known ones intact.
 """
@@ -19,7 +19,7 @@ from config_manager import ConfigManager  # noqa: E402
 
 class UnknownKeyToleranceTests(unittest.TestCase):
     def test_removed_camera_key_does_not_lose_other_settings(self):
-        # A pre-3.4.1 camera section: force_tcp is gone, everything else stays.
+        # A pre-3.5.0 camera section: force_tcp is gone, everything else stays.
         mgr = ConfigManager()
         mgr.from_dict({
             "camera": {

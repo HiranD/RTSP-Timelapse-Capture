@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.4.1"
+set "VERSION=3.5.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,10 +69,17 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Stream Path fix - non-Annke cameras can finally connect
+echo    Start Now + Stream Path fix
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
+echo   * NEW: "Start Now" on the Capture tab. The Capture Window has a Start
+echo     choice - At time ^(wait until the Start Time^) or Now ^(begin capturing
+echo     immediately, still stopping at the End Time^). No more setting a Start
+echo     Time in the past just to start right away.
+echo   * NEW: the Capture tab is reorganized into three groups - Camera,
+echo     Capture Window, and Capture Settings - so the schedule fields no
+echo     longer sit under a "camera" heading.
 echo   * FIXED: the Stream Path setting was ignored - the app always requested
 echo     /stream1 no matter what you entered, so Hikvision, Dahua and UniFi
 echo     cameras could not connect. Your configured path is now used exactly
