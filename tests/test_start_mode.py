@@ -77,6 +77,18 @@ class StartNowEngineBehaviorTests(unittest.TestCase):
         # And it should be within the next 24h (tomorrow's occurrence, not later).
         self.assertLess(end_dt, datetime.now() + timedelta(hours=24))
 
+    def test_end_equals_now_runs_until_next_occurrence(self):
+        # Degenerate but intentional: with "Now", End Time == the current minute
+        # makes start_time == end_time. This is NOT a special case - it's the same
+        # "stop at the next occurrence of End Time" rule that drives overnight
+        # windows, so the session runs ~24h rather than ending instantly. Pinned
+        # here so the consistent behavior isn't "fixed" into an inconsistency.
+        eng = _engine(start=self.now_str, end=self.now_str)
+        self.assertTrue(eng._wait_for_start_time())  # still starts immediately
+        end_dt = eng._calculate_end_time()
+        self.assertGreater(end_dt, datetime.now() + timedelta(hours=23))
+        self.assertLess(end_dt, datetime.now() + timedelta(hours=25))
+
 
 class _FakeWidget:
     """Minimal stand-in for a Tk entry/var exposing just .get()."""
