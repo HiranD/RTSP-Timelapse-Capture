@@ -36,6 +36,12 @@ CAPTURE_TOOLTIPS = {
     # ========================================
     # Schedule Section
     # ========================================
+    "start_mode": (
+        "When to begin capturing.\n"
+        "At time: wait until the Start Time before capturing.\n"
+        "Now: begin immediately and stop at the End Time."
+    ),
+
     "start_time": (
         "Time to begin capturing in 24-hour format (HH:MM). "
         "Example: 22:40 for 10:40 PM. "

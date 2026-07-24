@@ -86,6 +86,16 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
 )
 
 
+def resolve_start_time(mode: str, now: datetime, configured: str) -> str:
+    """Return the start_time (HH:MM) the capture engine should use.
+
+    'now' -> the current minute (floored, so it is <= now: the engine starts
+    immediately and the End Time still bounds the session). Any other mode ->
+    the configured value unchanged.
+    """
+    return now.strftime("%H:%M") if mode == "now" else configured
+
+
 class RTSPTimelapseGUI:
     """Main GUI application for RTSP timelapse capture"""
 
@@ -518,78 +528,110 @@ class RTSPTimelapseGUI:
         self.create_log_panel(main_frame)
 
     def create_config_panel(self, parent):
-        """Create configuration input panel"""
+        """Create configuration input panel.
 
-        config_frame = ttk.LabelFrame(parent, text="Camera Configuration", padding="10")
-        config_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N), pady=(0, 10))
+        Three grouped boxes stacked in the left column: Camera (connection),
+        Capture Window (when capture runs), and Capture Settings (how it captures).
+        """
 
+        container = ttk.Frame(parent)
+        container.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N), pady=(0, 10))
+        container.columnconfigure(0, weight=1)
+
+        # ---------------------------------------------------------------- Camera
+        camera_frame = ttk.LabelFrame(container, text="Camera", padding="10")
+        camera_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N), pady=(0, 10))
+        camera_frame.columnconfigure(1, weight=1)
         row = 0
 
         # Camera IP
-        ttk.Label(config_frame, text="IP Address:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.ip_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(camera_frame, text="IP Address:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.ip_entry = ttk.Entry(camera_frame, width=20)
         self.ip_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.ip_entry.insert(0, self.config_manager.camera.ip_address)
         ToolTip(self.ip_entry, CAPTURE_TOOLTIPS["ip_address"])
         row += 1
 
         # Username
-        ttk.Label(config_frame, text="Username:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.username_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(camera_frame, text="Username:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.username_entry = ttk.Entry(camera_frame, width=20)
         self.username_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.username_entry.insert(0, self.config_manager.camera.username)
         ToolTip(self.username_entry, CAPTURE_TOOLTIPS["username"])
         row += 1
 
         # Password
-        ttk.Label(config_frame, text="Password:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.password_entry = ttk.Entry(config_frame, width=20, show="*")
+        ttk.Label(camera_frame, text="Password:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.password_entry = ttk.Entry(camera_frame, width=20, show="*")
         self.password_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.password_entry.insert(0, self.config_manager.camera.password)
         ToolTip(self.password_entry, CAPTURE_TOOLTIPS["password"])
         row += 1
 
         # Stream Path
-        ttk.Label(config_frame, text="Stream Path:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.stream_path_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(camera_frame, text="Stream Path:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.stream_path_entry = ttk.Entry(camera_frame, width=20)
         self.stream_path_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.stream_path_entry.insert(0, self.config_manager.camera.stream_path)
         ToolTip(self.stream_path_entry, CAPTURE_TOOLTIPS["stream_path"])
         row += 1
 
-        # Separator
-        ttk.Separator(config_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
-        row += 1
+        # -------------------------------------------------------- Capture Window
+        window_frame = ttk.LabelFrame(container, text="Capture Window", padding="10")
+        window_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N), pady=(0, 10))
+        window_frame.columnconfigure(1, weight=1)
+        row = 0
 
-        # Schedule Section
-        ttk.Label(config_frame, text="Start Time (HH:MM):").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.start_time_entry = ttk.Entry(config_frame, width=20)
-        self.start_time_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        # Start: "At time [HH:MM]" or "Now". "Now" begins immediately and still
+        # stops at the End Time (see start_capture / resolve_start_time). The mode
+        # is session-only and defaults to "at time".
+        self.start_mode_var = tk.StringVar(value="at_time")
+
+        ttk.Label(window_frame, text="Start:").grid(row=row, column=0, sticky=(tk.W, tk.N), pady=2)
+        start_choice = ttk.Frame(window_frame)
+        start_choice.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+
+        self.start_at_radio = ttk.Radiobutton(
+            start_choice, text="At time", variable=self.start_mode_var,
+            value="at_time", command=self._apply_start_mode_ui)
+        self.start_at_radio.grid(row=0, column=0, sticky=tk.W)
+        self.start_time_entry = ttk.Entry(start_choice, width=10)
+        self.start_time_entry.grid(row=0, column=1, sticky=tk.W, padx=(5, 0))
         self.start_time_entry.insert(0, self.config_manager.schedule.start_time)
         ToolTip(self.start_time_entry, CAPTURE_TOOLTIPS["start_time"])
+
+        self.start_now_radio = ttk.Radiobutton(
+            start_choice, text="Now", variable=self.start_mode_var,
+            value="now", command=self._apply_start_mode_ui)
+        self.start_now_radio.grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
+
+        ToolTip(self.start_at_radio, CAPTURE_TOOLTIPS["start_mode"])
+        ToolTip(self.start_now_radio, CAPTURE_TOOLTIPS["start_mode"])
         row += 1
 
-        ttk.Label(config_frame, text="End Time (HH:MM):").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.end_time_entry = ttk.Entry(config_frame, width=20)
+        # End Time
+        ttk.Label(window_frame, text="End Time (HH:MM):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.end_time_entry = ttk.Entry(window_frame, width=20)
         self.end_time_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.end_time_entry.insert(0, self.config_manager.schedule.end_time)
         ToolTip(self.end_time_entry, CAPTURE_TOOLTIPS["end_time"])
         row += 1
 
-        # Separator
-        ttk.Separator(config_frame, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
-        row += 1
+        # ------------------------------------------------------ Capture Settings
+        settings_frame = ttk.LabelFrame(container, text="Capture Settings", padding="10")
+        settings_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N))
+        settings_frame.columnconfigure(1, weight=1)
+        row = 0
 
-        # Capture Settings
-        ttk.Label(config_frame, text="Interval (seconds):").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.interval_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(settings_frame, text="Interval (seconds):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.interval_entry = ttk.Entry(settings_frame, width=20)
         self.interval_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.interval_entry.insert(0, str(self.config_manager.capture.interval_seconds))
         ToolTip(self.interval_entry, CAPTURE_TOOLTIPS["interval"])
         row += 1
 
-        ttk.Label(config_frame, text="Output Folder:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        output_frame = ttk.Frame(config_frame)
+        ttk.Label(settings_frame, text="Output Folder:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        output_frame = ttk.Frame(settings_frame)
         output_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         output_frame.columnconfigure(0, weight=1)
 
@@ -603,21 +645,27 @@ class RTSPTimelapseGUI:
         ToolTip(browse_btn, CAPTURE_TOOLTIPS["browse_output"])
         row += 1
 
-        ttk.Label(config_frame, text="JPEG Quality (1-100):").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.jpeg_quality_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(settings_frame, text="JPEG Quality (1-100):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.jpeg_quality_entry = ttk.Entry(settings_frame, width=20)
         self.jpeg_quality_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.jpeg_quality_entry.insert(0, str(self.config_manager.capture.jpeg_quality))
         ToolTip(self.jpeg_quality_entry, CAPTURE_TOOLTIPS["jpeg_quality"])
         row += 1
 
-        ttk.Label(config_frame, text="Proactive Reconnect (s):").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.proactive_reconnect_entry = ttk.Entry(config_frame, width=20)
+        ttk.Label(settings_frame, text="Proactive Reconnect (s):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.proactive_reconnect_entry = ttk.Entry(settings_frame, width=20)
         self.proactive_reconnect_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
         self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
         ToolTip(self.proactive_reconnect_entry, CAPTURE_TOOLTIPS["proactive_reconnect"])
         row += 1
 
-        config_frame.columnconfigure(1, weight=1)
+    def _apply_start_mode_ui(self):
+        """Grey the Start Time field when 'Now' is selected (it is ignored then,
+        and a disabled field cannot hold an invalid value that would fail validation)."""
+        if self.start_mode_var.get() == "now":
+            self.start_time_entry.configure(state=tk.DISABLED)
+        else:
+            self.start_time_entry.configure(state=tk.NORMAL)
 
     def create_status_panel(self, parent):
         """Create status display panel"""
@@ -1027,8 +1075,12 @@ class RTSPTimelapseGUI:
         self.stream_path_entry.delete(0, tk.END)
         self.stream_path_entry.insert(0, self.config_manager.camera.stream_path)
 
+        # Enable before editing in case "Now" mode has greyed the field, then
+        # re-apply the mode so it stays greyed when appropriate.
+        self.start_time_entry.configure(state=tk.NORMAL)
         self.start_time_entry.delete(0, tk.END)
         self.start_time_entry.insert(0, self.config_manager.schedule.start_time)
+        self._apply_start_mode_ui()
 
         self.end_time_entry.delete(0, tk.END)
         self.end_time_entry.insert(0, self.config_manager.schedule.end_time)
@@ -1129,6 +1181,11 @@ class RTSPTimelapseGUI:
             if immediate:
                 # Remote/NINA-triggered: bypass the schedule window, run until stopped.
                 cfg["schedule"]["ignore_window"] = True
+            elif not from_scheduler and self.start_mode_var.get() == "now":
+                # Capture Window "Now": start immediately but keep the End Time
+                # bound. Transient - the saved Start Time is left untouched.
+                cfg["schedule"]["start_time"] = resolve_start_time(
+                    "now", datetime.now(), cfg["schedule"]["start_time"])
             self.capture_engine = CaptureEngine(cfg)
 
             # Set up callbacks
@@ -1173,6 +1230,7 @@ class RTSPTimelapseGUI:
 
         # Re-enable config inputs
         self.set_config_inputs_state(tk.NORMAL)
+        self._apply_start_mode_ui()
 
         # Update status one last time
         self.update_status()
@@ -1433,10 +1491,15 @@ class RTSPTimelapseGUI:
         return ok, message, code, target
 
     def set_config_inputs_state(self, state):
-        """Enable or disable configuration inputs"""
+        """Enable or disable configuration inputs.
+
+        On re-enable (tk.NORMAL) the caller should follow with _apply_start_mode_ui()
+        so the Start Time field stays greyed when the mode is still 'Now'.
+        """
         inputs = [
             self.ip_entry, self.username_entry, self.password_entry,
             self.stream_path_entry, self.start_time_entry, self.end_time_entry,
+            self.start_at_radio, self.start_now_radio,
             self.interval_entry, self.output_entry, self.jpeg_quality_entry,
             self.proactive_reconnect_entry
         ]
@@ -1520,6 +1583,7 @@ class RTSPTimelapseGUI:
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
             # Re-enable config inputs
             self.set_config_inputs_state(tk.NORMAL)
+            self._apply_start_mode_ui()
 
         # Update stats
         self.frames_label.configure(text=str(stats.get('frame_count', 0)))
