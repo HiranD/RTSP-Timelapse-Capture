@@ -660,8 +660,10 @@ class RTSPTimelapseGUI:
         row += 1
 
     def _apply_start_mode_ui(self):
-        """Grey the Start Time field when 'Now' is selected (it is ignored then,
-        and a disabled field cannot hold an invalid value that would fail validation)."""
+        """Grey the Start Time field when 'Now' is selected, as a UX signal that it
+        is ignored. Validation safety comes from update_config_from_ui skipping the
+        copy in 'Now' mode - not from greying, since a disabled field can still hold
+        an invalid value."""
         if self.start_mode_var.get() == "now":
             self.start_time_entry.configure(state=tk.DISABLED)
         else:
