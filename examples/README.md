@@ -5,17 +5,10 @@ local HTTP API. They're handy for **N.I.N.A.** ("Nighttime Imaging 'N'
 Astronomy") via the **Advanced Sequencer → External Script** instruction, but
 work with anything that can make an HTTP request (curl, PowerShell, Python …).
 
-<!-- PLUGIN-STATUS: plugin not yet published. When it's released, delete the "in development" blockquote below and uncomment this one:
 > **There's a native NINA plugin: RTSP Timelapse Control.** It drives this same
 > API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops
 > and renders) — install it from <https://github.com/HiranD/nina-rtsp-timelapse>.
 > The scripts below are the no-install alternative.
--->
-> **A native NINA plugin is in development.** *RTSP Timelapse Control* will drive
-> this same API from inside NINA (start/stop, plus a scheduled timelapse that
-> auto-stops and renders). It's **not released yet** — progress at
-> <https://github.com/HiranD/nina-rtsp-timelapse>. The scripts below work today
-> and need no install.
 
 ## 1. Enable the API
 
