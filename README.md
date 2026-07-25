@@ -352,10 +352,7 @@ Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in 
 **Using it with NINA:**
 
 - **Example scripts** *(available now)* — ready-to-use `.bat` files and a PowerShell variant (no install; they use `curl`), wired into NINA via the *External Script* instruction. The full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)**, shipped in the `examples/` folder next to the app.
-<!-- PLUGIN-STATUS: plugin not yet published. When it's released, delete the "in development" bullet below and uncomment this one:
 - **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
--->
-- **NINA plugin** *(in development)* — *RTSP Timelapse Control*, a native plugin that will drive this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Not yet released; progress at **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
 
 ---
 
