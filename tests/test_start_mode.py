@@ -116,6 +116,7 @@ def _bare_app(mode, start_field, saved_start="22:40"):
     app.output_entry = _FakeWidget("snapshots")
     app.jpeg_quality_entry = _FakeWidget("95")
     app.proactive_reconnect_entry = _FakeWidget("300")
+    app.rollover_hour_spinbox = _FakeWidget("12")
     return app
 
 
