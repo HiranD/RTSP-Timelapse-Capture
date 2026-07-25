@@ -18,9 +18,12 @@ All notable changes to this project are documented in this file.
     they describe.
   - **Overlay session events** on the **Video Export** tab burns them into the video as captions at
     the point in the night they happened, holding for a configurable few seconds of finished video.
-  - A **`<video-name>.events.csv`** is written next to every rendered video that has events, with
-    both the wall-clock time and the video timecode of each — so a session can be lined up against
-    the footage or imported into a video editor. Written whether or not captions are burned in.
+  - **Write events CSV** (also on the Video Export tab, and independent of the overlay) writes a
+    **`<video-name>.events.csv`** next to the rendered video, with both the wall-clock time and the
+    video timecode of each event — so a session can be lined up against the footage or imported
+    into a video editor. Off by default. Note that `events.jsonl` sits inside the snapshot folder
+    and is deleted with it when *Delete snapshots after video* is enabled, so with that on and this
+    off a session's events are not retained anywhere.
   - See [`examples/README.md`](examples/README.md) for the endpoint reference and
     `examples/nina_send_event.ps1` for a ready-made sender.
 

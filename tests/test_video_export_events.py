@@ -44,12 +44,16 @@ class OverlaySettingSourceTests(unittest.TestCase):
         self.assertFalse(cfg.ui.event_overlay)
         self.assertEqual(cfg.ui.event_overlay_seconds, 4.0)
 
+        self.assertFalse(cfg.ui.event_csv)
+
         cfg.ui.event_overlay = True
         cfg.ui.event_overlay_seconds = 6.0
+        cfg.ui.event_csv = True
         restored = ConfigManager()
         restored.from_dict(cfg.to_dict())
         self.assertTrue(restored.ui.event_overlay)
         self.assertEqual(restored.ui.event_overlay_seconds, 6.0)
+        self.assertTrue(restored.ui.event_csv)
 
     def test_presets_do_not_carry_overlay_settings(self):
         """One source of truth: app_config.json. A preset must not be able to
@@ -66,6 +70,7 @@ class OverlaySettingSourceTests(unittest.TestCase):
         cfg.from_dict({"ui": {"window_width": 900, "preview_size": "large"}})
         self.assertEqual(cfg.ui.window_width, 900)
         self.assertFalse(cfg.ui.event_overlay)
+        self.assertFalse(cfg.ui.event_csv)
 
     def test_hold_seconds_validated(self):
         from config_manager import ConfigManager
@@ -109,11 +114,14 @@ class ExportEventOverlayTests(unittest.TestCase):
             {"time": "20260725-221000", "title": "Meridian Flip"},
         )
 
-    def _prepare(self, event_overlay=False, event_overlay_seconds=4.0, since=None, **settings_kw):
+    def _prepare(self, event_overlay=False, event_overlay_seconds=4.0, event_csv=True,
+                 since=None, **settings_kw):
         """scan + prepare_export, returning the ExportJob.
 
-        Overlay options are passed separately from `settings` on purpose: they live
-        in config/app_config.json, not in a video preset.
+        Event options are passed separately from `settings` on purpose: they live in
+        config/app_config.json, not in a video preset. `event_csv` defaults to True
+        here (unlike the app default) so the existing CSV tests exercise the writer;
+        the gating itself is covered by EventCsvOptionTests.
         """
         settings = VideoExportSettings(framerate=24, **settings_kw)
         ok, collection, msg = self.ctrl.scan_folder(self.snapshots)
@@ -121,7 +129,8 @@ class ExportEventOverlayTests(unittest.TestCase):
         ok, job, msg = self.ctrl.prepare_export(
             settings, collection, self.output_file, since=since,
             log_callback=self.messages.append,
-            event_overlay=event_overlay, event_overlay_seconds=event_overlay_seconds)
+            event_overlay=event_overlay, event_overlay_seconds=event_overlay_seconds,
+            event_csv=event_csv)
         self.assertTrue(ok, msg)
         return job
 
@@ -232,8 +241,9 @@ class ExportEventOverlayTests(unittest.TestCase):
         self.assertEqual(rows[0]["wall_clock"], "2026-07-25 22:05:00")
 
     def test_csv_written_even_with_overlay_disabled(self):
+        """The two options are independent - a log is useful without captions."""
         self._default_events()
-        job = self._prepare(event_overlay=False)
+        job = self._prepare(event_overlay=False, event_csv=True)
         self.ctrl._write_event_csv(job, self.messages.append)
         self.assertTrue((self.root / "timelapse_20260725.events.csv").exists())
 
@@ -241,6 +251,38 @@ class ExportEventOverlayTests(unittest.TestCase):
         job = self._prepare(event_overlay=True)
         self.ctrl._write_event_csv(job, self.messages.append)
         self.assertFalse((self.root / "timelapse_20260725.events.csv").exists())
+
+    # -------------------------------------------------- CSV opt-in (config gate)
+
+    def test_no_csv_when_option_off(self):
+        """The CSV is opt-in: off means nothing is written, even with events present."""
+        self._default_events()
+        job = self._prepare(event_overlay=True, event_csv=False)
+        self.ctrl._write_event_csv(job, self.messages.append)
+        self.assertFalse((self.root / "timelapse_20260725.events.csv").exists())
+
+    def test_captions_still_drawn_when_csv_off(self):
+        """Guards against the CSV gate being wired to the wrong flag."""
+        self._default_events()
+        job = self._prepare(event_overlay=True, event_csv=False)
+        self.assertTrue(job.draw_captions)
+        self.assertIsNotNone(job.overlay_plan)
+
+        staged = self._staged_bytes(job)
+        originals = [p.read_bytes() for p in sorted(self.snapshots.glob("*.jpg"))]
+        self.assertNotEqual(staged["000010.jpg"], originals[10], "captions were not drawn")
+
+    def test_event_log_not_read_when_both_options_off(self):
+        """Nothing to draw and nothing to write - don't touch events.jsonl at all."""
+        self._default_events()
+        job = self._prepare(event_overlay=False, event_csv=False)
+        self.assertIsNone(job.overlay_plan)
+        self.assertFalse(job.draw_captions)
+
+        # The export still stages every frame, untouched.
+        staged = self._staged_bytes(job)
+        originals = [p.read_bytes() for p in sorted(self.snapshots.glob("*.jpg"))]
+        self.assertEqual(list(staged.values()), originals)
 
     def test_csv_name_survives_dots_in_the_video_name(self):
         """with_suffix() would replace the wrong part of 'timelapse_2026.07.25.mp4'."""

@@ -279,7 +279,7 @@ class VideoExportPanel(ttk.Frame):
         self.event_overlay_var = tk.BooleanVar(value=ui_cfg.event_overlay if ui_cfg else False)
         event_check = ttk.Checkbutton(events_frame, text="Overlay session events",
                         variable=self.event_overlay_var,
-                        command=self._save_event_overlay_settings)
+                        command=self._save_event_settings)
         event_check.pack(side=tk.LEFT, padx=(0, 5))
         ToolTip(event_check, VIDEO_EXPORT_TOOLTIPS["event_overlay"])
 
@@ -288,11 +288,20 @@ class VideoExportPanel(ttk.Frame):
             value=str(ui_cfg.event_overlay_seconds if ui_cfg else 4.0))
         seconds_spin = ttk.Spinbox(events_frame, from_=1.0, to=30.0, increment=0.5,
                         width=5, textvariable=self.event_overlay_seconds_var,
-                        command=self._save_event_overlay_settings)
+                        command=self._save_event_settings)
         seconds_spin.pack(side=tk.LEFT)
-        seconds_spin.bind("<FocusOut>", lambda _e: self._save_event_overlay_settings())
+        seconds_spin.bind("<FocusOut>", lambda _e: self._save_event_settings())
         ttk.Label(events_frame, text="s").pack(side=tk.LEFT, padx=(3, 0))
         ToolTip(seconds_spin, VIDEO_EXPORT_TOOLTIPS["event_overlay_seconds"])
+
+        # Independent of the overlay: the log is useful without captions, and captions
+        # are useful without the log.
+        self.event_csv_var = tk.BooleanVar(value=ui_cfg.event_csv if ui_cfg else False)
+        csv_check = ttk.Checkbutton(events_frame, text="Write events CSV",
+                        variable=self.event_csv_var,
+                        command=self._save_event_settings)
+        csv_check.pack(side=tk.LEFT, padx=(15, 0))
+        ToolTip(csv_check, VIDEO_EXPORT_TOOLTIPS["event_csv"])
 
     def create_presets_section(self):
         """Create presets section"""
@@ -669,13 +678,14 @@ class VideoExportPanel(ttk.Frame):
         except (ValueError, TypeError):
             return 4.0
 
-    def _save_event_overlay_settings(self):
-        """Persist the overlay choice so it survives a restart and reaches
-        unattended renders (the scheduler and POST /video/create read it from config)."""
+    def _save_event_settings(self):
+        """Persist the session-event choices so they survive a restart and reach
+        unattended renders (the scheduler and POST /video/create read them from config)."""
         if not self.config_manager:
             return
         self.config_manager.ui.event_overlay = self.event_overlay_var.get()
         self.config_manager.ui.event_overlay_seconds = self.get_overlay_seconds()
+        self.config_manager.ui.event_csv = self.event_csv_var.get()
         self.config_manager.save_to_file()
 
     def update_estimates(self):
@@ -735,7 +745,8 @@ class VideoExportPanel(ttk.Frame):
         success, job, message = self.controller.prepare_export(
             settings, self.current_collection, output_path, log_callback=self.log_message,
             event_overlay=ui_cfg.event_overlay if ui_cfg else self.event_overlay_var.get(),
-            event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds())
+            event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds(),
+            event_csv=ui_cfg.event_csv if ui_cfg else self.event_csv_var.get())
 
         if not success:
             messagebox.showerror("Export Preparation Failed", message)

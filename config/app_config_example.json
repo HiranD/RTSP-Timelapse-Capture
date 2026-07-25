@@ -48,7 +48,8 @@
     "auto_start": false,
     "last_video_export_dir": "",
     "event_overlay": false,
-    "event_overlay_seconds": 4.0
+    "event_overlay_seconds": 4.0,
+    "event_csv": false
   },
   "remote_api": {
     "enabled": false,

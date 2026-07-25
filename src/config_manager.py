@@ -75,6 +75,10 @@ class UIConfig:
     # restart and apply to unattended renders (scheduler / POST /video/create).
     event_overlay: bool = False
     event_overlay_seconds: float = 4.0  # caption hold time, in seconds of finished video
+    # Write <video>.events.csv next to the render. Off by default. Note this is the
+    # only durable copy when "delete snapshots after video" is on, since events.jsonl
+    # lives inside the snapshot folder that gets removed.
+    event_csv: bool = False
 
 
 @dataclass

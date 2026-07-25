@@ -91,12 +91,19 @@ over. Other problems (no `title`, an unparseable `time`) return 400.
 Events are appended to `events.jsonl` inside that night's snapshot folder, next
 to the frames they describe.
 
-To see them on the video, tick **Overlay session events** on the **Video Export**
-tab; each caption holds for a few seconds of finished video at the point in the
-night it happened. Either way — captions on or off — a
-`<video-name>.events.csv` is written next to the rendered video with both the
-wall-clock time and the video timecode of each event, so the log can be lined up
-against the footage or imported into a video editor.
+Two independent options on the **Video Export** tab decide what happens to them,
+both off by default:
+
+- **Overlay session events** — each caption is burned into the video for a few
+  seconds of finished playback, at the point in the night it happened.
+- **Write events CSV** — a `<video-name>.events.csv` is written next to the
+  rendered video with the wall-clock time *and* the video timecode of each event,
+  so the log can be lined up against the footage or imported into a video editor.
+
+Worth knowing: `events.jsonl` lives inside the snapshot folder, so it is deleted
+along with the frames when **Delete snapshots after video** is enabled. With that
+setting on and **Write events CSV** off, a session's events are not kept anywhere
+once the video has been rendered.
 
 ## 3. Files here
 

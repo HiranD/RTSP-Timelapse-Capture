@@ -70,6 +70,8 @@ class ExportJob:
     overlay_plan: Optional[Any] = None
     # Whether to burn the captions into the frames (config: ui.event_overlay).
     draw_captions: bool = False
+    # Whether to write <video>.events.csv beside the render (config: ui.event_csv).
+    write_events_csv: bool = False
 
 
 @dataclass
@@ -213,7 +215,8 @@ class VideoExportController:
         since: Optional[datetime] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         event_overlay: bool = False,
-        event_overlay_seconds: float = 4.0
+        event_overlay_seconds: float = 4.0,
+        event_csv: bool = False
     ) -> Tuple[bool, Optional[ExportJob], str]:
         """
         Prepare for export (validate, create temp folder if needed)
@@ -230,6 +233,8 @@ class VideoExportController:
                 config/app_config.json, not a preset field - callers read it from
                 config so both the manual and unattended render paths agree.
             event_overlay_seconds: caption hold time, in seconds of finished video
+            event_csv: write <video>.events.csv beside the render. Independent of
+                event_overlay - the log is useful without captions, and vice versa.
 
         Returns:
             (success, ExportJob, message) tuple
@@ -251,7 +256,7 @@ class VideoExportController:
             # anything gets drawn determines whether temp copies are mandatory.
             overlay_plan = self._build_overlay_plan(
                 image_collection, since, settings.framerate, settings.speed_multiplier,
-                event_overlay, event_overlay_seconds, log_callback)
+                event_overlay, event_overlay_seconds, event_csv, log_callback)
 
             # Determine if we need temp folder
             temp_folder = None
@@ -280,7 +285,8 @@ class VideoExportController:
                 temp_folder=temp_folder,
                 use_temp_copies=use_temp_copies,
                 overlay_plan=overlay_plan,
-                draw_captions=draws_captions
+                draw_captions=draws_captions,
+                write_events_csv=event_csv
             )
 
             return True, job, "Export prepared"
@@ -296,15 +302,18 @@ class VideoExportController:
         speed_multiplier: int,
         event_overlay: bool,
         hold_seconds: float,
+        event_csv: bool,
         log_callback: Optional[Callable[[str], None]]
     ):
-        """Build the event plan for this export, or None if the session logged nothing.
+        """Build the event plan for this export, or None if there's nothing to use it for.
 
-        Built regardless of the overlay setting: the plan also drives the companion
-        events CSV, which is useful on its own for correlating a session against the
-        footage even when the user doesn't want captions burned in. Only the *drawing*
-        is gated on `event_overlay`.
+        Built when *either* consumer wants it: captions burn it into the frames, and
+        the companion CSV is useful on its own for correlating a session against the
+        footage. With both off there's nothing to do, so the event log isn't even read.
         """
+        if not event_overlay and not event_csv:
+            return None
+
         # Every frame needs a capture time for events to be bound to it. The app's own
         # filenames always parse; a foreign .jpg dropped into the folder may not, and a
         # partial list would misalign captions - so skip overlays and say why.
@@ -557,7 +566,7 @@ class VideoExportController:
         Best-effort: the video is the deliverable, so a failure here is logged and
         swallowed rather than turned into a failed export.
         """
-        if job.overlay_plan is None:
+        if not job.write_events_csv or job.overlay_plan is None:
             return
         # Built by hand rather than with_suffix(): a filename containing dots
         # ("timelapse_2026.07.25.mp4") would have the wrong part replaced.

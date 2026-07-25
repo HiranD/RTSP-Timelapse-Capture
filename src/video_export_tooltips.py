@@ -85,13 +85,21 @@ VIDEO_EXPORT_TOOLTIPS = {
     "event_overlay": (
         "Burns session events into the video as captions at the moment they happened "
         "(e.g. 'Autofocus Complete — HFR 2.31 → 1.62'). Events are sent by NINA or "
-        "another program while capture is running. "
-        "An events CSV is written next to the video either way."
+        "another program while capture is running."
     ),
 
     "event_overlay_seconds": (
         "How long each event caption stays on screen, in seconds of finished video "
         "(not real time). Default: 4 seconds."
+    ),
+
+    "event_csv": (
+        "Writes a CSV of the session's events next to the video, with both wall-clock "
+        "time and video timecode, for lining events up against the footage or importing "
+        "them into a video editor.\n\n"
+        "Note: the events file inside the snapshot folder is deleted along with the "
+        "snapshots when 'Delete snapshots after video' is enabled — with that on and "
+        "this off, the session's events are not kept anywhere."
     ),
 
     # ========================================

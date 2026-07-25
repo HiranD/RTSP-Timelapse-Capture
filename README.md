@@ -57,7 +57,7 @@
 - **Opt-in localhost HTTP API** to start/stop capture and create videos from external software (e.g. **N.I.N.A.**).
 - **Scheduled timelapse** — a single call starts capture and auto-stops (and optionally renders the video) at a set time.
 - **Local-only, no auth token** — bound to `127.0.0.1`; mutually exclusive with automatic scheduling.
-- **Session events** — external software can record what happened during the night (autofocus, meridian flip, filter change); optionally burned into the timelapse as captions and always exported as a CSV alongside the video.
+- **Session events** — external software can record what happened during the night (autofocus, meridian flip, filter change); optionally burned into the timelapse as captions and/or exported as a CSV alongside the video.
 - Ready-to-use NINA scripts in `examples/` (see [`examples/README.md`](examples/README.md)).
 
 ### User Experience
@@ -357,7 +357,7 @@ Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in 
 
 **Session events:**
 
-`POST /events` records what happened during the night — *Autofocus Complete*, *Meridian Flip*, *Filter: L-Extreme* — timestamped against the running capture. Tick **Overlay session events** on the **Video Export** tab to have them appear as captions at the moment they occurred, turning the timelapse into a diagnostic record of the session as well as a visual one. An events CSV (wall-clock time *and* video timecode) is written next to the video either way. Full reference in **[`examples/README.md`](examples/README.md)**.
+`POST /events` records what happened during the night — *Autofocus Complete*, *Meridian Flip*, *Filter: L-Extreme* — timestamped against the running capture. Tick **Overlay session events** on the **Video Export** tab to have them appear as captions at the moment they occurred, turning the timelapse into a diagnostic record of the session as well as a visual one. **Write events CSV** (same tab, independent) saves them alongside the video with wall-clock time *and* video timecode. Full reference in **[`examples/README.md`](examples/README.md)**.
 
 ---
 
