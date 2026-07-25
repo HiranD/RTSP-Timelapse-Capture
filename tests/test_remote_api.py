@@ -12,6 +12,7 @@ import sys
 import unittest
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -35,12 +36,18 @@ class RemoteApiTests(unittest.TestCase):
         )
         self.on_schedule = mock.Mock(return_value=(True, None, self.status))
         self.get_status = mock.Mock(return_value=self.status)
+        self.on_event = mock.Mock(
+            return_value=(True, None, {"time": "20260725-230518", "title": "Autofocus Complete"})
+        )
+        self.get_events = mock.Mock(return_value=[])
 
         self.server = RemoteControlServer(
             on_start=self.on_start,
             on_stop=self.on_stop,
             on_create_video=self.on_create_video,
             on_schedule=self.on_schedule,
+            on_event=self.on_event,
+            get_events=self.get_events,
             get_status=self.get_status,
             version="9.9.9",
             host="127.0.0.1",
@@ -203,6 +210,133 @@ class RemoteApiTests(unittest.TestCase):
         status_line = raw.split(b"\r\n", 1)[0].decode("latin-1")
         self.assertIn("202", status_line)  # body treated as absent -> newest-session render
         self.on_create_video.assert_called_once_with(None, None)
+
+    # ----------------------------------------------------------- POST /events
+
+    def test_event_recorded(self):
+        code, payload = self._request("/events", method="POST", body={
+            "title": "Autofocus Complete",
+            "detail": "HFR 2.31 -> 1.62",
+            "category": "autofocus",
+            "time": "20260725-230518",
+            "data": {"hfr_after": 1.62},
+        })
+        self.assertEqual(code, 202)
+        self.assertEqual(payload["status"], "recorded")
+
+        # The handler parses the timestamp, so the callback receives a datetime.
+        title, detail, category, when, data = self.on_event.call_args[0]
+        self.assertEqual(title, "Autofocus Complete")
+        self.assertEqual(detail, "HFR 2.31 -> 1.62")
+        self.assertEqual(category, "autofocus")
+        self.assertEqual(when, datetime(2026, 7, 25, 23, 5, 18))
+        self.assertEqual(data, {"hfr_after": 1.62})
+
+    def test_event_time_optional(self):
+        """No time means "now" - the app stamps it, not the caller."""
+        code, _payload = self._request("/events", method="POST", body={"title": "Meridian Flip"})
+        self.assertEqual(code, 202)
+        self.assertIsNone(self.on_event.call_args[0][3])
+
+    def test_event_missing_title_is_400(self):
+        for body in ({}, {"title": ""}, {"title": "   "}, {"detail": "orphan"}):
+            code, payload = self._request("/events", method="POST", body=body)
+            self.assertEqual(code, 400, f"expected 400 for {body}")
+            self.assertEqual(payload["error"], "missing title")
+        self.on_event.assert_not_called()
+
+    def test_event_bad_time_is_400(self):
+        """A bad timestamp must not be silently recorded as 'now' - that would put
+        the caption at the wrong point in the night."""
+        code, payload = self._request(
+            "/events", method="POST", body={"title": "Event", "time": "2026-07-25 23:05"})
+        self.assertEqual(code, 400)
+        self.assertIn("invalid time", payload["error"])
+        self.on_event.assert_not_called()
+
+    def test_event_non_object_data_is_400(self):
+        code, payload = self._request(
+            "/events", method="POST", body={"title": "Event", "data": ["not", "an", "object"]})
+        self.assertEqual(code, 400)
+        self.assertIn("data", payload["error"])
+        self.on_event.assert_not_called()
+
+    def test_event_malformed_body_is_400(self):
+        req = urllib.request.Request(
+            self.base + "/events", data=b"{not json", method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                code = resp.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        self.assertEqual(code, 400)
+
+    def test_event_when_not_capturing_is_409(self):
+        """409, not 400: the request was fine, there's just no session to file it
+        against. Callers (the NINA plugin) treat it as a skip, not a failure."""
+        self.on_event.return_value = (False, "not capturing", None)
+        code, payload = self._request("/events", method="POST", body={"title": "Event"})
+        self.assertEqual(code, 409)
+        self.assertEqual(payload["error"], "not capturing")
+
+    def test_event_other_failure_is_400(self):
+        self.on_event.return_value = (False, "could not write event log", None)
+        code, payload = self._request("/events", method="POST", body={"title": "Event"})
+        self.assertEqual(code, 400)
+        self.assertEqual(payload["error"], "could not write event log")
+
+    def test_get_events(self):
+        self.get_events.return_value = [
+            {"time": "20260725-230518", "title": "Autofocus Complete"},
+            {"time": "20260726-004210", "title": "Meridian Flip"},
+        ]
+        code, payload = self._request("/events")
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual([e["title"] for e in payload["events"]],
+                         ["Autofocus Complete", "Meridian Flip"])
+
+    def test_events_wrong_method_is_405(self):
+        code, _payload = self._request("/events", method="DELETE")
+        self.assertEqual(code, 405)
+
+
+class RemoteApiWithoutEventSupportTests(unittest.TestCase):
+    """A server built without the event callbacks (older wiring) must not 500."""
+
+    def setUp(self):
+        self.server = RemoteControlServer(
+            on_start=mock.Mock(return_value=(True, None, {})),
+            on_stop=mock.Mock(return_value=(True, None, {})),
+            on_create_video=mock.Mock(return_value=(True, "ok", 202, "20260725")),
+            get_status=mock.Mock(return_value={}),
+            host="127.0.0.1",
+            port=0,
+        )
+        self.server.start()
+        self.base = f"http://127.0.0.1:{self.server.port}"
+        self.addCleanup(self.server.stop)
+
+    def _post(self, path, body):
+        req = urllib.request.Request(
+            self.base + path, data=json.dumps(body).encode("utf-8"),
+            method="POST", headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode("utf-8"))
+
+    def test_post_events_reports_unsupported(self):
+        code, payload = self._post("/events", {"title": "Event"})
+        self.assertEqual(code, 400)
+        self.assertEqual(payload["error"], "events not supported")
+
+    def test_get_events_returns_empty(self):
+        with urllib.request.urlopen(self.base + "/events", timeout=5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(payload, {"events": [], "count": 0})
 
 
 if __name__ == "__main__":

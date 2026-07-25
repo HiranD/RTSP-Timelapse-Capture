@@ -68,6 +68,7 @@ from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
 from remote_api import RemoteControlServer
+from event_log import EventLog
 import startup_manager
 
 # App version reported by the remote API's /health endpoint. Keep in sync with
@@ -1203,6 +1204,9 @@ class RTSPTimelapseGUI:
             self.capture_engine.start_capture()
 
             self.is_capturing = True
+            # Open the event log for this session - events are only accepted while
+            # capture is running, since there are no frames to attach them to otherwise.
+            self.event_log.begin_session()
             self.start_stop_btn.configure(text="Stop Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["stop_capture"])
             self.log_message("INFO", "Capture started")
@@ -1225,6 +1229,12 @@ class RTSPTimelapseGUI:
         """Stop the capture process"""
         # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
         self._cancel_scheduled_stop()
+
+        # Close the event log before dropping the engine: end_session() takes the log's
+        # lock, so it waits for any in-flight write and blocks later ones. Clearing
+        # self.capture_engine first would leave a racing writer with no date folder.
+        self.event_log.end_session()
+
         if self.capture_engine:
             self.capture_engine.stop_capture()
             self.capture_engine = None
@@ -1249,11 +1259,17 @@ class RTSPTimelapseGUI:
         Called once at startup after both the Scheduling and Integrations panels
         exist (and the scheduler state has been restored).
         """
+        # Session event log. Its directory provider resolves to the live capture
+        # engine's date folder, so events land beside the frames they describe.
+        self.event_log = EventLog(dir_provider=self._event_dir, log=self.log_message)
+
         self.remote_server = RemoteControlServer(
             on_start=self._remote_start_capture,
             on_stop=self._remote_stop_capture,
             on_create_video=self._remote_create_video,
             on_schedule=self._remote_schedule,
+            on_event=self._remote_record_event,
+            get_events=self.event_log.recent,
             get_status=self._remote_status,
             version=APP_VERSION,
             host="127.0.0.1",
@@ -1424,6 +1440,28 @@ class RTSPTimelapseGUI:
         self._sched_cancel = None
         self._sched_thread = None
 
+    def _event_dir(self):
+        """Current session's snapshot folder, for the event log (called off the Tk thread).
+
+        Delegates to the capture engine so the folder_rollover_hour rule lives in one
+        place. Raises OSError when there is no engine, which EventLog turns into a
+        clean failure rather than an AttributeError out of an HTTP worker thread.
+        """
+        engine = self.capture_engine
+        if engine is None:
+            raise OSError("no active capture session")
+        return engine.ensure_date_dir()
+
+    def _remote_record_event(self, title, detail, category, when, data):
+        """Record a session event for the remote API. Returns (ok, error, stored).
+
+        Deliberately *not* wrapped in _run_on_ui: the event log touches no Tk state,
+        so the HTTP worker writes straight to disk. Hopping onto the Tk thread would
+        put a file write behind the UI event queue for no benefit, and a burst of
+        events during a busy sequence would compete with the preview redraw.
+        """
+        return self.event_log.record(title, detail, category, when, data)
+
     def _remote_status(self):
         """Thread-safe status snapshot for the remote API."""
         return self._run_on_ui(self._build_status)
@@ -1585,6 +1623,9 @@ class RTSPTimelapseGUI:
             # stop a manually-restarted session or render with the old 'since'.
             self._cancel_scheduled_stop()
             self.is_capturing = False
+            # Capture ended on its own (end time, disconnect, error) - close the event
+            # log here too, or events would keep being accepted with no frames arriving.
+            self.event_log.end_session()
             self.start_stop_btn.configure(text="Start Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
             # Re-enable config inputs
@@ -1791,7 +1832,16 @@ class RTSPTimelapseGUI:
             output_file = output_path / f"timelapse_{date_str}.{settings.format}"
 
             # Prepare and run export
-            success, job, msg = controller.prepare_export(settings, collection, output_file)
+            # Pass `since` so the overlay covers this session's events only, matching
+            # the frame filter applied by scan_folder above. Event overlays come from
+            # config/app_config.json, not the preset - this is the unattended path
+            # (scheduler and POST /video/create), so it must honour the same saved
+            # setting the Video Export tab shows.
+            success, job, msg = controller.prepare_export(
+                settings, collection, output_file, since=since,
+                log_callback=lambda m: self.log_message("INFO", f"[Auto Video] {m}"),
+                event_overlay=self.config_manager.ui.event_overlay,
+                event_overlay_seconds=self.config_manager.ui.event_overlay_seconds)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
                 return False, msg, 500

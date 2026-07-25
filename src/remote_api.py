@@ -25,11 +25,20 @@ Endpoints (all JSON):
     POST /video/create     -> 202 {"status", "date", "since"}  | 400/404 {"error"}
         optional JSON body: {"date": "YYYYMMDD", "since": "YYYYMMDD-HHMMSS"}
         (no date -> newest session; since -> only frames captured at/after it)
+    POST /events         -> 202 {"status": "recorded", ...} | 400 {"error"} | 409 {"error"}
+        JSON body: {"title", "detail"?, "category"?, "time"?, "data"?}
+        (records a timestamped session event; 409 when capture isn't running)
+    GET  /events         -> 200 {"events": [...], "capturing": bool}
 """
 
 import json
 import threading
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# The event wire format is owned by event_log (stdlib-only, no GUI), so the
+# handler parses timestamps with the same format the log writes.
+from event_log import TIME_FORMAT
 
 # Hostnames accepted in the Host header (loopback only).
 _ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
@@ -37,7 +46,7 @@ _ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
 # Frequently-polled read endpoints (e.g. by a client's live status panel). Consecutive
 # successful GETs to these collapse to a single log line (see log_message), so polling
 # doesn't spam the log; writes, errors, and any other request are always logged.
-_QUIET_GET_PATHS = {"/health", "/status"}
+_QUIET_GET_PATHS = {"/health", "/status", "/events"}
 
 
 class RemoteControlServer:
@@ -48,7 +57,8 @@ class RemoteControlServer:
     """
 
     def __init__(self, *, on_start, on_stop, on_create_video, get_status,
-                 on_schedule=None, version="", host="127.0.0.1", port=8787, log=None):
+                 on_schedule=None, on_event=None, get_events=None,
+                 version="", host="127.0.0.1", port=8787, log=None):
         """
         Args:
             on_start():  () -> (ok: bool, error: str | None, status: dict | None)
@@ -61,6 +71,13 @@ class RemoteControlServer:
                          if create_video.
                 The action callbacks return the status snapshot alongside (ok, error) so the
                 handler needs a single round-trip instead of a second get_status() hop.
+            on_event(title, detail, category, when, data):
+                         -> (ok: bool, error: str | None, stored: dict | None). Record a
+                         session event. `when` is a datetime (already parsed here, so a bad
+                         wire value is a 400 rather than a silent "now"). An error of
+                         "not capturing" becomes a 409 - callers treat that as a skip, not a
+                         failure - and anything else a 400.
+            get_events(): () -> list[dict] of events recorded this session (GET /events)
             get_status(): () -> dict (serialised verbatim for GET /status)
             version: app version string reported by GET /health.
             host: bind address (loopback).
@@ -71,6 +88,8 @@ class RemoteControlServer:
         self._on_stop = on_stop
         self._on_create_video = on_create_video
         self._on_schedule = on_schedule
+        self._on_event = on_event
+        self._get_events = get_events
         self._get_status = get_status
         self._version = version
         self.host = host
@@ -247,6 +266,8 @@ class RemoteControlServer:
                     ("POST", "/capture/stop"): self._stop,
                     ("POST", "/capture/schedule"): self._schedule,
                     ("POST", "/video/create"): self._video,
+                    ("POST", "/events"): self._record_event,
+                    ("GET", "/events"): self._list_events,
                 }
                 handler = routes.get((method, path))
                 if handler:
@@ -311,5 +332,55 @@ class RemoteControlServer:
                 # Echo the resolved target (e.g. the newest session) when known,
                 # else fall back to whatever the caller sent.
                 self._send_json(code, {key: message, "date": resolved or date, "since": since})
+
+            def _record_event(self):
+                body = self._read_body()
+                if body is None:
+                    self._send_json(400, {"error": "malformed JSON body"})
+                    return
+                if server._on_event is None:
+                    self._send_json(400, {"error": "events not supported"})
+                    return
+
+                title = self._opt_str(body, "title")
+                if not title:
+                    self._send_json(400, {"error": "missing title"})
+                    return
+
+                # Parse the timestamp here so a bad value is a clear 400 rather than
+                # being silently recorded as "now" against the wrong moment.
+                when = None
+                raw_time = self._opt_str(body, "time")
+                if raw_time:
+                    try:
+                        when = datetime.strptime(raw_time, TIME_FORMAT)
+                    except ValueError:
+                        self._send_json(400, {"error": "invalid time (expected YYYYMMDD-HHMMSS)"})
+                        return
+
+                data = body.get("data")
+                if data is not None and not isinstance(data, dict):
+                    self._send_json(400, {"error": "data must be an object"})
+                    return
+
+                ok, err, stored = server._on_event(
+                    title,
+                    self._opt_str(body, "detail"),
+                    self._opt_str(body, "category"),
+                    when,
+                    data,
+                )
+                if ok:
+                    self._send_json(202, {"status": "recorded", **(stored or {})})
+                elif err == "not capturing":
+                    # 409 rather than 400: the request was fine, the app just has no
+                    # session to file it against. Callers skip instead of failing.
+                    self._send_json(409, {"error": "not capturing"})
+                else:
+                    self._send_json(400, {"error": err or "failed to record event"})
+
+            def _list_events(self):
+                events = server._get_events() if server._get_events else []
+                self._send_json(200, {"events": events, "count": len(events)})
 
         return Handler

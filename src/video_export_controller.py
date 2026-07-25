@@ -10,12 +10,13 @@ import shutil
 import threading
 from pathlib import Path
 from typing import Optional, Tuple, List, Callable, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import re
 
 from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
 from preset_manager import VideoExportSettings
+from event_overlay import build_plan, draw_captions
 
 
 @dataclass
@@ -28,6 +29,9 @@ class ImageCollection:
     duration_seconds: float
     total_size_bytes: int
     source_folder: Path
+    # Capture time per image, index-aligned with `images` (None where the filename
+    # didn't parse). Event overlays bind events to frames through this.
+    timestamps: List[Optional[datetime]] = field(default_factory=list)
 
     def get_date_range_str(self) -> str:
         """Get formatted date range string"""
@@ -61,6 +65,11 @@ class ExportJob:
     output_file: Path
     temp_folder: Optional[Path]
     use_temp_copies: bool
+    # Session events resolved onto this export's frames, or None when the session
+    # logged none. Present regardless of draw_captions - it also drives the CSV.
+    overlay_plan: Optional[Any] = None
+    # Whether to burn the captions into the frames (config: ui.event_overlay).
+    draw_captions: bool = False
 
 
 @dataclass
@@ -140,9 +149,12 @@ class VideoExportController:
                 if not images:
                     return False, None, f"No images captured at/after {since:%Y%m%d-%H%M%S}"
 
-            # Extract timestamps from filenames (format: YYYYMMDD-HHMMSS.jpg)
-            first_timestamp = self._extract_timestamp(images[0])
-            last_timestamp = self._extract_timestamp(images[-1])
+            # Extract timestamps from filenames (format: YYYYMMDD-HHMMSS.jpg).
+            # Kept per-image as well as first/last: event overlays need to know
+            # when each individual frame was captured.
+            timestamps = [self._extract_timestamp(img) for img in images]
+            first_timestamp = timestamps[0]
+            last_timestamp = timestamps[-1]
 
             # Calculate duration
             duration_seconds = 0
@@ -159,7 +171,8 @@ class VideoExportController:
                 last_timestamp=last_timestamp,
                 duration_seconds=duration_seconds,
                 total_size_bytes=total_size,
-                source_folder=folder
+                source_folder=folder,
+                timestamps=timestamps
             )
 
             return True, collection, f"Found {len(images)} images"
@@ -196,15 +209,27 @@ class VideoExportController:
         self,
         settings: VideoExportSettings,
         image_collection: ImageCollection,
-        output_file: Path
+        output_file: Path,
+        since: Optional[datetime] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        event_overlay: bool = False,
+        event_overlay_seconds: float = 4.0
     ) -> Tuple[bool, Optional[ExportJob], str]:
         """
         Prepare for export (validate, create temp folder if needed)
 
         Args:
-            settings: Video export settings
+            settings: Video export settings (encoding choices, from the preset)
             image_collection: Collection of images to export
             output_file: Output video file path
+            since: same `since` used to scan the folder, so the overlay covers
+                only the events belonging to this session
+            log_callback: optional callback for informational messages
+            event_overlay: burn session events in as captions. Passed separately
+                rather than living on `settings` because it's an app preference in
+                config/app_config.json, not a preset field - callers read it from
+                config so both the manual and unattended render paths agree.
+            event_overlay_seconds: caption hold time, in seconds of finished video
 
         Returns:
             (success, ExportJob, message) tuple
@@ -222,9 +247,26 @@ class VideoExportController:
             if not output_folder.exists():
                 output_folder.mkdir(parents=True, exist_ok=True)
 
+            # Build the event-caption plan before deciding on temp copies - whether
+            # anything gets drawn determines whether temp copies are mandatory.
+            overlay_plan = self._build_overlay_plan(
+                image_collection, since, settings.framerate, settings.speed_multiplier,
+                event_overlay, event_overlay_seconds, log_callback)
+
             # Determine if we need temp folder
             temp_folder = None
             use_temp_copies = settings.preserve_originals
+
+            # Captions are drawn onto the copies, so overlays require the temp-copy
+            # path. Every built-in preset already enables it, so this is a safety net
+            # for a hand-edited preset rather than a normal occurrence - but it is
+            # logged, because silently ignoring the overlay setting would be worse.
+            draws_captions = overlay_plan is not None and event_overlay
+            if draws_captions and not use_temp_copies:
+                use_temp_copies = True
+                if log_callback:
+                    log_callback("Event overlays need temporary copies - "
+                                 "'preserve originals' enabled for this export")
 
             if use_temp_copies:
                 # Create temp folder in same directory as output
@@ -236,13 +278,61 @@ class VideoExportController:
                 image_collection=image_collection,
                 output_file=output_file,
                 temp_folder=temp_folder,
-                use_temp_copies=use_temp_copies
+                use_temp_copies=use_temp_copies,
+                overlay_plan=overlay_plan,
+                draw_captions=draws_captions
             )
 
             return True, job, "Export prepared"
 
         except Exception as e:
             return False, None, f"Error preparing export: {str(e)}"
+
+    def _build_overlay_plan(
+        self,
+        image_collection: ImageCollection,
+        since: Optional[datetime],
+        framerate: int,
+        speed_multiplier: int,
+        event_overlay: bool,
+        hold_seconds: float,
+        log_callback: Optional[Callable[[str], None]]
+    ):
+        """Build the event plan for this export, or None if the session logged nothing.
+
+        Built regardless of the overlay setting: the plan also drives the companion
+        events CSV, which is useful on its own for correlating a session against the
+        footage even when the user doesn't want captions burned in. Only the *drawing*
+        is gated on `event_overlay`.
+        """
+        # Every frame needs a capture time for events to be bound to it. The app's own
+        # filenames always parse; a foreign .jpg dropped into the folder may not, and a
+        # partial list would misalign captions - so skip overlays and say why.
+        timestamps = image_collection.timestamps
+        if len(timestamps) != image_collection.total_count or not all(timestamps):
+            if log_callback:
+                log_callback("Event overlays skipped: some frames have no timestamp in "
+                             "their filename (expected YYYYMMDD-HHMMSS.jpg)")
+            return None
+
+        try:
+            plan = build_plan(
+                image_collection.source_folder,
+                timestamps,
+                framerate=framerate,
+                speed_multiplier=speed_multiplier,
+                hold_seconds=hold_seconds,
+                since=since,
+            )
+        except Exception as e:
+            # An unreadable event log must not fail the video the user actually asked for.
+            if log_callback:
+                log_callback(f"Event overlays skipped: could not read event log ({e})")
+            return None
+
+        if plan is None and log_callback and event_overlay:
+            log_callback("Event overlays enabled, but this session logged no events in range")
+        return plan
 
     def export_video(
         self,
@@ -345,6 +435,9 @@ class VideoExportController:
             if progress_callback:
                 progress_callback("Finalizing...", 95, None)
 
+            # Companion event log beside the video (issue #15 item 5).
+            self._write_event_csv(job, log_callback)
+
             # Clean up temp folder if used
             if job.temp_folder and job.temp_folder.exists():
                 if log_callback:
@@ -398,18 +491,30 @@ class VideoExportController:
             (success, message) tuple
         """
         try:
+            # The plan is built whenever the session logged events (it also drives the
+            # companion CSV); drawing is what the user's overlay setting controls.
+            plan = job.overlay_plan if job.draw_captions else None
             if log_callback:
-                log_callback(f"Copying {job.image_collection.total_count} images to temp folder...")
+                what = "Copying" if plan is None else "Copying (with event captions)"
+                log_callback(f"{what} {job.image_collection.total_count} images to temp folder...")
 
             total = job.image_collection.total_count
+            drawn = 0
 
             for i, src_image in enumerate(job.image_collection.images):
                 if self.cancel_requested:
                     return False, "Cancelled"
 
-                # Copy with sequential numbering
                 dst_image = job.temp_folder / f"{i:06d}.jpg"
-                shutil.copy2(src_image, dst_image)
+
+                # Frames with no visible caption take the plain copy path - on a typical
+                # night most frames have none, so this keeps the common case cheap.
+                captions = plan.captions_for_index(i) if plan else None
+                if captions:
+                    self._copy_with_captions(src_image, dst_image, captions)
+                    drawn += 1
+                else:
+                    shutil.copy2(src_image, dst_image)
 
                 # Update progress
                 if progress_callback and i % 10 == 0:  # Update every 10 files
@@ -418,11 +523,52 @@ class VideoExportController:
 
             if log_callback:
                 log_callback(f"Copied {total} images to {job.temp_folder}")
+                if drawn:
+                    log_callback(f"Drew event captions on {drawn} frames")
 
             return True, "Images prepared"
 
         except Exception as e:
             return False, f"Error preparing images: {str(e)}"
+
+    def _copy_with_captions(self, src_image: Path, dst_image: Path, captions):
+        """Write a copy of `src_image` with event captions burned in.
+
+        Falls back to a plain copy if the image can't be opened or drawn on: a frame
+        without its caption is a far better outcome than a failed export.
+        """
+        try:
+            from PIL import Image
+
+            with Image.open(src_image) as img:
+                img.load()
+                frame = img.convert("RGB") if img.mode != "RGB" else img.copy()
+            draw_captions(frame, captions)
+            # JPEG quality here is intentionally high and independent of the CRF
+            # setting - this is an intermediate that FFmpeg re-encodes, so the only
+            # goal is not to add visible loss before it gets there.
+            frame.save(dst_image, "JPEG", quality=95)
+        except Exception:
+            shutil.copy2(src_image, dst_image)
+
+    def _write_event_csv(self, job: ExportJob, log_callback: Optional[Callable[[str], None]]):
+        """Write <video_stem>.events.csv next to the finished video.
+
+        Best-effort: the video is the deliverable, so a failure here is logged and
+        swallowed rather than turned into a failed export.
+        """
+        if job.overlay_plan is None:
+            return
+        # Built by hand rather than with_suffix(): a filename containing dots
+        # ("timelapse_2026.07.25.mp4") would have the wrong part replaced.
+        csv_path = job.output_file.parent / (job.output_file.stem + ".events.csv")
+        try:
+            rows = job.overlay_plan.write_csv(csv_path)
+            if log_callback:
+                log_callback(f"Wrote {rows} events to {csv_path.name}")
+        except OSError as e:
+            if log_callback:
+                log_callback(f"Could not write event CSV: {e}")
 
     def _cleanup_temp(self, job: ExportJob):
         """Clean up temporary folder"""

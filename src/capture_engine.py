@@ -669,7 +669,7 @@ class CaptureEngine:
         Returns:
             Full path to saved file
         """
-        out_dir = self._ensure_date_dir()
+        out_dir = self.ensure_date_dir()
 
         # Use stream timestamp if available, otherwise use system time
         if stream_timestamp:
@@ -684,11 +684,16 @@ class CaptureEngine:
 
         return filepath
 
-    def _ensure_date_dir(self) -> str:
+    def ensure_date_dir(self) -> str:
         """
         Get or create the output directory for current date.
 
         Between midnight and rollover hour, uses previous day's folder.
+
+        Public because the session event log uses it as its directory provider,
+        so the folder_rollover_hour rule lives in one place and events always
+        land beside the frames they describe. Safe to call from other threads:
+        it only reads config and does a mkdir(exist_ok=True).
 
         Returns:
             Path to date-specific directory

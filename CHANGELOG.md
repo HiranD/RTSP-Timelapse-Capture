@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Session events and event overlays** ([#15](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/15)).
+  External programs can now tell the app what happened during the night, and have it show up on the
+  timelapse:
+  - **`POST /events`** on the Remote Control API records a timestamped event —
+    `{"title": "Autofocus Complete", "detail": "HFR 2.31 -> 1.62", "category": "autofocus"}`.
+    `GET /events` lists what the current session has recorded. No new port or setting: the existing
+    **Integrations → Remote Control** toggle governs it. Events are accepted only while capture is
+    running (there are no frames to attach them to otherwise); the endpoint returns **409** when
+    stopped, which callers should treat as "skip" rather than an error.
+  - Events are appended to **`events.jsonl`** in that night's snapshot folder, beside the frames
+    they describe.
+  - **Overlay session events** on the **Video Export** tab burns them into the video as captions at
+    the point in the night they happened, holding for a configurable few seconds of finished video.
+  - A **`<video-name>.events.csv`** is written next to every rendered video that has events, with
+    both the wall-clock time and the video timecode of each — so a session can be lined up against
+    the footage or imported into a video editor. Written whether or not captions are burned in.
+  - See [`examples/README.md`](examples/README.md) for the endpoint reference and
+    `examples/nina_send_event.ps1` for a ready-made sender.
+
+### Fixed
+- **A UTF-8 BOM in `app_config.json` no longer wipes every setting.** Editing the config in
+  Notepad, or writing it from PowerShell, prepends a byte-order mark; the loader read the file
+  with the system locale encoding and failed on it, and because a failed load falls back to
+  defaults the result was silent and total — camera, output folders and API port all appeared to
+  reset themselves, and videos started landing in the app's working directory instead of the
+  configured export folder. The file is now read as `utf-8-sig` (BOM tolerated) and written as
+  plain UTF-8, which also stops non-ASCII paths being mangled on save.
+
 ## [3.5.0] - 2026-07-24
 
 ### Added

@@ -69,6 +69,12 @@ class UIConfig:
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
     last_video_preset: str = "Standard 24fps"  # Last selected video export preset
+    # Burn session events into rendered video as captions (issue #15). Lives here
+    # rather than in a video preset because presets carry encoding choices and are
+    # switched freely, while this is a standing preference that must survive a
+    # restart and apply to unattended renders (scheduler / POST /video/create).
+    event_overlay: bool = False
+    event_overlay_seconds: float = 4.0  # caption hold time, in seconds of finished video
 
 
 @dataclass
@@ -203,7 +209,10 @@ class ConfigManager:
             filepath = str(config_path)
 
         try:
-            with open(filepath, 'w') as f:
+            # Explicit UTF-8 (no BOM): the default encoding is the system locale,
+            # which mangles non-ASCII paths - e.g. an output folder under an
+            # accented user name.
+            with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, indent=2)
 
             return True, f"Configuration saved to {filepath}"
@@ -228,7 +237,12 @@ class ConfigManager:
             return False, f"Configuration file not found: {filepath}"
 
         try:
-            with open(filepath, 'r') as f:
+            # utf-8-sig, not the locale default: hand-editing this file in Notepad
+            # or writing it from PowerShell adds a UTF-8 BOM, which json.load then
+            # chokes on. That failure is silent and total - the app falls back to
+            # defaults and every setting (camera, output folders, API port) appears
+            # to reset itself. utf-8-sig transparently strips a BOM if present.
+            with open(filepath, 'r', encoding='utf-8-sig') as f:
                 config_dict = json.load(f)
 
             self.from_dict(config_dict)
@@ -324,6 +338,9 @@ class ConfigManager:
         # Validate UI
         if self.ui.preview_size not in ["small", "medium", "large"]:
             errors.append(f"Preview size must be small/medium/large, got {self.ui.preview_size}")
+        if not 1 <= self.ui.event_overlay_seconds <= 30:
+            errors.append(
+                f"Event overlay hold must be 1-30 seconds, got {self.ui.event_overlay_seconds}")
 
         # Validate astro_schedule
         if not -90 <= self.astro_schedule.latitude <= 90:

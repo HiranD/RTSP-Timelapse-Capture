@@ -57,6 +57,7 @@
 - **Opt-in localhost HTTP API** to start/stop capture and create videos from external software (e.g. **N.I.N.A.**).
 - **Scheduled timelapse** — a single call starts capture and auto-stops (and optionally renders the video) at a set time.
 - **Local-only, no auth token** — bound to `127.0.0.1`; mutually exclusive with automatic scheduling.
+- **Session events** — external software can record what happened during the night (autofocus, meridian flip, filter change); optionally burned into the timelapse as captions and always exported as a CSV alongside the video.
 - Ready-to-use NINA scripts in `examples/` (see [`examples/README.md`](examples/README.md)).
 
 ### User Experience
@@ -353,6 +354,10 @@ Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in 
 
 - **Example scripts** *(available now)* — ready-to-use `.bat` files and a PowerShell variant (no install; they use `curl`), wired into NINA via the *External Script* instruction. The full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)**, shipped in the `examples/` folder next to the app.
 - **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
+
+**Session events:**
+
+`POST /events` records what happened during the night — *Autofocus Complete*, *Meridian Flip*, *Filter: L-Extreme* — timestamped against the running capture. Tick **Overlay session events** on the **Video Export** tab to have them appear as captions at the moment they occurred, turning the timelapse into a diagnostic record of the session as well as a visual one. An events CSV (wall-clock time *and* video timecode) is written next to the video either way. Full reference in **[`examples/README.md`](examples/README.md)**.
 
 ---
 

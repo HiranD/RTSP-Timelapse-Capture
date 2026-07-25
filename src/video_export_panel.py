@@ -267,6 +267,33 @@ class VideoExportPanel(ttk.Frame):
         open_check.pack(side=tk.LEFT)
         ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
 
+        # Session event captions (issue #15). Second row so the options don't run
+        # off the edge, and the hold-time control sits next to its checkbox.
+        events_frame = ttk.Frame(output_frame)
+        events_frame.grid(row=row + 1, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+
+        # Restored from config, not from the selected preset: this is a standing
+        # preference that also governs unattended renders (scheduler / remote API),
+        # so it has to survive a restart and a preset switch.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        self.event_overlay_var = tk.BooleanVar(value=ui_cfg.event_overlay if ui_cfg else False)
+        event_check = ttk.Checkbutton(events_frame, text="Overlay session events",
+                        variable=self.event_overlay_var,
+                        command=self._save_event_overlay_settings)
+        event_check.pack(side=tk.LEFT, padx=(0, 5))
+        ToolTip(event_check, VIDEO_EXPORT_TOOLTIPS["event_overlay"])
+
+        ttk.Label(events_frame, text="hold").pack(side=tk.LEFT, padx=(10, 3))
+        self.event_overlay_seconds_var = tk.StringVar(
+            value=str(ui_cfg.event_overlay_seconds if ui_cfg else 4.0))
+        seconds_spin = ttk.Spinbox(events_frame, from_=1.0, to=30.0, increment=0.5,
+                        width=5, textvariable=self.event_overlay_seconds_var,
+                        command=self._save_event_overlay_settings)
+        seconds_spin.pack(side=tk.LEFT)
+        seconds_spin.bind("<FocusOut>", lambda _e: self._save_event_overlay_settings())
+        ttk.Label(events_frame, text="s").pack(side=tk.LEFT, padx=(3, 0))
+        ToolTip(seconds_spin, VIDEO_EXPORT_TOOLTIPS["event_overlay_seconds"])
+
     def create_presets_section(self):
         """Create presets section"""
         presets_frame = ttk.LabelFrame(self, text="Presets", padding="10")
@@ -521,6 +548,9 @@ class VideoExportPanel(ttk.Frame):
             self.add_timestamp_var.set(preset.add_timestamp)
             self.preserve_originals_var.set(preset.preserve_originals)
             self.open_when_done_var.set(preset.open_when_done)
+            # Event overlays are deliberately NOT restored from the preset - they're a
+            # standing preference held in config. Switching preset to change resolution
+            # shouldn't silently stop events appearing on the video.
 
             self.log_message(f"Loaded preset: {preset_name}")
             self.update_estimates()
@@ -628,6 +658,26 @@ class VideoExportPanel(ttk.Frame):
             open_when_done=self.open_when_done_var.get()
         )
 
+    def get_overlay_seconds(self) -> float:
+        """Caption hold time from the spinbox, falling back to the default.
+
+        The spinbox is free-text, so a typed-in value can be anything; a bad entry
+        shouldn't block an export.
+        """
+        try:
+            return max(1.0, min(30.0, float(self.event_overlay_seconds_var.get())))
+        except (ValueError, TypeError):
+            return 4.0
+
+    def _save_event_overlay_settings(self):
+        """Persist the overlay choice so it survives a restart and reaches
+        unattended renders (the scheduler and POST /video/create read it from config)."""
+        if not self.config_manager:
+            return
+        self.config_manager.ui.event_overlay = self.event_overlay_var.get()
+        self.config_manager.ui.event_overlay_seconds = self.get_overlay_seconds()
+        self.config_manager.save_to_file()
+
     def update_estimates(self):
         """Update estimated duration and file size"""
         if not self.current_collection:
@@ -680,7 +730,12 @@ class VideoExportPanel(ttk.Frame):
         settings = self.get_current_settings()
         output_path = Path(output_file)
 
-        success, job, message = self.controller.prepare_export(settings, self.current_collection, output_path)
+        # Overlay settings come from config (the single source), not the preset.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        success, job, message = self.controller.prepare_export(
+            settings, self.current_collection, output_path, log_callback=self.log_message,
+            event_overlay=ui_cfg.event_overlay if ui_cfg else self.event_overlay_var.get(),
+            event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds())
 
         if not success:
             messagebox.showerror("Export Preparation Failed", message)

@@ -82,6 +82,18 @@ VIDEO_EXPORT_TOOLTIPS = {
         "Automatically opens the video in your default media player after export completes."
     ),
 
+    "event_overlay": (
+        "Burns session events into the video as captions at the moment they happened "
+        "(e.g. 'Autofocus Complete — HFR 2.31 → 1.62'). Events are sent by NINA or "
+        "another program while capture is running. "
+        "An events CSV is written next to the video either way."
+    ),
+
+    "event_overlay_seconds": (
+        "How long each event caption stays on screen, in seconds of finished video "
+        "(not real time). Default: 4 seconds."
+    ),
+
     # ========================================
     # Presets Section
     # ========================================

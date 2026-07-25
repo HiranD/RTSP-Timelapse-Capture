@@ -78,6 +78,52 @@ class UnknownKeyToleranceTests(unittest.TestCase):
         self.assertNotIn("force_tcp", saved["camera"])
         self.assertEqual(saved["camera"]["stream_path"], "/s0")
 
+    def test_config_with_utf8_bom_loads(self):
+        """A BOM must not wipe the user's settings.
+
+        Editing app_config.json in Notepad, or writing it from PowerShell's
+        Set-Content -Encoding utf8, prepends a UTF-8 BOM. Loading with the locale
+        default encoding then raises JSONDecodeError, and because the caller falls
+        back to defaults the failure is silent and total - camera, output folders
+        and API port all appear to reset themselves.
+        """
+        config = ConfigManager().to_dict()
+        config["camera"]["ip_address"] = "192.168.171.22"
+        config["ui"]["last_video_export_dir"] = r"C:\videos"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "app_config.json")
+            raw = json.dumps(config).encode("utf-8")
+            with open(path, "wb") as f:
+                f.write(b"\xef\xbb\xbf" + raw)  # UTF-8 BOM
+
+            mgr = ConfigManager()
+            success, message = mgr.load_from_file(path)
+
+        self.assertTrue(success, message)
+        self.assertEqual(mgr.camera.ip_address, "192.168.171.22")
+        self.assertEqual(mgr.ui.last_video_export_dir, r"C:\videos")
+
+    def test_saved_config_has_no_bom_and_survives_non_ascii(self):
+        """We write plain UTF-8, and a non-ASCII path round-trips intact."""
+        mgr = ConfigManager()
+        mgr.capture.output_folder = r"C:\Users\Jörg\snapshots"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "app_config.json")
+            success, message = mgr.save_to_file(path)
+            self.assertTrue(success, message)
+
+            with open(path, "rb") as f:
+                head = f.read(3)
+            self.assertNotEqual(head, b"\xef\xbb\xbf", "config was written with a BOM")
+
+            reloaded = ConfigManager()
+            success, message = reloaded.load_from_file(path)
+
+        self.assertTrue(success, message)
+        self.assertEqual(reloaded.capture.output_folder, r"C:\Users\Jörg\snapshots")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
