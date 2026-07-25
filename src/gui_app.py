@@ -73,7 +73,7 @@ import startup_manager
 
 # App version reported by the remote API's /health endpoint. Keep in sync with
 # src/__init__.py / version_info.txt on release.
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.6.0"
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras

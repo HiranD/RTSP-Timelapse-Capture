@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.6.0] - 2026-07-25
 
 ### Added
 - **Session events and event overlays** ([#15](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/15)).
@@ -26,6 +26,9 @@ All notable changes to this project are documented in this file.
     off a session's events are not retained anywhere.
   - See [`examples/README.md`](examples/README.md) for the endpoint reference and
     `examples/nina_send_event.ps1` for a ready-made sender.
+  - The **RTSP Timelapse Control** NINA plugin (1.5.0+) sends these automatically: add its
+    *Report Timelapse Events* trigger to a sequence and autofocus runs, filter changes, meridian
+    flips, target changes and guiding loss are reported as they happen.
 
 ### Fixed
 - **A UTF-8 BOM in `app_config.json` no longer wipes every setting.** Editing the config in
