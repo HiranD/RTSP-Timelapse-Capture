@@ -76,10 +76,11 @@ class VideoExportPanel(ttk.Frame):
     def create_widgets(self):
         """Create all UI widgets"""
 
-        # Configure grid weights
+        # Configure grid weights. Row 6 is the Export Log - the only section that
+        # should take up slack. (This used to target row 4, which is Progress: the
+        # log has sticky=NSEW but was never given the weight to use it.)
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=0)  # Progress section doesn't expand
-        self.rowconfigure(4, weight=1)  # Log section expands
+        self.rowconfigure(6, weight=1)  # Log section expands
 
         # Input Selection Section
         self.create_input_section()
@@ -92,6 +93,9 @@ class VideoExportPanel(ttk.Frame):
 
         # Presets Section
         self.create_presets_section()
+
+        # Session Events Section
+        self.create_events_section()
 
         # Progress Section
         self.create_progress_section()
@@ -267,44 +271,45 @@ class VideoExportPanel(ttk.Frame):
         open_check.pack(side=tk.LEFT)
         ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
 
-        # Session events (issue #15). Second row so the options don't run off the
-        # edge, and the hold-time control sits next to its checkbox.
-        events_frame = ttk.Frame(output_frame)
-        events_frame.grid(row=row + 1, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+    def create_events_section(self):
+        """Create session events section (issue #15).
 
-        # The leading label is load-bearing, not decoration: the checkboxes directly
-        # above are all preset fields, while these two are app-level config that
-        # survives a preset switch. Without something marking them as a separate
-        # group they read as three more preset options and set up the wrong
-        # expectation (tick, save preset, switch away and back).
-        ttk.Label(events_frame, text="Session events:").pack(side=tk.LEFT, padx=(0, 8))
+        Its own section rather than a row inside Output Options: the checkboxes
+        there are preset fields, while these are app-level config
+        (ui.event_overlay / ui.event_csv) that survives a preset switch and also
+        drives unattended renders. Sitting after Presets puts them outside the
+        preset-backed cluster, so the layout itself carries that distinction.
+        """
+        events_frame = ttk.LabelFrame(self, text="Session Events", padding="10")
+        events_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        # Restored from config, not from the selected preset: this is a standing
-        # preference that also governs unattended renders (scheduler / remote API),
-        # so it has to survive a restart and a preset switch.
+        options_frame = ttk.Frame(events_frame)
+        options_frame.pack(fill=tk.X)
+
+        # Restored from config, not from the selected preset - see the docstring.
         ui_cfg = self.config_manager.ui if self.config_manager else None
         self.event_overlay_var = tk.BooleanVar(value=ui_cfg.event_overlay if ui_cfg else False)
-        event_check = ttk.Checkbutton(events_frame, text="Overlay session events",
+        event_check = ttk.Checkbutton(options_frame, text="Overlay session events",
                         variable=self.event_overlay_var,
                         command=self._save_event_settings)
         event_check.pack(side=tk.LEFT, padx=(0, 5))
         ToolTip(event_check, VIDEO_EXPORT_TOOLTIPS["event_overlay"])
 
-        ttk.Label(events_frame, text="hold").pack(side=tk.LEFT, padx=(10, 3))
+        ttk.Label(options_frame, text="hold").pack(side=tk.LEFT, padx=(10, 3))
         self.event_overlay_seconds_var = tk.StringVar(
             value=str(ui_cfg.event_overlay_seconds if ui_cfg else 4.0))
-        seconds_spin = ttk.Spinbox(events_frame, from_=1.0, to=30.0, increment=0.5,
+        seconds_spin = ttk.Spinbox(options_frame, from_=1.0, to=30.0, increment=0.5,
                         width=5, textvariable=self.event_overlay_seconds_var,
                         command=self._save_event_settings)
         seconds_spin.pack(side=tk.LEFT)
         seconds_spin.bind("<FocusOut>", lambda _e: self._save_event_settings())
-        ttk.Label(events_frame, text="s").pack(side=tk.LEFT, padx=(3, 0))
+        ttk.Label(options_frame, text="s").pack(side=tk.LEFT, padx=(3, 0))
         ToolTip(seconds_spin, VIDEO_EXPORT_TOOLTIPS["event_overlay_seconds"])
 
         # Independent of the overlay: the log is useful without captions, and captions
         # are useful without the log.
         self.event_csv_var = tk.BooleanVar(value=ui_cfg.event_csv if ui_cfg else False)
-        csv_check = ttk.Checkbutton(events_frame, text="Write events CSV",
+        csv_check = ttk.Checkbutton(options_frame, text="Write events CSV",
                         variable=self.event_csv_var,
                         command=self._save_event_settings)
         csv_check.pack(side=tk.LEFT, padx=(15, 0))
@@ -341,7 +346,7 @@ class VideoExportPanel(ttk.Frame):
     def create_progress_section(self):
         """Create progress section"""
         progress_frame = ttk.LabelFrame(self, text="Progress", padding="10")
-        progress_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        progress_frame.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         progress_frame.columnconfigure(0, weight=1)
 
         # Status label
@@ -361,7 +366,7 @@ class VideoExportPanel(ttk.Frame):
     def create_log_section(self):
         """Create log section"""
         log_frame = ttk.LabelFrame(self, text="Export Log", padding="10")
-        log_frame.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        log_frame.grid(row=6, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -375,7 +380,7 @@ class VideoExportPanel(ttk.Frame):
     def create_action_buttons(self):
         """Create action buttons at bottom"""
         button_frame = ttk.Frame(self)
-        button_frame.grid(row=6, column=0, sticky=(tk.W, tk.E))
+        button_frame.grid(row=7, column=0, sticky=(tk.W, tk.E))
 
         self.create_video_btn = ttk.Button(button_frame, text="Create Video", command=self.start_export)
         self.create_video_btn.pack(side=tk.RIGHT, padx=5)
