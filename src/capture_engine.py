@@ -42,7 +42,7 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
 
 import time
 import threading
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime, timedelta, date, time as dtime
 from enum import Enum
 from typing import Callable, Optional
 import queue
@@ -159,6 +159,20 @@ class CaptureState(Enum):
     RUNNING = "Running"
     STOPPING = "Stopping..."
     ERROR = "Error"
+
+
+def effective_date(dt: datetime, rollover_hour: int) -> date:
+    """Folder date for a frame captured at `dt`.
+
+    Before the rollover hour a frame belongs to the previous day, so an
+    overnight session stays in one date folder. The single home of the
+    folder_rollover_hour rule: ensure_date_dir files frames (and the event
+    log) with it, and the session-aware render path uses it to map a
+    session's start time back to its starting folder.
+    """
+    if dt.hour < rollover_hour:
+        return dt.date() - timedelta(days=1)
+    return dt.date()
 
 
 class CaptureEngine:
@@ -699,15 +713,9 @@ class CaptureEngine:
             Path to date-specific directory
         """
         base_dir = resolve_path(self.config["capture"]["output_folder"])
-        now = datetime.now()
         rollover_hour = self.config["schedule"]["folder_rollover_hour"]
 
-        if now.hour < rollover_hour:
-            effective_date = now.date() - timedelta(days=1)
-        else:
-            effective_date = now.date()
-
-        path = base_dir / effective_date.strftime("%Y%m%d")
+        path = base_dir / effective_date(datetime.now(), rollover_hour).strftime("%Y%m%d")
         path.mkdir(parents=True, exist_ok=True)
 
         return str(path)

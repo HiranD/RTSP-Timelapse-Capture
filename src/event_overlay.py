@@ -25,6 +25,7 @@ too fast - or vanish entirely if their frames were the dropped ones.
 """
 
 import csv
+import os
 from bisect import bisect_left
 from typing import List, Optional, Sequence
 
@@ -278,14 +279,22 @@ def draw_captions(image, captions: Sequence[Caption]):
     return image
 
 
-def build_plan(date_dir, frame_times, framerate, speed_multiplier=1,
+def build_plan(date_dirs, frame_times, framerate, speed_multiplier=1,
                hold_seconds=4.0, since=None) -> Optional[EventOverlayPlan]:
     """Load a session's events and build its overlay plan.
 
-    Returns None when the folder has no usable events, so callers can skip the
-    overlay path entirely.
+    `date_dirs` is one folder or a sequence of them: a session that crossed the
+    folder rollover has an events.jsonl in each folder it touched, and a merged
+    render needs all of them stitched into one timeline. Folders without a log
+    contribute nothing (read_events returns [] for a missing file).
+
+    Returns None when the folder(s) have no usable events, so callers can skip
+    the overlay path entirely.
     """
-    events = read_events(date_dir, since=since)
+    if isinstance(date_dirs, (str, os.PathLike)):
+        date_dirs = [date_dirs]
+    events = [event for d in date_dirs for event in read_events(d, since=since)]
+    events.sort(key=lambda event: event.time)
     if not events:
         return None
     plan = EventOverlayPlan(events, frame_times, framerate, speed_multiplier, hold_seconds)

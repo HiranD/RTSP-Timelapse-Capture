@@ -33,6 +33,10 @@ class ImageCollection:
     # Capture time per image, index-aligned with `images` (None where the filename
     # didn't parse). Event overlays bind events to frames through this.
     timestamps: List[Optional[datetime]] = field(default_factory=list)
+    # Every folder that contributed frames, ascending. A session that crossed the
+    # folder rollover spans more than one; single-folder scans hold just their own.
+    # Consumers should read `source_folders or [source_folder]` for back-compat.
+    source_folders: List[Path] = field(default_factory=list)
 
     def get_date_range_str(self) -> str:
         """Get formatted date range string"""
@@ -175,13 +179,77 @@ class VideoExportController:
                 duration_seconds=duration_seconds,
                 total_size_bytes=total_size,
                 source_folder=folder,
-                timestamps=timestamps
+                timestamps=timestamps,
+                source_folders=[folder]
             )
 
             return True, collection, f"Found {len(images)} images"
 
         except Exception as e:
             return False, None, f"Error scanning folder: {str(e)}"
+
+    def scan_folders(self, folder_paths: Sequence[Path],
+                     since: Optional[datetime] = None) -> Tuple[bool, Optional[ImageCollection], str]:
+        """Scan several date folders and merge them into one collection.
+
+        The session-aware render path uses this when a session may span the
+        folder rollover boundary: every folder from the session's start onward
+        is scanned with the same `since` filter and stitched into one video.
+
+        A folder that contributes nothing (missing, no .jpg files, or nothing
+        at/after `since`) is skipped rather than treated as an error - only an
+        overall empty result fails.
+
+        Returns:
+            (success, ImageCollection, message) tuple, same contract as scan_folder.
+        """
+        merged_images: List[Path] = []
+        merged_timestamps: List[Optional[datetime]] = []
+        contributing: List[Path] = []
+        for folder_path in folder_paths:
+            ok, collection, _msg = self.scan_folder(folder_path, since=since)
+            if not ok:
+                continue
+            merged_images.extend(collection.images)
+            merged_timestamps.extend(collection.timestamps)
+            contributing.append(Path(folder_path))
+
+        if not merged_images:
+            if since is not None:
+                return False, None, (f"No images captured at/after {since:%Y%m%d-%H%M%S} "
+                                     f"in {len(folder_paths)} folder(s)")
+            return False, None, f"No .jpg files found in {len(folder_paths)} folder(s)"
+
+        # Order by capture time when every frame has one - always true with `since`,
+        # which drops unparseable names. Otherwise keep folder order (ascending
+        # folders, name-sorted within each): a partial sort would misorder frames.
+        if all(ts is not None for ts in merged_timestamps):
+            pairs = sorted(zip(merged_images, merged_timestamps), key=lambda pair: pair[1])
+            merged_images = [img for img, _ in pairs]
+            merged_timestamps = [ts for _, ts in pairs]
+
+        first_timestamp = merged_timestamps[0]
+        last_timestamp = merged_timestamps[-1]
+        duration_seconds = 0
+        if first_timestamp and last_timestamp:
+            duration_seconds = (last_timestamp - first_timestamp).total_seconds()
+
+        merged = ImageCollection(
+            images=merged_images,
+            total_count=len(merged_images),
+            first_timestamp=first_timestamp,
+            last_timestamp=last_timestamp,
+            duration_seconds=duration_seconds,
+            total_size_bytes=sum(img.stat().st_size for img in merged_images),
+            source_folder=contributing[0],
+            timestamps=merged_timestamps,
+            source_folders=contributing
+        )
+
+        message = f"Found {len(merged_images)} images"
+        if len(contributing) > 1:
+            message += f" across {len(contributing)} folders"
+        return True, merged, message
 
     def _extract_timestamp(self, image_path: Path) -> Optional[datetime]:
         """
@@ -274,6 +342,16 @@ class VideoExportController:
                     log_callback("Event overlays need temporary copies - "
                                  "'preserve originals' enabled for this export")
 
+            # Same kind of safety net for merged collections: the non-temp path
+            # feeds ffmpeg a single %06d pattern inside source_folder, which can't
+            # represent frames living in more than one folder.
+            source_folders = image_collection.source_folders or [image_collection.source_folder]
+            if len(source_folders) > 1 and not use_temp_copies:
+                use_temp_copies = True
+                if log_callback:
+                    log_callback("Multi-folder render needs temporary copies - "
+                                 "'preserve originals' enabled for this export")
+
             if use_temp_copies:
                 # Create temp folder in same directory as output
                 temp_folder = output_folder / f".temp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -327,7 +405,7 @@ class VideoExportController:
 
         try:
             plan = build_plan(
-                image_collection.source_folder,
+                image_collection.source_folders or [image_collection.source_folder],
                 timestamps,
                 framerate=framerate,
                 speed_multiplier=speed_multiplier,

@@ -258,6 +258,38 @@ class BuildPlanTests(unittest.TestCase):
         self.assertEqual([c.title for c in plan.captions], ["Tonight"])
 
 
+class BuildPlanMultiDirTests(unittest.TestCase):
+    """A rollover-crossing session leaves an events.jsonl in each folder it
+    touched; build_plan() accepts a sequence of folders and merges them into
+    one timeline. (The single-path tests above are the back-compat pin.)"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.first = Path(self._tmp.name) / "20260725"
+        self.second = Path(self._tmp.name) / "20260726"
+        self.first.mkdir()
+        self.second.mkdir()
+
+    def _write(self, folder, *records):
+        with open(folder / EVENTS_FILENAME, "w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record) + "\n")
+
+    def test_merges_events_from_both_folders_in_time_order(self):
+        # Deliberately reversed across the two logs: the later event sits in
+        # the folder scanned second... and vice versa.
+        self._write(self.second, {"time": "20260725-223000", "title": "Second"})
+        self._write(self.first, {"time": "20260725-220500", "title": "First"})
+        plan = build_plan([self.first, self.second], frames(120), framerate=24)
+        self.assertEqual([c.title for c in plan.captions], ["First", "Second"])
+
+    def test_folder_without_a_log_contributes_nothing(self):
+        self._write(self.first, {"time": "20260725-220500", "title": "Only"})
+        plan = build_plan([self.first, self.second], frames(120), framerate=24)
+        self.assertEqual([c.title for c in plan.captions], ["Only"])
+
+
 class DrawingTests(unittest.TestCase):
     """Smoke tests - the drawing is visual, so these check it runs and mutates."""
 

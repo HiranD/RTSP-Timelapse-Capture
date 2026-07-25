@@ -52,7 +52,10 @@ what the NINA plugin's "scheduled timelapse" uses.
 `/video/create` accepts an optional JSON body. With no body it renders the most
 recent capture folder; `date` targets a specific night and `since`
 (`YYYYMMDD-HHMMSS`) keeps only frames captured at/after that time — so one session
-renders cleanly even when several share a date folder:
+renders cleanly even when several share a date folder. With `since` and no `date`,
+every folder from the session's start onward is covered and merged into one video
+named for the start date, so a session that crosses the folder rollover hour still
+renders whole:
 
 ```
 {"date": "20250620", "since": "20250620-210000"}

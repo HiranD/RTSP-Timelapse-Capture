@@ -58,7 +58,7 @@ def get_app_icon_path() -> Path:
     return get_resource_path("assets/icon.ico")
 
 from config_manager import ConfigManager
-from capture_engine import CaptureEngine, CaptureState
+from capture_engine import CaptureEngine, CaptureState, effective_date
 from video_export_panel import VideoExportPanel
 from scheduling_panel import SchedulingPanel
 from integrations_panel import IntegrationsPanel
@@ -1446,9 +1446,9 @@ class RTSPTimelapseGUI:
         if self.is_capturing:
             self.stop_capture()
         if create_video:
-            # Renders the newest date folder filtered by `since`. With the default rollover (noon) a
-            # dusk->dawn session is a single folder; a non-default folder_rollover_hour could split a
-            # midnight-crossing session so only the latest part renders.
+            # Renders the session: every date folder from its start onward, filtered
+            # by `since`, so a session that crossed the folder rollover is stitched
+            # into one video rather than losing its earlier half.
             ok, message, _code, _resolved = self._start_remote_video(None, since)
             self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
 
@@ -1532,6 +1532,7 @@ class RTSPTimelapseGUI:
                 return False, "invalid since (expected YYYYMMDD-HHMMSS)", 400, None
 
         output_folder = Path(self.config_manager.capture.output_folder)
+        folders_arg = None
         if date:
             if not re.fullmatch(r"\d{8}", date):
                 return False, "invalid date (expected YYYYMMDD)", 400, None
@@ -1542,15 +1543,32 @@ class RTSPTimelapseGUI:
             folders = self.video_export_panel.controller.get_available_date_folders(output_folder)
             if not folders:
                 return False, "no capture folders found", 404, None
-            target = folders[0].name
+            if since_dt is None:
+                target = folders[0].name
+            else:
+                # Session-aware: the session is defined by its start time, not by a
+                # single folder. Cover every existing date folder from the session's
+                # start onward so a session that crossed the folder rollover is
+                # stitched into one video. Later folders are harmless - the `since`
+                # timestamp filter is the real selector.
+                rollover = self.config_manager.schedule.folder_rollover_hour
+                start_name = effective_date(since_dt, rollover).strftime("%Y%m%d")
+                candidates = sorted((f for f in folders if f.name >= start_name),
+                                    key=lambda f: f.name)
+                if not candidates:
+                    return False, f"no capture folders found for session starting {since}", 404, None
+                target = candidates[0].name
+                folders_arg = candidates
 
-        if not (output_folder / target).exists():
+        # Candidate folders came from a directory listing, so only the caller-supplied
+        # and newest-folder targets still need an existence check.
+        if folders_arg is None and not (output_folder / target).exists():
             return False, f"no snapshots for {target}", 404, target
 
         # _auto_create_video_for_date does the synchronous prep (scan/preset/ffmpeg)
         # then runs the encode in a thread; surface that synchronous outcome so a
         # bad 'since', empty folder, etc. become real 404/500s instead of a 202.
-        ok, message, code = self._auto_create_video_for_date(target, since=since_dt)
+        ok, message, code = self._auto_create_video_for_date(target, since=since_dt, folders=folders_arg)
         return ok, message, code, target
 
     def set_config_inputs_state(self, state):
@@ -1777,15 +1795,20 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
-    def _auto_create_video_for_date(self, date_str: str, since=None):
+    def _auto_create_video_for_date(self, date_str: str, since=None, folders=None):
         """
         Automatically create a timelapse video for a specific date's captures.
 
         Args:
-            date_str: Date string in YYYYMMDD format
+            date_str: Date string in YYYYMMDD format; names the output video and
+                keys the capture history entry.
             since: Optional datetime; if set, only frames captured at/after it are
                 included, so a session that shares a date folder with earlier
                 frames (e.g. a test run) renders only its own footage.
+            folders: Optional ascending list of date folders to scan as one merged
+                collection - the session-aware path, for a session that may have
+                crossed the folder rollover. None keeps the single-folder behaviour
+                (scan output_folder/date_str).
 
         Returns:
             (ok: bool, message: str, http_code: int) for the synchronous outcome.
@@ -1801,7 +1824,9 @@ class RTSPTimelapseGUI:
             output_folder = Path(self.config_manager.capture.output_folder)
             date_folder = output_folder / date_str
 
-            if not date_folder.exists():
+            # Candidate lists come from a directory listing, so only the
+            # single-folder path needs the existence check.
+            if folders is None and not date_folder.exists():
                 self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
                 return False, f"no snapshots folder for {date_str}", 404
 
@@ -1837,8 +1862,15 @@ class RTSPTimelapseGUI:
                 self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
                 return False, ffmpeg_msg, 500
 
-            # Scan folder for images
-            success, collection, msg = controller.scan_folder(date_folder, since=since)
+            # Scan for images - across every candidate folder on the session-aware
+            # path, so a rollover-crossing session renders as one video.
+            if folders is None:
+                success, collection, msg = controller.scan_folder(date_folder, since=since)
+            else:
+                if len(folders) > 1:
+                    self.log_message("INFO", "[Auto Video] Session may span "
+                                     f"{len(folders)} folders: {', '.join(f.name for f in folders)}")
+                success, collection, msg = controller.scan_folders(folders, since=since)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
                 return False, msg, 404

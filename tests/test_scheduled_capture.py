@@ -7,6 +7,7 @@ root or capture engine is needed. _run_on_ui is stubbed to run its callable inli
 """
 
 import sys
+import tempfile
 import threading
 import unittest
 from datetime import datetime, timedelta
@@ -156,6 +157,92 @@ class RemoteVideoControllerReuseTests(unittest.TestCase):
         self.assertEqual(code, 404)  # no folders -> resolved before any encode
         g.video_export_panel.controller.get_available_date_folders.assert_called_once()
         MockVEC.assert_not_called()  # no fresh controller (no ffmpeg subprocess) for listing
+
+
+class SessionAwareVideoResolutionTests(unittest.TestCase):
+    """With `since` and no explicit date, the render must cover every existing
+    date folder from the session's start onward (ascending) - not just the
+    newest - so a session that crossed the folder rollover renders whole."""
+
+    def _gui(self, folder_names, rollover=12):
+        g = _fake_gui()
+        g.config_manager.capture.output_folder = "."
+        g.config_manager.schedule.folder_rollover_hour = rollover
+        g.video_export_panel.controller.get_available_date_folders.return_value = [
+            Path(name) for name in sorted(folder_names, reverse=True)]
+        g._auto_create_video_for_date.return_value = (True, "ok", 202)
+        return g
+
+    def test_covers_folders_from_session_start_ascending(self):
+        g = self._gui(["20260724", "20260725", "20260726"])
+        ok, _msg, code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(code, 202)
+        self.assertEqual(resolved, "20260725")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260725", since=datetime(2026, 7, 25, 20, 0, 0),
+            folders=[Path("20260725"), Path("20260726")])
+
+    def test_early_morning_since_maps_to_previous_days_folder(self):
+        """03:00 with rollover 12 belongs to the previous evening's folder."""
+        g = self._gui(["20260725", "20260726"])
+        ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260726-030000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260725")
+
+    def test_missing_start_folder_degrades_to_first_existing(self):
+        """A framing gap: the start-date folder was never created."""
+        g = self._gui(["20260726"])
+        ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260726")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260726", since=datetime(2026, 7, 25, 20, 0, 0),
+            folders=[Path("20260726")])
+
+    def test_no_folders_at_or_after_start_is_404(self):
+        g = self._gui(["20260720"])
+        ok, msg, code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertFalse(ok)
+        self.assertEqual(code, 404)
+        self.assertIsNone(resolved)
+        self.assertIn("session starting", msg)
+        g._auto_create_video_for_date.assert_not_called()
+
+    def test_explicit_date_keeps_single_folder_semantics(self):
+        """A caller who names a folder gets that folder, even with `since`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "20260725").mkdir()
+            g = self._gui(["20260725"])
+            g.config_manager.capture.output_folder = tmp
+            ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+                g, "20260725", "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260725")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260725", since=datetime(2026, 7, 25, 20, 0, 0), folders=None)
+        g.video_export_panel.controller.get_available_date_folders.assert_not_called()
+
+    def test_no_since_no_date_uses_newest_folder(self):
+        """Regression pin: the plain no-body /video/create behaviour is unchanged."""
+        with tempfile.TemporaryDirectory() as tmp:
+            older = Path(tmp) / "20260725"
+            newest = Path(tmp) / "20260726"
+            older.mkdir()
+            newest.mkdir()
+            g = self._gui([])
+            g.config_manager.capture.output_folder = tmp
+            g.video_export_panel.controller.get_available_date_folders.return_value = [
+                newest, older]
+            ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(g, None, None)
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260726")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260726", since=None, folders=None)
 
 
 class RemoteApiDisableTests(unittest.TestCase):
