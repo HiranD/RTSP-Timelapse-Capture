@@ -259,9 +259,9 @@ class IntegrationsPanel(ttk.Frame):
         self.remote_api_enabled_check.grid(row=1, column=0, columnspan=2, sticky="w")
         ToolTip(self.remote_api_enabled_check,
             "Start a small HTTP server bound to 127.0.0.1 (this machine only). "
-            "External tools can then POST to /capture/start, /capture/stop and "
-            "/video/create, or GET /status. Not exposed to the network and there "
-            "is no auth token — only programs running on this PC can reach it."
+            "External tools can then POST to /capture/start, /capture/stop, "
+            "/video/create and /events, or GET /status. Not exposed to the network "
+            "and there is no auth token — only programs running on this PC can reach it."
         )
 
         # Lock note (shown when disabled because the scheduler is on).
@@ -309,6 +309,17 @@ class IntegrationsPanel(ttk.Frame):
             foreground="gray"
         )
         examples_hint.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+        # The controls for what happens to events live on the Video Export tab (they
+        # only take effect at render time), so point there from here - this is where
+        # the API that receives them gets set up, and otherwise nothing connects the two.
+        events_hint = ttk.Label(
+            parent,
+            text="Events sent to /events can be shown on the timelapse — see the Video Export tab.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        events_hint.grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
     # ------------------------------------------------------------- config
 

@@ -267,10 +267,17 @@ class VideoExportPanel(ttk.Frame):
         open_check.pack(side=tk.LEFT)
         ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
 
-        # Session event captions (issue #15). Second row so the options don't run
-        # off the edge, and the hold-time control sits next to its checkbox.
+        # Session events (issue #15). Second row so the options don't run off the
+        # edge, and the hold-time control sits next to its checkbox.
         events_frame = ttk.Frame(output_frame)
         events_frame.grid(row=row + 1, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+
+        # The leading label is load-bearing, not decoration: the checkboxes directly
+        # above are all preset fields, while these two are app-level config that
+        # survives a preset switch. Without something marking them as a separate
+        # group they read as three more preset options and set up the wrong
+        # expectation (tick, save preset, switch away and back).
+        ttk.Label(events_frame, text="Session events:").pack(side=tk.LEFT, padx=(0, 8))
 
         # Restored from config, not from the selected preset: this is a standing
         # preference that also governs unattended renders (scheduler / remote API),
