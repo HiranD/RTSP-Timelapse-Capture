@@ -388,7 +388,7 @@ blank to fall back to `/stream1`. Connections always use TCP transport.
 | Start Time  | Capture start (24-hour HH:MM)     | `22:40` |
 | End Time    | Capture end (24-hour HH:MM)       | `07:00` |
 | Interval    | Seconds between captures          | `20`    |
-| Rollover    | Hour after midnight to switch day | `12`    |
+| Rollover    | Hour after midnight to switch day (Folder Rollover Hour on the Capture tab) | `12`    |
 
 Overnight windows (start later than end) are handled automatically.
 

@@ -646,6 +646,15 @@ class RTSPTimelapseGUI:
         ToolTip(browse_btn, CAPTURE_TOOLTIPS["browse_output"])
         row += 1
 
+        # Governs which date subfolder frames land in (schedule.folder_rollover_hour);
+        # lives here beside Output Folder because it's about how snapshots are filed.
+        ttk.Label(settings_frame, text="Folder Rollover Hour (0-23):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.rollover_hour_spinbox = ttk.Spinbox(settings_frame, from_=0, to=23, increment=1, width=20)
+        self.rollover_hour_spinbox.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        self.rollover_hour_spinbox.set(str(self.config_manager.schedule.folder_rollover_hour))
+        ToolTip(self.rollover_hour_spinbox, CAPTURE_TOOLTIPS["folder_rollover_hour"])
+        row += 1
+
         ttk.Label(settings_frame, text="JPEG Quality (1-100):").grid(row=row, column=0, sticky=tk.W, pady=2)
         self.jpeg_quality_entry = ttk.Entry(settings_frame, width=20)
         self.jpeg_quality_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
@@ -1068,6 +1077,14 @@ class RTSPTimelapseGUI:
         self.config_manager.capture.jpeg_quality = int(self.jpeg_quality_entry.get())
         self.config_manager.capture.proactive_reconnect_seconds = int(self.proactive_reconnect_entry.get())
 
+        # Guarded rather than bare int(): this runs on every tab change, and a
+        # half-typed spinbox value must not abort the whole auto-save.
+        try:
+            rollover = int(self.rollover_hour_spinbox.get())
+        except (ValueError, tk.TclError):
+            rollover = self.config_manager.schedule.folder_rollover_hour
+        self.config_manager.schedule.folder_rollover_hour = max(0, min(23, rollover))
+
     def update_config_ui(self):
         """Update UI inputs from ConfigManager"""
         self.ip_entry.delete(0, tk.END)
@@ -1103,6 +1120,8 @@ class RTSPTimelapseGUI:
 
         self.proactive_reconnect_entry.delete(0, tk.END)
         self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
+
+        self.rollover_hour_spinbox.set(str(self.config_manager.schedule.folder_rollover_hour))
 
     def test_connection(self):
         """Test camera connection"""
@@ -1545,7 +1564,10 @@ class RTSPTimelapseGUI:
             self.stream_path_entry, self.start_time_entry, self.end_time_entry,
             self.start_at_radio, self.start_now_radio,
             self.interval_entry, self.output_entry, self.jpeg_quality_entry,
-            self.proactive_reconnect_entry
+            self.proactive_reconnect_entry,
+            # Locked during capture: the engine snapshots config at session start,
+            # so a mid-session rollover change would silently not apply anyway.
+            self.rollover_hour_spinbox
         ]
         for widget in inputs:
             widget.configure(state=state)
