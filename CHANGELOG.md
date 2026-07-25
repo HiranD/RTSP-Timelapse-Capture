@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Folder Rollover Hour is now editable in the app** (Capture tab → Capture Settings, next to
+  Output Folder). Frames saved before this hour go into the previous day's folder, so an overnight
+  session stays in one folder. Previously it could only be changed by hand-editing
+  `config/app_config.json`. Locked while capture is running.
+
+### Changed
+- **Renders driven by a session start time are now session-aware.** `POST /video/create` with
+  `since` (and no `date`), the scheduled-stop render, and the scheduler's nightly auto-video now
+  cover **every** date folder from the session's start onward — merged into one video, sorted by
+  capture time, with events picked up from each folder touched — instead of assuming the newest
+  folder holds the whole session. A session that crosses the rollover hour renders whole; whatever
+  rollover hour you pick, videos come out right. The nightly auto-video consequently renders
+  **exactly the session**: frames captured earlier the same day (e.g. an afternoon framing check)
+  are no longer swept into — or deleted with — the night's video.
+
+### Fixed
+- **"Delete snapshots after creating video" now deletes exactly the frames that went into the
+  video**, not the whole date folder. Previously a `since`-filtered render (one session among
+  several sharing a folder) deleted the entire folder, destroying frames that were never in any
+  video. A folder is removed only once nothing but its `events.jsonl` remains; folders still
+  holding other frames are kept, events file included.
+
 ## [3.6.0] - 2026-07-25
 
 ### Changed

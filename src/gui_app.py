@@ -202,7 +202,7 @@ class RTSPTimelapseGUI:
         self.scheduling_panel.set_callbacks(
             start_capture=self.start_capture,
             stop_capture=self.stop_capture,
-            create_video=self._auto_create_video_for_date,
+            create_video=self._scheduler_create_video,
             log=self.log_message
         )
 
@@ -1794,6 +1794,24 @@ class RTSPTimelapseGUI:
             duration = (datetime.now() - self.session_start_time).total_seconds()
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
+
+    def _scheduler_create_video(self, date_str: str, session_start=None):
+        """Nightly auto-video for the astro scheduler (runs on the main thread,
+        invoked via after()).
+
+        With a known session start this renders exactly the session - the same
+        session-aware path as the scheduled stop and POST /video/create - so a
+        session that crossed the folder rollover is stitched whole, and frames
+        captured before the session (e.g. a framing check) stay out of it.
+        Without a start (shouldn't happen in practice) it falls back to the
+        whole-folder render for the scheduler's date.
+        """
+        if session_start is not None:
+            since = session_start.strftime("%Y%m%d-%H%M%S")
+            ok, message, _code, _resolved = self._start_remote_video(None, since)
+            self.log_message("INFO" if ok else "ERROR", f"[Auto Video] {message}")
+        else:
+            self._auto_create_video_for_date(date_str)
 
     def _auto_create_video_for_date(self, date_str: str, since=None, folders=None):
         """

@@ -760,6 +760,12 @@ class SchedulingPanel(ttk.Frame):
         """Called by the scheduler on its monitor thread when a session completes."""
         self._log("INFO", f"Session complete for {date_str}")
 
+        # Capture the start before anything can clear it: the auto-video render
+        # is session-aware (it covers every folder from this start onward), so it
+        # needs the value that _record_capture_session/the clear below consume.
+        # The datetime is immutable, so handing it to the main thread is safe.
+        session_start = self.session_start_time
+
         # Record to history on this (monitor) thread on purpose: it globs the
         # snapshot directory (file I/O that could block the Tk event loop on a
         # large session), and the only Tk it touches (_log, calendar refresh) is
@@ -772,10 +778,11 @@ class SchedulingPanel(ttk.Frame):
         self.session_start_time = None
 
         # auto_video_var is a tk.BooleanVar - read it (and kick off the video) on
-        # the main thread.
-        self.after(0, lambda: self._maybe_autocreate_video(date_str))
+        # the main thread. Default-arg binding, so the lambda holds the captured
+        # values rather than late-bound locals.
+        self.after(0, lambda d=date_str, s=session_start: self._maybe_autocreate_video(d, s))
 
-    def _maybe_autocreate_video(self, date_str: str):
+    def _maybe_autocreate_video(self, date_str: str, session_start=None):
         """Runs on the main thread - safe to read auto_video_var here."""
         # Guard against teardown between scheduling this callback and it firing:
         # if the widget is gone, auto_video_var.get() would raise TclError.
@@ -784,8 +791,9 @@ class SchedulingPanel(ttk.Frame):
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
-                # Pass the date string so the callback can find the right folder
-                self.create_video_callback(date_str)
+                # The date names the video; the start time lets the callback
+                # render exactly this session (session-aware, multi-folder).
+                self.create_video_callback(date_str, session_start)
 
     def _record_capture_session(self, date_str: str):
         """Record a completed capture session to history"""
@@ -839,7 +847,8 @@ class SchedulingPanel(ttk.Frame):
         Args:
             start_capture: Callback to start capture
             stop_capture: Callback to stop capture
-            create_video: Callback to create video (receives date_str YYYYMMDD)
+            create_video: Callback to create video (receives date_str YYYYMMDD and
+                the session's start datetime, or None when the start is unknown)
             log: Callback to log messages (level, message)
         """
         self.start_capture_callback = start_capture
