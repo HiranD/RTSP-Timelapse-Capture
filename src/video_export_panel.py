@@ -870,7 +870,7 @@ class VideoExportPanel(ttk.Frame):
         self.after(0, update_ui)
 
     def _maybe_delete_snapshots(self):
-        """Delete the rendered folder's snapshots, if the option is on and the user agrees.
+        """Delete the rendered snapshots, if the option is on and the user agrees.
 
         Runs only for exports started from this tab. The scheduler and remote API delete
         without prompting - they are unattended by definition - but here someone is
@@ -895,7 +895,10 @@ class VideoExportPanel(ttk.Frame):
             self.log_message("Snapshots kept.")
             return
 
-        VideoExportController.delete_source_snapshots(folder, self.log_message)
+        # This tab scans whole folders (no `since` filter), so the rendered list
+        # covers every frame and the folder itself is removed once emptied.
+        VideoExportController.delete_rendered_snapshots(
+            self.current_collection.images, self.log_message)
 
     def test_ffmpeg(self):
         """Test FFmpeg installation"""

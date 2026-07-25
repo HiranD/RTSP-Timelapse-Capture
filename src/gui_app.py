@@ -1911,11 +1911,13 @@ class RTSPTimelapseGUI:
                     except Exception as e:
                         self.log_message("WARNING", f"[Auto Video] Could not update capture history: {e}")
 
-                    # Delete snapshot folder if enabled. Unattended path - never prompts;
-                    # the Video Export tab confirms instead, since a human is there.
+                    # Delete the rendered frames if enabled - exactly what went into
+                    # the video, so a `since`-filtered render can't remove frames it
+                    # never used. Unattended path - never prompts; the Video Export
+                    # tab confirms instead, since a human is there.
                     if delete_snapshots:
-                        VideoExportController.delete_source_snapshots(
-                            date_folder,
+                        VideoExportController.delete_rendered_snapshots(
+                            collection.images,
                             lambda m: self.log_message("INFO", f"[Auto Video] {m}"))
                 else:
                     self.log_message("ERROR", f"[Auto Video] Export failed: {result.message}")

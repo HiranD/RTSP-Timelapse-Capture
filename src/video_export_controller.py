@@ -9,7 +9,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
-from typing import Optional, Tuple, List, Callable, Dict, Any
+from typing import Optional, Tuple, List, Callable, Dict, Any, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 import re
@@ -17,6 +17,7 @@ import re
 from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
 from preset_manager import VideoExportSettings
 from event_overlay import build_plan, draw_captions
+from event_log import EVENTS_FILENAME
 
 
 @dataclass
@@ -580,37 +581,64 @@ class VideoExportController:
                 log_callback(f"Could not write event CSV: {e}")
 
     @staticmethod
-    def delete_source_snapshots(folder, log_callback: Optional[Callable[[str], None]] = None) -> bool:
-        """Delete a snapshot folder after its video has been created.
+    def delete_rendered_snapshots(images: Sequence[Path],
+                                  log_callback: Optional[Callable[[str], None]] = None) -> bool:
+        """Delete exactly the frames that went into a video, then any folder they emptied.
 
         The single implementation of this, shared by the scheduler, the remote API and
         the Video Export tab, so a destructive action can't drift between the paths.
+        Deleting the rendered list rather than a folder means a `since`-filtered render
+        (one session among several sharing a folder) never removes frames that were
+        not in the video.
+
+        A folder is removed once nothing but its events.jsonl remains - by then the
+        events are already preserved in the video overlay/CSV if those are on. A
+        folder still holding other frames is kept, events.jsonl included, so a later
+        render of those frames can still use it. (A folder holding only an
+        events.jsonl and no frames is never visited here - it contributed nothing.)
 
         Best-effort by design: the video is the deliverable, so a failed cleanup is
-        logged rather than turned into a failed export. A folder that's already gone
+        logged rather than turned into a failed export. A file that's already gone
         counts as success - the caller's intent was "it shouldn't be there".
 
         Args:
-            folder: snapshot folder to remove.
+            images: the rendered frame paths (ImageCollection.images).
             log_callback: optional callable(str) for progress/error messages.
 
         Returns:
-            True if the folder is gone afterwards.
+            True if every listed file, and every folder it emptied, is gone afterwards.
         """
-        path = Path(folder)
-        if not path.exists():
-            return True
-        try:
+        def log(message: str):
             if log_callback:
-                log_callback(f"Deleting snapshot folder: {path}")
-            shutil.rmtree(path)
-            if log_callback:
-                log_callback("Snapshot folder deleted")
-            return True
-        except OSError as e:
-            if log_callback:
-                log_callback(f"Failed to delete snapshot folder: {e}")
-            return False
+                log_callback(message)
+
+        ok = True
+        folders: List[Path] = []
+        for image in images:
+            path = Path(image)
+            if path.parent not in folders:
+                folders.append(path.parent)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as e:
+                log(f"Failed to delete {path.name}: {e}")
+                ok = False
+
+        for folder in folders:
+            if not folder.exists():
+                continue
+            try:
+                leftovers = [p for p in folder.iterdir() if p.name != EVENTS_FILENAME]
+                if leftovers:
+                    log(f"Kept folder {folder}: {len(leftovers)} file(s) were not part of this video")
+                    continue
+                log(f"Deleting snapshot folder: {folder}")
+                shutil.rmtree(folder)
+                log("Snapshot folder deleted")
+            except OSError as e:
+                log(f"Failed to delete snapshot folder: {e}")
+                ok = False
+        return ok
 
     def _cleanup_temp(self, job: ExportJob):
         """Clean up temporary folder"""
