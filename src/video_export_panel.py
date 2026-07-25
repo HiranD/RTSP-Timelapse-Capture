@@ -268,8 +268,20 @@ class VideoExportPanel(ttk.Frame):
         self.open_when_done_var = tk.BooleanVar(value=False)
         open_check = ttk.Checkbutton(options_frame, text="Open video when complete",
                         variable=self.open_when_done_var)
-        open_check.pack(side=tk.LEFT)
+        open_check.pack(side=tk.LEFT, padx=(0, 15))
         ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
+
+        # Destructive, and applies to every render (scheduled, remote API, and the
+        # Export button below), so it's config-backed rather than a preset field and
+        # the label spells out what it deletes.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        self.delete_snapshots_var = tk.BooleanVar(
+            value=ui_cfg.delete_snapshots_after_video if ui_cfg else False)
+        delete_check = ttk.Checkbutton(options_frame, text="Delete snapshots after creating video",
+                        variable=self.delete_snapshots_var,
+                        command=self._save_delete_snapshots_setting)
+        delete_check.pack(side=tk.LEFT)
+        ToolTip(delete_check, VIDEO_EXPORT_TOOLTIPS["delete_snapshots"])
 
     def create_events_section(self):
         """Create session events section (issue #15).
@@ -690,6 +702,13 @@ class VideoExportPanel(ttk.Frame):
         except (ValueError, TypeError):
             return 4.0
 
+    def _save_delete_snapshots_setting(self):
+        """Persist the delete-snapshots choice; the scheduler and remote API read it too."""
+        if not self.config_manager:
+            return
+        self.config_manager.ui.delete_snapshots_after_video = self.delete_snapshots_var.get()
+        self.config_manager.save_to_file()
+
     def _save_event_settings(self):
         """Persist the session-event choices so they survive a restart and reach
         unattended renders (the scheduler and POST /video/create read them from config)."""
@@ -821,12 +840,19 @@ class VideoExportPanel(ttk.Frame):
                 self.log_message(f"Size: {result.output_size_bytes / (1024*1024):.2f} MB")
                 self.log_message("=" * 50)
 
-                # Save the directory for next time
+                # Save the directory for next time. No filename argument: save_to_file()
+                # writes to the app's real config path. (This used to pass
+                # "camera_config.json", a relative path nothing ever read, so the
+                # directory never actually persisted from a manual export.)
                 if self.config_manager and result.output_file:
                     output_dir = str(result.output_file.parent)
                     self.config_manager.ui.last_video_export_dir = output_dir
-                    # Save config to disk
-                    self.config_manager.save_to_file("camera_config.json")
+                    self.config_manager.save_to_file()
+
+                # Delete the source snapshots if enabled. Confirmed first: this is the
+                # only render path with a human present, and unlike a scheduled run the
+                # source is whatever folder they happened to browse to.
+                self._maybe_delete_snapshots()
 
                 # Open video if requested
                 if self.open_when_done_var.get() and result.output_file:
@@ -842,6 +868,34 @@ class VideoExportPanel(ttk.Frame):
 
         # Update UI on main thread
         self.after(0, update_ui)
+
+    def _maybe_delete_snapshots(self):
+        """Delete the rendered folder's snapshots, if the option is on and the user agrees.
+
+        Runs only for exports started from this tab. The scheduler and remote API delete
+        without prompting - they are unattended by definition - but here someone is
+        watching, and the source is whatever folder they selected, so it is worth one
+        confirmation before removing a night's frames irreversibly.
+        """
+        if not self.delete_snapshots_var.get() or not self.current_collection:
+            return
+
+        folder = self.current_collection.source_folder
+        count = self.current_collection.total_count
+        confirmed = messagebox.askyesno(
+            "Delete snapshots?",
+            f"The video was created successfully.\n\n"
+            f"Delete the source snapshots now?\n\n"
+            f"{folder}\n({count} images)\n\n"
+            f"This cannot be undone.",
+            icon="warning",
+            default="no",
+        )
+        if not confirmed:
+            self.log_message("Snapshots kept.")
+            return
+
+        VideoExportController.delete_source_snapshots(folder, self.log_message)
 
     def test_ffmpeg(self):
         """Test FFmpeg installation"""

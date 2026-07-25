@@ -82,6 +82,15 @@ VIDEO_EXPORT_TOOLTIPS = {
         "Automatically opens the video in your default media player after export completes."
     ),
 
+    "delete_snapshots": (
+        "Deletes the source snapshot folder once the video has been created successfully.\n\n"
+        "Applies to every video: scheduled sessions, videos created via the remote API "
+        "(NINA plugin or scripts), and exports started from this tab. Exporting from this "
+        "tab asks for confirmation first; scheduled and remote renders do not, as they run "
+        "unattended.\n\n"
+        "WARNING: This permanently deletes all captured images for that date. Use with caution!"
+    ),
+
     "event_overlay": (
         "Burns session events into the video as captions at the moment they happened "
         "(e.g. 'Autofocus Complete — HFR 2.31 → 1.62'). Events are sent by NINA or "

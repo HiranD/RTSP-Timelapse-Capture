@@ -579,6 +579,39 @@ class VideoExportController:
             if log_callback:
                 log_callback(f"Could not write event CSV: {e}")
 
+    @staticmethod
+    def delete_source_snapshots(folder, log_callback: Optional[Callable[[str], None]] = None) -> bool:
+        """Delete a snapshot folder after its video has been created.
+
+        The single implementation of this, shared by the scheduler, the remote API and
+        the Video Export tab, so a destructive action can't drift between the paths.
+
+        Best-effort by design: the video is the deliverable, so a failed cleanup is
+        logged rather than turned into a failed export. A folder that's already gone
+        counts as success - the caller's intent was "it shouldn't be there".
+
+        Args:
+            folder: snapshot folder to remove.
+            log_callback: optional callable(str) for progress/error messages.
+
+        Returns:
+            True if the folder is gone afterwards.
+        """
+        path = Path(folder)
+        if not path.exists():
+            return True
+        try:
+            if log_callback:
+                log_callback(f"Deleting snapshot folder: {path}")
+            shutil.rmtree(path)
+            if log_callback:
+                log_callback("Snapshot folder deleted")
+            return True
+        except OSError as e:
+            if log_callback:
+                log_callback(f"Failed to delete snapshot folder: {e}")
+            return False
+
     def _cleanup_temp(self, job: ExportJob):
         """Clean up temporary folder"""
         if job.temp_folder and job.temp_folder.exists():

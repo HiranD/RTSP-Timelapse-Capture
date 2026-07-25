@@ -79,6 +79,10 @@ class UIConfig:
     # only durable copy when "delete snapshots after video" is on, since events.jsonl
     # lives inside the snapshot folder that gets removed.
     event_csv: bool = False
+    # Delete the snapshot folder after a video is created from it. Applies to every
+    # render - scheduled, remote-API and the Video Export tab's own button - which is
+    # why it lives here rather than under astro_schedule.
+    delete_snapshots_after_video: bool = False
 
 
 @dataclass
@@ -91,7 +95,8 @@ class AstroScheduleConfig:
     end_offset_minutes: int = 0  # Minutes before darkness ends (can be negative)
     scheduled_dates: List[str] = field(default_factory=list)  # ["2025-12-15", "2025-12-16"]
     auto_create_video: bool = False  # Automatically create video after each night
-    delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
+    # NOTE: delete_snapshots_after_video moved to UIConfig - it governs every render,
+    # not just scheduled ones. from_dict migrates the old key.
     discord_webhook_url: str = ""  # Discord webhook URL for automatic uploads
     discord_max_video_size_mb: int = 8  # Maximum file size to upload to Discord in MB
     discord_export_resolution: str = "original"  # Resolution for Discord export: original/720p/480p/360p
@@ -180,12 +185,21 @@ class ConfigManager:
         if "capture" in config_dict:
             self.capture = CaptureConfig(**_known_fields(CaptureConfig, config_dict["capture"]))
 
-        if "ui" in config_dict:
-            ui_data = dict(config_dict["ui"])
+        # Backward compat: "delete_snapshots_after_video" used to live under
+        # astro_schedule, back when only the scheduler acted on it. Carried over here
+        # rather than inside the "ui" branch below so it also applies to a config that
+        # has an astro_schedule section but no ui section at all. An explicit ui value
+        # always wins; the stale astro_schedule key is dropped on the next save.
+        legacy_delete = config_dict.get("astro_schedule", {}).get("delete_snapshots_after_video")
+
+        if "ui" in config_dict or legacy_delete is not None:
+            ui_data = dict(config_dict.get("ui") or {})
             # Backward compat: "minimize_to_tray_on_startup" was renamed to
             # "minimize_to_tray" (it now also governs the minimize button).
             if "minimize_to_tray_on_startup" in ui_data:
                 ui_data.setdefault("minimize_to_tray", ui_data.pop("minimize_to_tray_on_startup"))
+            if legacy_delete is not None:
+                ui_data.setdefault("delete_snapshots_after_video", legacy_delete)
             self.ui = UIConfig(**_known_fields(UIConfig, ui_data))
 
         if "astro_schedule" in config_dict:

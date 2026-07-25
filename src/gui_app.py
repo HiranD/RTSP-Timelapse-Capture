@@ -1852,8 +1852,9 @@ class RTSPTimelapseGUI:
                 if progress > 0:
                     self.log_message("INFO", f"[Auto Video] {status}: {progress:.0f}%")
 
-            # Check if we should delete snapshots after video creation
-            delete_snapshots = self.config_manager.astro_schedule.delete_snapshots_after_video
+            # Check if we should delete snapshots after video creation. Set on the Video
+            # Export tab - it applies to every render, not just scheduled ones.
+            delete_snapshots = self.config_manager.ui.delete_snapshots_after_video
 
             # Run export (this runs in current thread, called via after() so it's safe)
             def run_export():
@@ -1888,14 +1889,12 @@ class RTSPTimelapseGUI:
                     except Exception as e:
                         self.log_message("WARNING", f"[Auto Video] Could not update capture history: {e}")
 
-                    # Delete snapshot folder if enabled
+                    # Delete snapshot folder if enabled. Unattended path - never prompts;
+                    # the Video Export tab confirms instead, since a human is there.
                     if delete_snapshots:
-                        try:
-                            self.log_message("INFO", f"[Auto Video] Deleting snapshot folder: {date_folder}")
-                            shutil.rmtree(date_folder)
-                            self.log_message("INFO", f"[Auto Video] Snapshot folder deleted successfully")
-                        except Exception as e:
-                            self.log_message("ERROR", f"[Auto Video] Failed to delete snapshot folder: {e}")
+                        VideoExportController.delete_source_snapshots(
+                            date_folder,
+                            lambda m: self.log_message("INFO", f"[Auto Video] {m}"))
                 else:
                     self.log_message("ERROR", f"[Auto Video] Export failed: {result.message}")
 

@@ -337,24 +337,17 @@ class SchedulingPanel(ttk.Frame):
         auto_video_check.pack(side="left")
         ToolTip(auto_video_check, SCHEDULING_TOOLTIPS["auto_video"])
 
-        # Delete snapshots checkbox
-        self.delete_snapshots_var = tk.BooleanVar(value=False)
-        self.delete_snapshots_check = ttk.Checkbutton(
-            row_frame,
-            text="Delete snapshots after",
-            variable=self.delete_snapshots_var,
-            command=self._on_delete_snapshots_toggle
+        # "Delete snapshots after" used to sit here. It moved to the Video Export tab
+        # because it governs every render - scheduled, remote-API and manual - not just
+        # scheduled ones, so a scheduling-only home made it invisible to anyone driving
+        # the app from NINA.
+        hint = ttk.Label(
+            parent,
+            text="Deleting snapshots after the video is made is set on the Video Export tab.",
+            font=("Segoe UI", 8),
+            foreground="gray"
         )
-        self.delete_snapshots_check.pack(side="left", padx=(20, 0))
-        ToolTip(self.delete_snapshots_check,
-            "Automatically delete the snapshot folder after\n"
-            "successfully creating the video.\n\n"
-            "WARNING: This permanently deletes all captured\n"
-            "images for that date. Use with caution!"
-        )
-
-        # Initially disable the delete-snapshots checkbox if auto video is off
-        self._update_video_widgets_state()
+        hint.grid(row=1, column=0, sticky="w", pady=(6, 0))
 
     def _create_log_section(self, parent: ttk.LabelFrame):
         """Create scheduler control and log display"""
@@ -455,7 +448,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
-        self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
 
         # Load scheduled dates into calendar
         if cfg.scheduled_dates:
@@ -468,7 +460,6 @@ class SchedulingPanel(ttk.Frame):
         self._update_twilight_calculator()
         self._update_hemisphere_display()
         self._update_twilight_description()
-        self._update_video_widgets_state()
         self._update_time_mode_widgets()
 
     def _save_to_config(self):
@@ -507,7 +498,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
-        cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
         # Scheduler UI state
@@ -603,11 +593,6 @@ class SchedulingPanel(ttk.Frame):
         desc = descriptions.get(self.twilight_type_var.get(), "")
         self.twilight_desc_label.config(text=desc)
 
-    def _update_video_widgets_state(self):
-        """Enable/disable video widgets based on checkbox"""
-        state = "normal" if self.auto_video_var.get() else "disabled"
-        self.delete_snapshots_check.config(state=state)
-
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""
         is_manual = (self.time_mode_var.get() == "manual")
@@ -662,11 +647,6 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_auto_video_toggle(self):
         """Handle auto video checkbox toggle"""
-        self._update_video_widgets_state()
-        self._save_to_config()
-
-    def _on_delete_snapshots_toggle(self):
-        """Handle delete snapshots checkbox toggle"""
         self._save_to_config()
 
     def _on_scheduler_toggle(self):

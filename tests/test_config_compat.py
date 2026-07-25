@@ -78,6 +78,43 @@ class UnknownKeyToleranceTests(unittest.TestCase):
         self.assertNotIn("force_tcp", saved["camera"])
         self.assertEqual(saved["camera"]["stream_path"], "/s0")
 
+    def test_delete_snapshots_migrates_from_astro_schedule(self):
+        """The key moved to `ui` when it stopped being scheduler-only.
+
+        Anyone upgrading has it under astro_schedule; losing the value would silently
+        turn off deletion for people who had opted into it.
+        """
+        mgr = ConfigManager()
+        mgr.from_dict({
+            "ui": {"window_width": 900},
+            "astro_schedule": {"delete_snapshots_after_video": True},
+        })
+        self.assertTrue(mgr.ui.delete_snapshots_after_video)
+        self.assertEqual(mgr.ui.window_width, 900)
+
+    def test_delete_snapshots_migrates_without_a_ui_section(self):
+        """An older config may have astro_schedule but no ui section at all."""
+        mgr = ConfigManager()
+        mgr.from_dict({"astro_schedule": {"delete_snapshots_after_video": True}})
+        self.assertTrue(mgr.ui.delete_snapshots_after_video)
+
+    def test_explicit_ui_value_wins_over_stale_legacy_key(self):
+        """Once written under `ui`, a leftover astro_schedule key must not override it."""
+        mgr = ConfigManager()
+        mgr.from_dict({
+            "ui": {"delete_snapshots_after_video": False},
+            "astro_schedule": {"delete_snapshots_after_video": True},
+        })
+        self.assertFalse(mgr.ui.delete_snapshots_after_video)
+
+    def test_delete_snapshots_defaults_off_and_legacy_key_is_dropped(self):
+        mgr = ConfigManager()
+        mgr.from_dict({"ui": {}, "astro_schedule": {}})
+        self.assertFalse(mgr.ui.delete_snapshots_after_video)
+        # The stale key disappears from what gets written back.
+        self.assertNotIn("delete_snapshots_after_video", mgr.to_dict()["astro_schedule"])
+        self.assertIn("delete_snapshots_after_video", mgr.to_dict()["ui"])
+
     def test_config_with_utf8_bom_loads(self):
         """A BOM must not wipe the user's settings.
 

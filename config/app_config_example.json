@@ -27,7 +27,6 @@
     "end_offset_minutes": 0,
     "scheduled_dates": [],
     "auto_create_video": false,
-    "delete_snapshots_after_video": false,
     "delete_video_after_discord_upload": false,
     "discord_webhook_url": "",
     "discord_max_video_size_mb": 8,
@@ -49,7 +48,8 @@
     "last_video_export_dir": "",
     "event_overlay": false,
     "event_overlay_seconds": 4.0,
-    "event_csv": false
+    "event_csv": false,
+    "delete_snapshots_after_video": false
   },
   "remote_api": {
     "enabled": false,

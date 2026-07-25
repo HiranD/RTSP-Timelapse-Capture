@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 ## [3.6.0] - 2026-07-25
 
+### Changed
+- **"Delete snapshots after creating video" moved to the Video Export tab, and now applies to every
+  video.** It previously lived on the Scheduling tab but was only honoured by scheduled sessions and
+  by videos created through the remote API — never by the Video Export tab's own Export button. That
+  meant a setting on the scheduling page was silently deleting frames for people driving the app
+  from NINA (who never open that tab, since the scheduler and the remote API are mutually
+  exclusive), while not doing anything for the button most obviously associated with making a video.
+  All three paths now honour it. Exports started from the Video Export tab **ask for confirmation
+  first**; scheduled and remote renders don't, as they run unattended. Your existing setting is
+  migrated automatically.
+
+### Fixed
+- The Video Export tab wrote its "last used output folder" to a stray `camera_config.json` in the
+  working directory instead of the app's real config, so the folder never persisted after a manual
+  export.
+
 ### Added
 - **Session events and event overlays** ([#15](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/15)).
   External programs can now tell the app what happened during the night, and have it show up on the
