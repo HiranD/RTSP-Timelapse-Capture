@@ -26,7 +26,7 @@ too fast - or vanish entirely if their frames were the dropped ones.
 
 import csv
 import os
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from typing import List, Optional, Sequence
 
 from event_log import SessionEvent, read_events  # noqa: F401  (read_events re-exported)
@@ -40,6 +40,7 @@ MAX_VISIBLE = 3
 _MARGIN = 0.030
 _TITLE_SIZE = 0.028
 _DETAIL_SIZE = 0.023
+_TARGET_SIZE = 0.024  # corner label: on every frame, so a touch smaller than a caption title
 _PAD = 0.012
 _LINE_GAP = 0.006
 
@@ -98,13 +99,56 @@ class EventOverlayPlan:
         # Hold duration in OUTPUT frames - see the module docstring.
         hold_frames = max(1, int(round(self.hold_seconds * self.framerate)))
 
+        # Captions flash and expire; the target persists. Splitting them here is what
+        # lets the target be drawn as a standing corner label on every frame instead of
+        # a one-second caption, which badly undersells something that applies to the
+        # whole stretch of footage.
         self.captions: List[Caption] = []
+        self._target_indices: List[int] = []   # source-frame index each target starts at
+        self._target_names: List[str] = []     # index-aligned with _target_indices
+        self._target_captions: List[Caption] = []  # kept for the CSV, never drawn in the stack
+
         for event in sorted(events, key=lambda e: e.time):
             index = self._frame_index_for(event.time)
             if index is None:
                 continue
             start = index // self.speed
+            if (event.category or "").lower() == "target":
+                name = self._target_display_name(event)
+                # Consecutive duplicates would add nothing - the label is unchanged.
+                if name and (not self._target_names or self._target_names[-1] != name):
+                    self._target_indices.append(index)
+                    self._target_names.append(name)
+                    self._target_captions.append(Caption(event, start, start))
+                continue
             self.captions.append(Caption(event, start, start + hold_frames - 1))
+
+    @staticmethod
+    def _target_display_name(event) -> Optional[str]:
+        """Target name for the corner label, without the "Target: " prefix.
+
+        The plugin sends "Target: M31" because that reads correctly as a caption. The
+        corner label has its own context, so the prefix is redundant there.
+        """
+        title = (event.title or "").strip()
+        _, sep, rest = title.partition(":")
+        return (rest.strip() if sep and rest.strip() else title) or None
+
+    def target_at_index(self, source_index: int) -> Optional[str]:
+        """The target in effect on a given source frame, or None before the first one.
+
+        The "state at frame N" lookup the event store was designed around: the last
+        target change at or before this frame wins, so the label persists between
+        changes rather than only appearing on the frame the change landed on.
+
+        Returns None for frames the export drops (speed_multiplier) - same contract
+        as captions_for_index, so callers keep their fast path for frames that will
+        never be rendered anyway.
+        """
+        if not self._target_indices or source_index % self.speed:
+            return None
+        position = bisect_right(self._target_indices, source_index)
+        return self._target_names[position - 1] if position else None
 
     def _frame_index_for(self, when) -> Optional[int]:
         """Source-frame index for an event: the first frame captured at/after it.
@@ -132,8 +176,12 @@ class EventOverlayPlan:
 
     @property
     def is_empty(self) -> bool:
-        """True when no event landed in range - lets the export skip drawing entirely."""
-        return not self.captions
+        """True when nothing landed in range - lets the export skip drawing entirely.
+
+        Targets count: a session whose only events are target changes still has a corner
+        label to draw, and still has rows for the CSV.
+        """
+        return not self.captions and not self._target_captions
 
     def write_csv(self, path) -> int:
         """Write the rendered events to a CSV beside the video (issue #15 item 5).
@@ -141,14 +189,18 @@ class EventOverlayPlan:
         Carries both wall-clock time and the video timecode, which is what makes the
         log usable: it can be lined up against the footage or imported into an editor.
 
+        Includes target changes even though they are drawn as a corner label rather than
+        a caption - the CSV describes the session, not the caption stack.
+
         Returns:
             Number of rows written.
         """
+        rows = sorted(self.captions + self._target_captions, key=lambda c: c.start_ordinal)
         with open(path, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["wall_clock", "video_timecode", "video_seconds",
                              "category", "title", "detail"])
-            for caption in self.captions:
+            for caption in rows:
                 seconds = caption.video_seconds(self.framerate)
                 writer.writerow([
                     caption.event.time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -158,7 +210,7 @@ class EventOverlayPlan:
                     caption.title,
                     caption.detail or "",
                 ])
-        return len(self.captions)
+        return len(rows)
 
 
 def format_timecode(seconds: float) -> str:
@@ -274,6 +326,45 @@ def draw_captions(image, captions: Sequence[Caption]):
 
     # Composite, then paste back in the frame's own mode so the caller's image is
     # genuinely mutated (rebinding a converted copy would silently drop the overlay).
+    composed = Image.alpha_composite(image.convert("RGBA"), layer)
+    image.paste(composed.convert(image.mode), (0, 0))
+    return image
+
+
+def draw_target_label(image, name: Optional[str]):
+    """Draw the current target in the bottom-right corner. No-op when there isn't one.
+
+    Deliberately quieter than the caption stack: it's on every frame for the whole
+    stretch the target applies to, so it reads as a standing label rather than
+    something demanding attention. Same panel styling and height-relative sizing as
+    the captions, so the two read as one system.
+    """
+    if not name:
+        return image
+
+    from PIL import Image, ImageDraw
+
+    width, height = image.size
+    margin = int(height * _MARGIN)
+    pad = int(height * _PAD)
+    font = _load_font(max(10, int(height * _TARGET_SIZE)), bold=True)
+
+    measure = ImageDraw.Draw(image)
+    text_w, text_h = _text_size(measure, name, font)
+
+    panel_w = text_w + pad * 2
+    panel_h = text_h + pad * 2
+    panel_x = max(margin, width - margin - panel_w)
+    panel_y = max(margin, height - margin - panel_h)
+
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
+    layer_draw.rounded_rectangle(
+        [panel_x, panel_y, panel_x + panel_w, panel_y + panel_h],
+        radius=max(4, pad // 2), fill=(0, 0, 0, 140),
+    )
+    layer_draw.text((panel_x + pad, panel_y + pad), name, font=font, fill=(255, 255, 255, 255))
+
     composed = Image.alpha_composite(image.convert("RGBA"), layer)
     image.paste(composed.convert(image.mode), (0, 0))
     return image

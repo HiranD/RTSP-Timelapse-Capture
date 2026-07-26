@@ -59,6 +59,11 @@ All notable changes to this project are documented in this file.
     they describe.
   - **Overlay session events** on the **Video Export** tab burns them into the video as captions at
     the point in the night they happened, holding for a configurable few seconds of finished video.
+  - **The imaging target is drawn as a standing label in the bottom-right corner**, not as a
+    caption. A target applies to a whole stretch of footage rather than a moment, so it persists on
+    every frame until it changes — you can scrub anywhere and see what was being imaged. Target
+    events still appear in the events CSV. Note that a session with a target means every frame is
+    re-encoded during export, since the label is on all of them.
   - **Write events CSV** (also on the Video Export tab, and independent of the overlay) writes a
     **`<video-name>.events.csv`** next to the rendered video, with both the wall-clock time and the
     video timecode of each event — so a session can be lined up against the footage or imported

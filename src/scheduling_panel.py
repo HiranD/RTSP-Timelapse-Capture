@@ -335,19 +335,10 @@ class SchedulingPanel(ttk.Frame):
             command=self._on_auto_video_toggle
         )
         auto_video_check.pack(side="left")
-        ToolTip(auto_video_check, SCHEDULING_TOOLTIPS["auto_video"])
-
-        # "Delete snapshots after" used to sit here. It moved to the Video Export tab
+        # "Delete snapshots after" used to sit here. It lives on the Video Export tab
         # because it governs every render - scheduled, remote-API and manual - not just
-        # scheduled ones, so a scheduling-only home made it invisible to anyone driving
-        # the app from NINA.
-        hint = ttk.Label(
-            parent,
-            text="Deleting snapshots after the video is made is set on the Video Export tab.",
-            font=("Segoe UI", 8),
-            foreground="gray"
-        )
-        hint.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        # scheduled ones; the tooltip points there so this tab doesn't need a caption.
+        ToolTip(auto_video_check, SCHEDULING_TOOLTIPS["auto_video"])
 
     def _create_log_section(self, parent: ttk.LabelFrame):
         """Create scheduler control and log display"""

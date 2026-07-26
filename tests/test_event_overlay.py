@@ -20,7 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from event_log import EVENTS_FILENAME, SessionEvent  # noqa: E402
 from event_overlay import (  # noqa: E402
-    MAX_VISIBLE, EventOverlayPlan, build_plan, draw_captions, format_timecode,
+    MAX_VISIBLE, EventOverlayPlan, build_plan, draw_captions, draw_target_label,
+    format_timecode,
 )
 
 T0 = datetime(2026, 7, 25, 22, 0, 0)
@@ -167,6 +168,126 @@ class OverlapTests(unittest.TestCase):
         visible = [c.title for c in plan.captions_for_index(40)]
         self.assertEqual(len(visible), MAX_VISIBLE)
         self.assertEqual(visible[-1], f"Event {MAX_VISIBLE + 1}")
+
+
+class TargetLabelTests(unittest.TestCase):
+    """The target is state, not a moment: a standing corner label, not a caption."""
+
+    def _plan(self, *targets, extra=()):
+        events = [event(m, t, category="target") for m, t in targets] + list(extra)
+        return EventOverlayPlan(events, frames(300), framerate=24, hold_seconds=4.0)
+
+    def test_none_before_the_first_target(self):
+        plan = self._plan((5, "Target: M31"))
+        self.assertIsNone(plan.target_at_index(9))
+        self.assertEqual(plan.target_at_index(10), "M31")
+
+    def test_persists_long_after_the_change(self):
+        """The whole point of a label over a caption - it doesn't expire."""
+        plan = self._plan((5, "Target: M31"))
+        self.assertEqual(plan.target_at_index(299), "M31")
+
+    def test_switches_at_the_right_frame(self):
+        plan = self._plan((5, "Target: M31"), (50, "Target: NGC 7000"))
+        self.assertEqual(plan.target_at_index(99), "M31")
+        self.assertEqual(plan.target_at_index(100), "NGC 7000")
+
+    def test_prefix_stripped_for_the_label(self):
+        """The plugin sends "Target: X" because that reads as a caption; the corner
+        label has its own context, so the prefix would be redundant."""
+        self.assertEqual(self._plan((5, "Target: G069.0+02.7")).target_at_index(10),
+                         "G069.0+02.7")
+
+    def test_name_without_a_prefix_survives(self):
+        self.assertEqual(self._plan((5, "M31")).target_at_index(10), "M31")
+
+    def test_consecutive_duplicates_collapse(self):
+        plan = self._plan((5, "Target: M31"), (10, "Target: M31"))
+        self.assertEqual(len(plan._target_names), 1)
+
+    def test_targets_are_not_in_the_caption_stack(self):
+        plan = self._plan((5, "Target: M31"), extra=[event(5, "Autofocus Complete")])
+        titles = [c.title for c in plan.captions_for_index(10)]
+        self.assertEqual(titles, ["Autofocus Complete"])
+
+    def test_target_only_session_is_not_empty(self):
+        """Otherwise the export would skip drawing and the label would never appear."""
+        plan = self._plan((5, "Target: M31"))
+        self.assertFalse(plan.is_empty)
+
+    def test_targets_still_reach_the_csv(self):
+        """Moving out of the caption stack must not drop them from the session log."""
+        plan = self._plan((5, "Target: M31"), extra=[event(6, "Meridian Flip")])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.events.csv"
+            self.assertEqual(plan.write_csv(path), 2)
+            with open(path, encoding="utf-8", newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([r["title"] for r in rows], ["Target: M31", "Meridian Flip"])
+        self.assertEqual(rows[0]["category"], "target")
+
+    def test_no_targets_at_all(self):
+        plan = EventOverlayPlan([event(5, "Autofocus Complete")], frames(300), framerate=24)
+        self.assertIsNone(plan.target_at_index(10))
+
+    def test_dropped_frames_get_no_label(self):
+        """Frames the select filter discards must keep the plain-copy fast path -
+        drawing on them would re-encode frames that never reach the video."""
+        plan = EventOverlayPlan([event(5, "Target: M31", category="target")],
+                                frames(300), framerate=24, speed_multiplier=2)
+        self.assertEqual(plan.target_at_index(10), "M31")
+        self.assertIsNone(plan.target_at_index(11))
+        self.assertEqual(plan.target_at_index(12), "M31")
+
+
+class TargetDrawingTests(unittest.TestCase):
+    def test_draws_bottom_right_and_mutates(self):
+        from PIL import Image
+
+        image = Image.new("RGB", (1280, 720), (20, 30, 50))
+        before = image.tobytes()
+        draw_target_label(image, "G069.0+02.7")
+        self.assertNotEqual(image.tobytes(), before)
+
+        # Bottom-right: the lower-right quadrant must change, the upper-left must not.
+        w, h = image.size
+        self.assertNotEqual(image.crop((w // 2, h // 2, w, h)).tobytes(),
+                            Image.new("RGB", (w // 2, h // 2), (20, 30, 50)).tobytes())
+        self.assertEqual(image.crop((0, 0, w // 2, h // 2)).tobytes(),
+                         Image.new("RGB", (w // 2, h // 2), (20, 30, 50)).tobytes())
+
+    def test_no_target_is_a_no_op(self):
+        from PIL import Image
+
+        image = Image.new("RGB", (640, 360), (20, 30, 50))
+        before = image.tobytes()
+        draw_target_label(image, None)
+        draw_target_label(image, "")
+        self.assertEqual(image.tobytes(), before)
+
+    def test_scales_across_frame_sizes(self):
+        from PIL import Image
+
+        for size in ((320, 180), (1920, 1080), (3840, 2160)):
+            image = Image.new("RGB", size, (20, 30, 50))
+            before = image.tobytes()
+            draw_target_label(image, "M31")
+            self.assertNotEqual(image.tobytes(), before, f"nothing drawn at {size}")
+
+    def test_coexists_with_captions(self):
+        """Both are drawn on the same frame without one wiping the other."""
+        from PIL import Image
+
+        plan = EventOverlayPlan(
+            [event(5, "Target: M31", category="target"),
+             event(5, "Autofocus Complete", "HFR 2.31 -> 1.62", "autofocus")],
+            frames(300), framerate=24, hold_seconds=4.0,
+        )
+        image = Image.new("RGB", (1280, 720), (20, 30, 50))
+        draw_captions(image, plan.captions_for_index(10))
+        after_captions = image.tobytes()
+        draw_target_label(image, plan.target_at_index(10))
+        self.assertNotEqual(image.tobytes(), after_captions)
 
 
 class TimecodeAndCsvTests(unittest.TestCase):

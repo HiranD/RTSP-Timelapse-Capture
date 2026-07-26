@@ -16,7 +16,7 @@ import re
 
 from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
 from preset_manager import VideoExportSettings
-from event_overlay import build_plan, draw_captions
+from event_overlay import build_plan, draw_captions, draw_target_label
 from event_log import EVENTS_FILENAME
 
 
@@ -595,11 +595,13 @@ class VideoExportController:
 
                 dst_image = job.temp_folder / f"{i:06d}.jpg"
 
-                # Frames with no visible caption take the plain copy path - on a typical
-                # night most frames have none, so this keeps the common case cheap.
+                # Frames with nothing to draw take the plain copy path. Note that a
+                # session with a target loses that fast path: the corner label is on
+                # every frame by definition, so every frame gets re-encoded.
                 captions = plan.captions_for_index(i) if plan else None
-                if captions:
-                    self._copy_with_captions(src_image, dst_image, captions)
+                target = plan.target_at_index(i) if plan else None
+                if captions or target:
+                    self._copy_with_captions(src_image, dst_image, captions, target)
                     drawn += 1
                 else:
                     shutil.copy2(src_image, dst_image)
@@ -619,8 +621,8 @@ class VideoExportController:
         except Exception as e:
             return False, f"Error preparing images: {str(e)}"
 
-    def _copy_with_captions(self, src_image: Path, dst_image: Path, captions):
-        """Write a copy of `src_image` with event captions burned in.
+    def _copy_with_captions(self, src_image: Path, dst_image: Path, captions, target=None):
+        """Write a copy of `src_image` with event captions and/or the target label burned in.
 
         Falls back to a plain copy if the image can't be opened or drawn on: a frame
         without its caption is a far better outcome than a failed export.
@@ -631,7 +633,9 @@ class VideoExportController:
             with Image.open(src_image) as img:
                 img.load()
                 frame = img.convert("RGB") if img.mode != "RGB" else img.copy()
-            draw_captions(frame, captions)
+            if captions:
+                draw_captions(frame, captions)
+            draw_target_label(frame, target)
             # JPEG quality here is intentionally high and independent of the CRF
             # setting - this is an intermediate that FFmpeg re-encodes, so the only
             # goal is not to add visible loss before it gets there.
