@@ -230,6 +230,15 @@ class TargetLabelTests(unittest.TestCase):
         plan = EventOverlayPlan([event(5, "Autofocus Complete")], frames(300), framerate=24)
         self.assertIsNone(plan.target_at_index(10))
 
+    def test_dropped_frames_get_no_label(self):
+        """Frames the select filter discards must keep the plain-copy fast path -
+        drawing on them would re-encode frames that never reach the video."""
+        plan = EventOverlayPlan([event(5, "Target: M31", category="target")],
+                                frames(300), framerate=24, speed_multiplier=2)
+        self.assertEqual(plan.target_at_index(10), "M31")
+        self.assertIsNone(plan.target_at_index(11))
+        self.assertEqual(plan.target_at_index(12), "M31")
+
 
 class TargetDrawingTests(unittest.TestCase):
     def test_draws_bottom_right_and_mutates(self):

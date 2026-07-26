@@ -139,8 +139,12 @@ class EventOverlayPlan:
         The "state at frame N" lookup the event store was designed around: the last
         target change at or before this frame wins, so the label persists between
         changes rather than only appearing on the frame the change landed on.
+
+        Returns None for frames the export drops (speed_multiplier) - same contract
+        as captions_for_index, so callers keep their fast path for frames that will
+        never be rendered anyway.
         """
-        if not self._target_indices:
+        if not self._target_indices or source_index % self.speed:
             return None
         position = bisect_right(self._target_indices, source_index)
         return self._target_names[position - 1] if position else None
