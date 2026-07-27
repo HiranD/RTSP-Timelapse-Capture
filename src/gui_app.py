@@ -732,11 +732,21 @@ class RTSPTimelapseGUI:
         self.start_stop_btn.pack(fill=tk.X, pady=5)
         self.start_stop_tooltip = ToolTip(self.start_stop_btn, CAPTURE_TOOLTIPS["start_capture"])
 
-        # Status indicator
-        self.status_indicator = tk.Canvas(control_frame, height=30, bg="white")
-        self.status_indicator.pack(fill=tk.X, pady=10)
-        self.indicator_circle = self.status_indicator.create_oval(10, 5, 30, 25, fill="gray", outline="darkgray")
-        self.indicator_text = self.status_indicator.create_text(40, 15, anchor=tk.W, text="Ready", font=("Arial", 10))
+        # Status indicator: a dot-sized canvas + label, centered under the buttons.
+        # The canvas is only as big as the dot and takes the theme background, so it
+        # reads as a status line rather than a stray white strip.
+        indicator_frame = ttk.Frame(control_frame)
+        indicator_frame.pack(pady=10)  # pack without fill centers it under the buttons
+        # The vista theme often returns "" from Style().lookup - fall back to the
+        # Windows default face color.
+        bg = ttk.Style().lookup("TLabelframe", "background") or "SystemButtonFace"
+        self.status_indicator = tk.Canvas(indicator_frame, width=20, height=20, bg=bg,
+                                          highlightthickness=0, borderwidth=0)
+        self.status_indicator.pack(side="left")
+        self.indicator_circle = self.status_indicator.create_oval(2, 2, 18, 18,
+                                                                  fill="gray", outline="darkgray")
+        self.indicator_label = ttk.Label(indicator_frame, text="Ready", font=("Arial", 10))
+        self.indicator_label.pack(side="left", padx=(8, 0))
 
     def create_log_panel(self, parent):
         """Create activity log panel"""
@@ -1618,7 +1628,8 @@ class RTSPTimelapseGUI:
 
     def update_status_from_engine(self, state: CaptureState, stats: dict):
         """Update status display from engine stats"""
-        # Update state
+        # Update state - one color map drives both the Status panel's state label
+        # and the Controls panel's dot.
         state_text = state.value
         state_colors = {
             "Stopped": "gray",
@@ -1627,24 +1638,12 @@ class RTSPTimelapseGUI:
             "Paused": "blue",
             "Error": "red"
         }
-        self.state_label.configure(
-            text=state_text,
-            foreground=state_colors.get(state_text, "gray")
-        )
+        state_color = state_colors.get(state_text, "gray")
+        self.state_label.configure(text=state_text, foreground=state_color)
 
         # Update indicator
-        indicator_colors = {
-            "Stopped": "gray",
-            "Starting": "orange",
-            "Running": "green",
-            "Paused": "blue",
-            "Error": "red"
-        }
-        self.status_indicator.itemconfig(
-            self.indicator_circle,
-            fill=indicator_colors.get(state_text, "gray")
-        )
-        self.status_indicator.itemconfig(self.indicator_text, text=state_text)
+        self.status_indicator.itemconfig(self.indicator_circle, fill=state_color)
+        self.indicator_label.configure(text=state_text)
 
         # Update connection status
         if state == CaptureState.RUNNING:
