@@ -26,6 +26,7 @@ def _fake_gui(**overrides):
     g.is_capturing = False
     g.start_capture.return_value = (True, None)
     g._start_remote_video.return_value = (True, "ok", 202, "20260625")
+    g._sched_pending = None  # mirrors __init__ - MagicMock auto-attrs are truthy
     for key, value in overrides.items():
         setattr(g, key, value)
     return g
@@ -133,7 +134,9 @@ class RemoteStartCaptureTests(unittest.TestCase):
 
 
 class NaturalStopTests(unittest.TestCase):
-    """A natural/automatic stop (disconnect, error, end_dt) must cancel a pending auto-stop."""
+    """A natural/automatic stop (error, end_dt) must cancel a pending auto-stop's
+    timer - but honour its render, so a mid-night outage can't lose the video
+    (the 2026-07-27 regression)."""
 
     def test_natural_stop_cancels_scheduled_timer(self):
         g = _fake_gui(is_capturing=True)
@@ -141,6 +144,56 @@ class NaturalStopTests(unittest.TestCase):
             g, CaptureState.ERROR, {"frame_count": 3, "uptime_seconds": 42})
         g._cancel_scheduled_stop.assert_called_once()
         self.assertFalse(g.is_capturing)
+        g._start_remote_video.assert_not_called()  # nothing was pending
+
+    def test_natural_stop_fires_pending_render(self):
+        g = _fake_gui(is_capturing=True, _sched_pending=(True, "20260727-210000"))
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.STOPPED, {"frame_count": 42, "uptime_seconds": 999})
+        g._cancel_scheduled_stop.assert_called_once()
+        g._start_remote_video.assert_called_once_with(None, "20260727-210000")
+
+    def test_natural_stop_no_render_when_create_video_false(self):
+        g = _fake_gui(is_capturing=True, _sched_pending=(False, "20260727-210000"))
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.ERROR, {"frame_count": 42, "uptime_seconds": 999})
+        g._cancel_scheduled_stop.assert_called_once()
+        g._start_remote_video.assert_not_called()
+
+    def test_pending_read_before_cancel_clears_it(self):
+        # The real _cancel_scheduled_stop clears _sched_pending; the natural-stop
+        # path must read it first or the render is lost.
+        g = _fake_gui(is_capturing=True, _sched_pending=(True, "20260727-210000"))
+        g._cancel_scheduled_stop.side_effect = lambda: setattr(g, "_sched_pending", None)
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.ERROR, {"frame_count": 42, "uptime_seconds": 999})
+        g._start_remote_video.assert_called_once_with(None, "20260727-210000")
+
+
+class SchedPendingLifecycleTests(unittest.TestCase):
+    """The real methods must arm, consume, and clear _sched_pending."""
+
+    def test_schedule_auto_stop_arms_pending(self):
+        g = _fake_gui()
+        far = datetime.now() + timedelta(hours=6)
+        RTSPTimelapseGUI._schedule_auto_stop(g, far, True, "20260727-210000")
+        self.assertEqual(g._sched_pending, (True, "20260727-210000"))
+        g._sched_cancel.set()  # release the real daemon waiter thread
+
+    def test_cancel_clears_pending(self):
+        g = _fake_gui(_sched_pending=(True, "20260727-210000"),
+                      _sched_cancel=threading.Event())
+        RTSPTimelapseGUI._cancel_scheduled_stop(g)
+        self.assertIsNone(g._sched_pending)
+
+    def test_fired_stop_consumes_pending(self):
+        # The timer consuming its own stop must clear pending, or the engine's
+        # STOPPED callback that follows would render a second time.
+        cancel = threading.Event()
+        g = _fake_gui(is_capturing=True, _sched_cancel=cancel,
+                      _sched_pending=(True, "20260727-210000"))
+        RTSPTimelapseGUI._do_scheduled_stop(g, cancel, True, "20260727-210000")
+        self.assertIsNone(g._sched_pending)
 
 
 class RemoteVideoControllerReuseTests(unittest.TestCase):

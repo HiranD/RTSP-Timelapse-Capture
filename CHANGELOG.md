@@ -21,6 +21,16 @@ All notable changes to this project are documented in this file.
   are no longer swept into — or deleted with — the night's video.
 
 ### Fixed
+- **A camera outage no longer ends the session.** Capture used to give up after 3 quick reconnect
+  attempts (~4 seconds) and stop with an error — a brief stream failure could silently end an
+  overnight session hours early. The engine now keeps retrying with escalating backoff (5s up to
+  2 minutes between attempts, shown as an orange "Reconnecting" status) until capture is stopped
+  or the schedule window ends. A camera that is down when the session *starts* is retried the
+  same way instead of failing after the first few attempts.
+- **A scheduled stop's "create video" now survives capture ending early.** If the session stops
+  on its own (outage, window end, error) while a `/capture/schedule` stop with `create_video` is
+  pending, the session is rendered immediately — previously the render was cancelled along with
+  the stop timer, so a mid-night failure produced no video at all.
 - **"Delete snapshots after creating video" now deletes exactly the frames that went into the
   video**, not the whole date folder. Previously a `since`-filtered render (one session among
   several sharing a folder) deleted the entire folder, destroying frames that were never in any

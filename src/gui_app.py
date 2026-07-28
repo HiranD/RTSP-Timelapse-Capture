@@ -115,6 +115,10 @@ class RTSPTimelapseGUI:
         # App-owned timer for a scheduled (/capture/schedule) auto-stop.
         self._sched_cancel = None
         self._sched_thread = None
+        # (create_video, since) while a scheduled stop is armed, else None. Kept
+        # outside the waiter closure so a natural stop (camera outage, window
+        # end) can still honour the render instead of losing it with the timer.
+        self._sched_pending = None
         self.tray_icon = None
         self.pystray = None
         self._pystray_available = None
@@ -1434,6 +1438,7 @@ class RTSPTimelapseGUI:
         self._cancel_scheduled_stop()
         cancel = threading.Event()
         self._sched_cancel = cancel
+        self._sched_pending = (create_video, since)
 
         def _waiter():
             delay = (stop_at_dt - datetime.now()).total_seconds()
@@ -1453,6 +1458,9 @@ class RTSPTimelapseGUI:
             return
         self._sched_cancel = None
         self._sched_thread = None
+        # This timer is consuming its own pending stop - the engine-STOPPED
+        # callback that follows stop_capture() must not render a second time.
+        self._sched_pending = None
         if self.is_capturing:
             self.stop_capture()
         if create_video:
@@ -1468,6 +1476,7 @@ class RTSPTimelapseGUI:
             self._sched_cancel.set()
         self._sched_cancel = None
         self._sched_thread = None
+        self._sched_pending = None
 
     def _event_dir(self):
         """Current session's snapshot folder, for the event log (called off the Tk thread).
@@ -1633,9 +1642,10 @@ class RTSPTimelapseGUI:
         state_text = state.value
         state_colors = {
             "Stopped": "gray",
-            "Starting": "orange",
+            "Starting...": "orange",
             "Running": "green",
-            "Paused": "blue",
+            "Reconnecting": "orange",
+            "Stopping...": "gray",
             "Error": "red"
         }
         state_color = state_colors.get(state_text, "gray")
@@ -1648,6 +1658,8 @@ class RTSPTimelapseGUI:
         # Update connection status
         if state == CaptureState.RUNNING:
             self.connection_label.configure(text="Connected", foreground="green")
+        elif state == CaptureState.RECONNECTING:
+            self.connection_label.configure(text="Reconnecting...", foreground="orange")
         elif state == CaptureState.ERROR:
             self.connection_label.configure(text="Error", foreground="red")
         elif state == CaptureState.STARTING:
@@ -1657,19 +1669,30 @@ class RTSPTimelapseGUI:
 
         # Handle automatic stop when capture ends naturally (reached end time or error)
         if (state == CaptureState.STOPPED or state == CaptureState.ERROR) and self.is_capturing:
-            # Clean up GUI state. A natural/automatic stop (end_dt, disconnect, error) also
-            # cancels any pending /capture/schedule auto-stop, so a stale timer can't later
-            # stop a manually-restarted session or render with the old 'since'.
+            # Clean up GUI state. A natural/automatic stop (end_dt, error) also cancels
+            # any pending /capture/schedule auto-stop, so a stale timer can't later
+            # stop a manually-restarted session or render with the old 'since' - but
+            # the render the schedule promised is honoured below, not lost with it.
+            pending = self._sched_pending  # before _cancel_scheduled_stop() clears it
             self._cancel_scheduled_stop()
             self.is_capturing = False
-            # Capture ended on its own (end time, disconnect, error) - close the event
-            # log here too, or events would keep being accepted with no frames arriving.
+            # Capture ended on its own (end time, error) - close the event log here
+            # too, or events would keep being accepted with no frames arriving.
             self.event_log.end_session()
             self.start_stop_btn.configure(text="Start Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
             # Re-enable config inputs
             self.set_config_inputs_state(tk.NORMAL)
             self._apply_start_mode_ui()
+            # A scheduled stop with create_video was pending: render what was
+            # captured now rather than never (the 2026-07-27 outage lost a whole
+            # night's video this way). After teardown, so events.jsonl is closed.
+            if pending:
+                create_video, since = pending
+                if create_video:
+                    self.log_message("INFO", "[Scheduled] Capture ended before the scheduled stop - rendering the session now")
+                    ok, message, _code, _resolved = self._start_remote_video(None, since)
+                    self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
 
         # Update stats
         self.frames_label.configure(text=str(stats.get('frame_count', 0)))

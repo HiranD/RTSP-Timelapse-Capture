@@ -54,6 +54,10 @@ import numpy as np
 # Used when the camera's stream path is left blank in the configuration.
 DEFAULT_STREAM_PATH = "/stream1"
 
+# Escalating waits between reconnect attempts during an outage; the last value
+# repeats. Module-level so tests can patch it down to milliseconds.
+_RECONNECT_BACKOFF = (5, 10, 30, 60, 120)
+
 
 class RTSPBufferlessCapture:
     """
@@ -157,6 +161,7 @@ class CaptureState(Enum):
     STOPPED = "Stopped"
     STARTING = "Starting..."
     RUNNING = "Running"
+    RECONNECTING = "Reconnecting"
     STOPPING = "Stopping..."
     ERROR = "Error"
 
@@ -335,21 +340,12 @@ class CaptureEngine:
                 self._update_state(CaptureState.STOPPED)
                 return
 
-            # Connect to camera
             url = self._build_rtsp_url()
-            self.cap = self._open_capture(url)
 
-            if not self.cap:
-                self._log("ERROR", "Failed to connect to camera after retries")
-                self._update_state(CaptureState.ERROR)
-                return
-
-            self.connection_start_time = datetime.now()
-            self._log("INFO", "Connected to RTSP stream successfully")
-            self._update_state(CaptureState.RUNNING)
-
-            # Calculate end time for overnight schedules. In remote-control mode
-            # there is no schedule end - run until explicitly stopped.
+            # End time BEFORE the first connect: a camera that is down at
+            # session start is retried until the window ends, not just
+            # max_retries times. In remote-control mode there is no schedule
+            # end - run until explicitly stopped.
             if self.config["schedule"].get("ignore_window"):
                 end_dt = datetime.max
                 self._log("INFO", "Capture will run until stopped (remote control)")
@@ -357,60 +353,65 @@ class CaptureEngine:
                 end_dt = self._calculate_end_time()
                 self._log("INFO", f"Capture will run until {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
+            # Initial connect: a quick burst of max_retries attempts, then keep
+            # trying with backoff rather than declaring the night lost.
+            self.cap = self._open_capture(url)
+            if self.cap:
+                self.connection_start_time = datetime.now()
+                self._log("INFO", "Connected to RTSP stream successfully")
+                self._update_state(CaptureState.RUNNING)
+            elif not self.stop_event.is_set():
+                # No early return: on False the while condition below is already
+                # false for both causes (stop, window end) and the normal exit
+                # path runs.
+                self._reconnect_until(url, end_dt)
+
             # Main capture loop
             while not self.stop_event.is_set() and datetime.now() < end_dt:
                 loop_start = time.time()
 
-                # Check for proactive reconnection to avoid camera timeout
+                # Proactive reconnection to avoid camera timeout - a planned
+                # cycle, not an outage; skips this cycle's frame.
                 proactive_reconnect = self.config["capture"].get("proactive_reconnect_seconds", 0)
-                if proactive_reconnect > 0 and self.connection_start_time:
-                    uptime = (datetime.now() - self.connection_start_time).total_seconds()
-                    if uptime >= proactive_reconnect:
-                        # Reconnect method will log the details
-                        if not self._reconnect(url):
-                            self._update_state(CaptureState.ERROR)
-                            break
-                        # Don't capture this cycle - reconnection takes time
-                        # Sleep for remaining interval and continue to next cycle
-                        elapsed = time.time() - loop_start
-                        interval = self.config["capture"]["interval_seconds"]
-                        remain = interval - elapsed
-                        if remain > 0:
-                            if self.stop_event.wait(timeout=remain):
-                                break
-                        continue
-
-                try:
-                    frame, stream_timestamp = self._grab_frame()
-
-                    # Save frame with stream timestamp if available
-                    filepath = self._save_frame(frame, stream_timestamp)
-                    self.frame_count += 1
-
-                    # Log saved frame
-                    self._log("INFO", f"Saved frame {self.frame_count}: {os.path.basename(filepath)}")
-
-                    # Send frame to preview callback
-                    if self.frame_callback:
-                        self.frame_callback(frame.copy())
-
-                    # Update status
-                    self._notify_status()
-
-                except Exception as ex:
-                    self._log("ERROR", f"Frame capture error: {ex}")
-                    self.last_error = str(ex)
-                    self.failed_frame_count += 1
-
-                    # Update status to reflect failed frame
-                    self._notify_status()
-
-                    # Try to reconnect
+                if proactive_reconnect > 0 and self.connection_start_time and \
+                        (datetime.now() - self.connection_start_time).total_seconds() >= proactive_reconnect:
+                    self._log("INFO", f"Scheduled reconnection (interval: {proactive_reconnect}s)")
                     if not self._reconnect(url):
-                        self._update_state(CaptureState.ERROR)
-                        break
+                        # The planned cycle found the camera down - now it IS an
+                        # outage. Keep trying until stop or window end.
+                        if not self._reconnect_until(url, end_dt):
+                            break  # stopped or window end - clean exit, never ERROR
+                    # Fall through to the shared interval sleep.
+                else:
+                    try:
+                        frame, stream_timestamp = self._grab_frame()
 
-                    continue
+                        # Save frame with stream timestamp if available
+                        filepath = self._save_frame(frame, stream_timestamp)
+                        self.frame_count += 1
+
+                        # Log saved frame
+                        self._log("INFO", f"Saved frame {self.frame_count}: {os.path.basename(filepath)}")
+
+                        # Send frame to preview callback
+                        if self.frame_callback:
+                            self.frame_callback(frame.copy())
+
+                        # Update status
+                        self._notify_status()
+
+                    except Exception as ex:
+                        self._log("ERROR", f"Frame capture error: {ex}")
+                        self.last_error = str(ex)
+                        self.failed_frame_count += 1
+
+                        # Update status to reflect failed frame
+                        self._notify_status()
+
+                        if not self._reconnect_until(url, end_dt):
+                            break  # stopped or window end - clean exit, never ERROR
+
+                        continue  # reconnected - grab a frame immediately
 
                 # Sleep for the remaining interval time
                 elapsed = time.time() - loop_start
@@ -526,7 +527,8 @@ class CaptureEngine:
         import re
         return re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', url)
 
-    def _open_capture(self, url: str, retries: int = None) -> Optional[RTSPBufferlessCapture]:
+    def _open_capture(self, url: str, retries: int = None,
+                      quiet: bool = False) -> Optional[RTSPBufferlessCapture]:
         """
         Open RTSP stream with retries and optimized settings for Annke cameras.
         Uses multi-threaded bufferless capture to minimize timestamp drift.
@@ -534,80 +536,122 @@ class CaptureEngine:
         Args:
             url: RTSP URL
             retries: Number of retry attempts (from config if None)
+            quiet: Suppress per-attempt logging - _reconnect_until calls this
+                every backoff cycle and owns the log cadence itself.
 
         Returns:
-            RTSPBufferlessCapture object or None on failure
+            RTSPBufferlessCapture object or None on failure (or stop requested -
+            callers that need to tell the two apart re-check stop_event).
         """
         if retries is None:
             retries = self.config["capture"]["max_retries"]
 
-        # Log the actual target - a wrong stream path is otherwise invisible (issue #16)
-        self._log("INFO", f"Opening stream {self._sanitize_url(url)}")
+        if not quiet:
+            # Log the actual target - a wrong stream path is otherwise invisible (issue #16)
+            self._log("INFO", f"Opening stream {self._sanitize_url(url)}")
 
         for attempt in range(1, retries + 1):
             if self.stop_event.is_set():
                 return None
 
-            self._log("INFO", f"Connection attempt {attempt}/{retries}...")
+            if not quiet:
+                self._log("INFO", f"Connection attempt {attempt}/{retries}...")
 
             # Create multi-threaded bufferless capture
             buffer_frames = self.config["capture"].get("buffer_frames", 1)
             cap = RTSPBufferlessCapture(url, buffer_size=buffer_frames)
 
             if cap.isOpened():
-                self._log("INFO", f"Connection successful - Multi-threaded bufferless mode (buffer: {buffer_frames} frame)")
+                if not quiet:
+                    self._log("INFO", f"Connection successful - Multi-threaded bufferless mode (buffer: {buffer_frames} frame)")
                 return cap
 
             cap.release()
 
             if attempt < retries:
-                self._log("WARNING", f"Connection failed, retrying in 2s...")
+                if not quiet:
+                    self._log("WARNING", f"Connection failed, retrying in 2s...")
                 if self.stop_event.wait(timeout=2.0):
                     return None
 
         return None
 
     def _reconnect(self, url: str) -> bool:
+        """One planned connection cycle (proactive reconnect).
+
+        Not an outage, so no disconnect bookkeeping - disconnect_count counts
+        real outages only. On False the caller escalates to _reconnect_until().
         """
-        Attempt to reconnect to RTSP stream with connection stability tracking.
-
-        Returns:
-            True if reconnected, False otherwise
-        """
-        # Track disconnect event
-        now = datetime.now()
-        self.disconnect_count += 1
-
-        # Log connection uptime if we know when it started
-        uptime_msg = ""
-        if self.connection_start_time:
-            uptime = (now - self.connection_start_time).total_seconds()
-            uptime_msg = f" (was connected for {int(uptime)}s)"
-
-        self._log("INFO", f"Scheduled reconnection (uptime: {int(uptime)}s, interval: {self.config['capture'].get('proactive_reconnect_seconds', 300)}s)")
-        self._log("INFO", f"Re-establishing connection... (reconnect #{self.disconnect_count})")
-
-        # Track time between disconnects for pattern analysis
-        if self.last_disconnect_time:
-            time_since_last = (now - self.last_disconnect_time).total_seconds()
-            if time_since_last < 60:  # Less than 1 minute between disconnects
-                self._log("WARNING", f"Frequent disconnects detected ({int(time_since_last)}s since last)")
-
-        self.last_disconnect_time = now
-
-        # Release old connection
         if self.cap:
             self.cap.release()
             self.cap = None
 
-        # Attempt reconnection with more retries for Annke cameras
-        self.cap = self._open_capture(url, retries=3)
-
+        self.cap = self._open_capture(url, retries=1)
         if self.cap is not None:
             self.connection_start_time = datetime.now()
             return True
+        return False
+
+    def _reconnect_until(self, url: str, end_dt: datetime) -> bool:
+        """Reconnect with escalating backoff until success, stop, or window end.
+
+        This is what keeps an unattended night alive: a camera that reboots or a
+        network that drops for minutes must not end the session - giving up
+        after a few quick attempts once cost six hours of footage (2026-07-27).
+
+        Returns:
+            True with self.cap set and state RUNNING; False when ended by
+            stop_event or end_dt - callers treat both as a normal exit and
+            must NEVER turn this into CaptureState.ERROR.
+        """
+        # Outage bookkeeping - once per outage, not once per attempt, so the
+        # disconnect counters and "frequent disconnects" warning stay honest.
+        now = datetime.now()
+        self.disconnect_count += 1
+        if self.connection_start_time is not None:
+            uptime = int((now - self.connection_start_time).total_seconds())
+            self._log("WARNING", f"Connection lost after {uptime}s - reconnecting (outage #{self.disconnect_count})")
         else:
-            return False
+            self._log("WARNING", f"Camera unreachable - retrying (outage #{self.disconnect_count})")
+
+        if self.last_disconnect_time:
+            time_since_last = (now - self.last_disconnect_time).total_seconds()
+            if time_since_last < 60:  # Less than 1 minute between disconnects
+                self._log("WARNING", f"Frequent disconnects detected ({int(time_since_last)}s since last)")
+        self.last_disconnect_time = now
+
+        # Visible over /status while the retry loop runs.
+        self.last_error = "Camera unreachable - reconnecting"
+
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+
+        self._update_state(CaptureState.RECONNECTING)
+
+        attempt = 0
+        while not self.stop_event.is_set() and datetime.now() < end_dt:
+            attempt += 1
+            cap = self._open_capture(url, retries=1, quiet=True)
+            if cap is not None:
+                self.cap = cap
+                # Reset, or the proactive-reconnect check would fire immediately
+                # after a long outage.
+                self.connection_start_time = datetime.now()
+                outage = int((self.connection_start_time - now).total_seconds())
+                self._log("INFO", f"Reconnected after {attempt} attempt(s) ({outage}s outage)")
+                self._update_state(CaptureState.RUNNING)
+                return True
+
+            backoff = _RECONNECT_BACKOFF[min(attempt - 1, len(_RECONNECT_BACKOFF) - 1)]
+            # Sparse logging: every attempt while the backoff still escalates,
+            # then every 10th - an hours-long outage must not flood the log.
+            if attempt <= len(_RECONNECT_BACKOFF) or attempt % 10 == 0:
+                self._log("INFO", f"Camera still unreachable (attempt {attempt}) - next retry in {backoff}s")
+            if self.stop_event.wait(timeout=backoff):
+                break
+
+        return False
 
     def _grab_frame(self) -> tuple[np.ndarray, Optional[datetime]]:
         """
