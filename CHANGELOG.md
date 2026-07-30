@@ -11,6 +11,10 @@ All notable changes to this project are documented in this file.
   `config/app_config.json`. Locked while capture is running.
 
 ### Changed
+- **All renders now name videos `timelapse-YYYY-MM-DD.<ext>`.** The scheduled-stop render, remote
+  `/video/create`, and the scheduler's nightly auto-video used `timelapse_YYYYMMDD` while the
+  Video Export tab suggested the dashed form — two formats side by side in the output folder.
+  Everything now uses the dashed name (the companion `.events.csv` follows automatically).
 - **Renders driven by a session start time are now session-aware.** `POST /video/create` with
   `since` (and no `date`), the scheduled-stop render, and the scheduler's nightly auto-video now
   cover **every** date folder from the session's start onward — merged into one video, sorted by

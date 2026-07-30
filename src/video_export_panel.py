@@ -511,7 +511,7 @@ class VideoExportPanel(ttk.Frame):
             # Auto-suggest output filename with full path based on date
             if collection.first_timestamp:
                 date_str = collection.first_timestamp.strftime("%Y-%m-%d")
-                suggested_name = f"timelapse-{date_str}.mp4"
+                suggested_name = f"timelapse-{date_str}.{self.format_var.get()}"
 
                 # Determine output directory
                 # Priority: 1) Last used dir, 2) Parent of source folder, 3) Current directory

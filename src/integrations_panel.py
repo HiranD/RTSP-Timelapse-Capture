@@ -168,7 +168,7 @@ class IntegrationsPanel(ttk.Frame):
         self.delete_video_after_discord_check.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.delete_video_after_discord_check,
             "After a SUCCESSFUL Discord upload, delete the original full-quality video "
-            "(timelapse_YYYYMMDD.mp4). This does NOT affect the smaller re-encoded copy "
+            "(timelapse-YYYY-MM-DD.mp4). This does NOT affect the smaller re-encoded copy "
             "that's actually posted to Discord. Only triggers on success — a skipped or "
             "failed upload never deletes. Use with caution: the full-quality video is "
             "permanently removed."
@@ -185,7 +185,7 @@ class IntegrationsPanel(ttk.Frame):
         self.discord_keep_reencoded_check.grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.discord_keep_reencoded_check,
             "After a successful upload, keep the smaller re-encoded video that was posted "
-            "to Discord — saved as timelapse_YYYYMMDD.mp4 inside the .discord_encode folder "
+            "to Discord — saved as timelapse-YYYY-MM-DD.mp4 inside the .discord_encode folder "
             "(next to your videos) — instead of deleting it. Only applies when 'Auto reduce "
             "quality' actually re-encoded the video; if the original was small enough to "
             "upload as-is, there's no separate copy to keep."

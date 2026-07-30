@@ -40,6 +40,15 @@ def get_config_path() -> Path:
     return get_app_base_dir() / "config" / "app_config.json"
 
 
+def video_filename(date_str: str, fmt: str) -> str:
+    """Output name for a render of YYYYMMDD `date_str`.
+
+    Dashed for readability, and the one convention every render path shares -
+    the Video Export tab suggests the same shape from the first frame's date.
+    """
+    return f"timelapse-{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}.{fmt}"
+
+
 def get_resource_path(relative: str) -> Path:
     """Resolve a bundled resource (e.g. assets/icon.ico).
 
@@ -1923,7 +1932,7 @@ class RTSPTimelapseGUI:
                 output_path = Path.cwd() / output_path
             output_path.mkdir(parents=True, exist_ok=True)
 
-            output_file = output_path / f"timelapse_{date_str}.{settings.format}"
+            output_file = output_path / video_filename(date_str, settings.format)
 
             # Prepare and run export
             # Pass `since` so the overlay covers this session's events only, matching
