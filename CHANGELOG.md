@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **MQTT broker delivery for the nightly video.** The Integrations tab's Discord Upload section
+  is now **Video Delivery**, with a **Delivery method** dropdown: *Discord webhook* (unchanged)
+  or *MQTT broker*. With MQTT the finished video is published to `<base>/metadata` (JSON) and
+  then `<base>/video` (raw bytes) instead of being uploaded — so a capture PC with **no internet**
+  can hand the video to a local broker and let another machine relay it. Broker host/port,
+  credentials, base topic, QoS and TLS are configurable; the existing size limit, auto quality
+  reduction and delete-after options apply to both methods. Existing configs keep uploading to
+  Discord — the new setting defaults to `discord`.
 - **Folder Rollover Hour is now editable in the app** (Capture tab → Capture Settings, next to
   Output Folder). Frames saved before this hour go into the previous day's folder, so an overnight
   session stays in one folder. Previously it could only be changed by hand-editing
@@ -25,6 +33,16 @@ All notable changes to this project are documented in this file.
   are no longer swept into — or deleted with — the night's video.
 
 ### Fixed
+- **An Integrations setting typed just before closing the app is no longer lost.** Those fields
+  save when they lose focus or you press Enter — neither of which happens if you close the
+  window while still in the field, so the last thing you typed (a broker host, a webhook URL,
+  the API port) was silently discarded. The tab is now flushed to `config/app_config.json` as
+  part of shutdown.
+- **A delivered video now always keeps its own name.** When a video was re-encoded to fit the
+  size limit, it was sent under the scratch encode's name — `discord_crf32.mp4` — so every
+  night's Discord post (and every MQTT `filename`) looked identical and would overwrite the
+  previous one if saved. It is now always `timelapse-YYYY-MM-DD.<ext>`, with the extension
+  following the bytes actually sent.
 - **A camera outage no longer ends the session.** Capture used to give up after 3 quick reconnect
   attempts (~4 seconds) and stop with an error — a brief stream failure could silently end an
   overnight session hours early. The engine now keeps retrying with escalating backoff (5s up to

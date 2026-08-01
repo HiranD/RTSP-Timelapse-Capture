@@ -26,6 +26,10 @@ a = Analysis(
         # PyInstaller's static analysis can't see. hook-pystray then bundles
         # the platform backend (pystray._win32 on Windows).
         'pystray',
+        # MQTT video delivery imports paho inside _send_mqtt (so the app still
+        # runs without it installed); a function-local import is invisible to
+        # PyInstaller's static analysis, so list it explicitly.
+        'paho.mqtt.client',
     ],
     hookspath=[],
     hooksconfig={},

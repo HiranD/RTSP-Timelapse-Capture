@@ -103,6 +103,18 @@ class AstroScheduleConfig:
     discord_auto_quality_reduction: bool = False  # Auto re-encode with lower quality if file exceeds limit
     delete_video_after_discord_upload: bool = False  # Delete generated video after successful Discord upload
     discord_keep_reencoded: bool = False  # Keep the re-encoded copy uploaded to Discord (in .discord_encode/)
+    # Video delivery: "discord" = direct webhook upload (needs internet);
+    # "mqtt" = publish to an MQTT broker for an external consumer to relay - the
+    # offline-observatory case, where only a local broker is reachable. The size
+    # limit / auto-reduce / delete-after settings above apply to BOTH methods.
+    delivery_method: str = "discord"  # "discord" | "mqtt"
+    mqtt_broker_host: str = "127.0.0.1"
+    mqtt_broker_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_password: str = ""  # plaintext, same convention as the camera password
+    mqtt_base_topic: str = "rtsp-timelapse"
+    mqtt_qos: int = 1  # 0 or 1
+    mqtt_use_tls: bool = False
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time
@@ -379,6 +391,22 @@ class ConfigManager:
             errors.append(
                 f"Discord export resolution must be original/720p/480p/360p, got {self.astro_schedule.discord_export_resolution}"
             )
+        if self.astro_schedule.delivery_method not in ["discord", "mqtt"]:
+            errors.append(
+                f"Delivery method must be discord/mqtt, got {self.astro_schedule.delivery_method}"
+            )
+        if not 1 <= self.astro_schedule.mqtt_broker_port <= 65535:
+            errors.append(f"MQTT port must be 1-65535, got {self.astro_schedule.mqtt_broker_port}")
+        if self.astro_schedule.mqtt_qos not in (0, 1):
+            errors.append(f"MQTT QoS must be 0 or 1, got {self.astro_schedule.mqtt_qos}")
+        if self.astro_schedule.delivery_method == "mqtt":
+            # Only enforced when MQTT is the selected method: a blank/wildcard topic
+            # left over from a previous experiment must not fail an unrelated config.
+            topic = self.astro_schedule.mqtt_base_topic
+            if not topic or "#" in topic or "+" in topic:
+                errors.append(
+                    f"MQTT base topic must be non-empty without wildcards, got '{topic}'"
+                )
 
         # Validate remote API
         if self.remote_api.enabled and not 1024 <= self.remote_api.port <= 65535:

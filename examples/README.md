@@ -64,7 +64,8 @@ renders whole:
 Tip: read `session_start_time` from `/status` (the current/most-recent session's
 start) and pass it back as `since` to render exactly that session.
 
-It honours your **Video Export** preset and **Discord** upload settings.
+It honours your **Video Export** preset and the **Video Delivery** settings on the
+Integrations tab (Discord webhook or MQTT publish).
 
 ### Session events
 

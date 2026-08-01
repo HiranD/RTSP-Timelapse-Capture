@@ -115,6 +115,31 @@ class UnknownKeyToleranceTests(unittest.TestCase):
         self.assertNotIn("delete_snapshots_after_video", mgr.to_dict()["astro_schedule"])
         self.assertIn("delete_snapshots_after_video", mgr.to_dict()["ui"])
 
+    def test_pre_mqtt_config_keeps_discord_delivery(self):
+        """A config written before MQTT delivery existed must keep uploading to Discord.
+
+        The new keys simply default; anything else would silently switch an
+        existing rig's nightly upload to a broker that isn't there.
+        """
+        mgr = ConfigManager()
+        mgr.from_dict({
+            "astro_schedule": {
+                "discord_webhook_url": "https://discord.com/api/webhooks/1/abc",
+                "discord_max_video_size_mb": 25,
+                "discord_auto_quality_reduction": True,
+            }
+        })
+
+        self.assertEqual(mgr.astro_schedule.delivery_method, "discord")
+        self.assertEqual(mgr.astro_schedule.discord_webhook_url,
+                         "https://discord.com/api/webhooks/1/abc")
+        self.assertEqual(mgr.astro_schedule.discord_max_video_size_mb, 25)
+        self.assertEqual(mgr.astro_schedule.mqtt_broker_host, "127.0.0.1")
+        self.assertEqual(mgr.astro_schedule.mqtt_broker_port, 1883)
+        self.assertEqual(mgr.astro_schedule.mqtt_base_topic, "rtsp-timelapse")
+        self.assertEqual(mgr.astro_schedule.mqtt_qos, 1)
+        self.assertFalse(mgr.astro_schedule.mqtt_use_tls)
+
     def test_config_with_utf8_bom_loads(self):
         """A BOM must not wipe the user's settings.
 

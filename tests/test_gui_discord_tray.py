@@ -106,5 +106,59 @@ class EncodeMultipartTests(unittest.TestCase):
         self.assertIn(b"DATA", body)
 
 
+class DiscordUploadFilenameTests(unittest.TestCase):
+    """The upload must carry the render's date-stamped name.
+
+    An oversized video is re-encoded into .discord_encode/discord_crf<N>.mp4, and
+    that scratch name used to be what Discord showed - so every night's post was
+    called "discord_crf32.mp4". No socket is opened: urlopen is patched.
+    """
+
+    def setUp(self):
+        import tempfile
+        from config_manager import AstroScheduleConfig
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.video = Path(self._tmp.name) / "timelapse-2026-07-25.mp4"
+        self.video.write_bytes(b"\x00" * (2 * 1024 * 1024))
+
+        self.app = _bare_app()
+        self.app.log_message = mock.MagicMock()
+        self.app.config_manager = mock.MagicMock()
+        self.app.config_manager.astro_schedule = AstroScheduleConfig(
+            discord_webhook_url="https://discord.com/api/webhooks/1/abc",
+            discord_max_video_size_mb=1,
+            discord_auto_quality_reduction=True,
+        )
+
+        # Stand in for the CRF ladder's output.
+        self.reencoded = Path(self._tmp.name) / ".discord_encode" / "discord_crf32.mp4"
+        self.reencoded.parent.mkdir()
+        self.reencoded.write_bytes(b"SMALL")
+        self.app._reencode_for_discord = mock.MagicMock(return_value=self.reencoded)
+
+    def _upload_and_capture_body(self):
+        with mock.patch.object(gui_app.urllib.request, "urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value = mock.MagicMock()
+            ok = self.app._send_discord_webhook(self.video, "2026-07-25")
+        self.assertTrue(ok, self.app.log_message.call_args_list)
+        return urlopen.call_args.args[0].data
+
+    def test_reencoded_upload_uses_the_render_name(self):
+        body = self._upload_and_capture_body()
+        self.assertIn(b'filename="timelapse-2026-07-25.mp4"', body)
+        self.assertNotIn(b"discord_crf32.mp4", body)
+        self.assertIn(b"SMALL", body)  # still the re-encoded bytes
+
+    def test_suffix_follows_the_bytes_actually_sent(self):
+        """A .webm render re-encoded to .mp4 must not be labelled .webm."""
+        webm = Path(self._tmp.name) / "timelapse-2026-07-25.webm"
+        webm.write_bytes(b"\x00" * (2 * 1024 * 1024))
+        self.video = webm
+        body = self._upload_and_capture_body()
+        self.assertIn(b'filename="timelapse-2026-07-25.mp4"', body)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

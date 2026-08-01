@@ -33,6 +33,14 @@
     "discord_export_resolution": "original",
     "discord_auto_quality_reduction": false,
     "discord_keep_reencoded": false,
+    "delivery_method": "discord",
+    "mqtt_broker_host": "127.0.0.1",
+    "mqtt_broker_port": 1883,
+    "mqtt_username": "",
+    "mqtt_password": "",
+    "mqtt_base_topic": "rtsp-timelapse",
+    "mqtt_qos": 1,
+    "mqtt_use_tls": false,
     "use_manual_times": false,
     "manual_start_time": "20:00",
     "manual_end_time": "08:00",
@@ -60,6 +68,8 @@
     "proactive_reconnect_seconds": "Reconnect interval to prevent camera timeout (0=disabled, 420=recommended for Annke I81EM)",
     "flush_buffer_count": "Number of frames to flush before capture for fresh frames (10=default)",
     "last_video_export_dir": "Last directory used for video export (auto-saved by GUI)",
-    "remote_api": "Local-only HTTP API for external control (e.g. NINA). enabled=false by default; bound to 127.0.0.1 on the given port (1024-65535). Mutually exclusive with automatic scheduling."
+    "remote_api": "Local-only HTTP API for external control (e.g. NINA). enabled=false by default; bound to 127.0.0.1 on the given port (1024-65535). Mutually exclusive with automatic scheduling.",
+    "delivery_method": "Where the auto-created video is sent: 'discord' (webhook upload, needs internet) or 'mqtt' (publish to a broker for an external consumer to relay). The size limit, auto-reduce and delete-after settings apply to both.",
+    "mqtt_base_topic": "Videos publish to <base>/metadata (JSON) then <base>/video (raw bytes). No wildcards."
   }
 }

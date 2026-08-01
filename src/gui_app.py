@@ -459,9 +459,15 @@ class RTSPTimelapseGUI:
                 "username": "RTSP Timelapse Bot"
             }).encode('utf-8')
 
+            # Always deliver under the render's own name - uploading the scratch
+            # encode as "discord_crf32.mp4" made every night's post look identical.
+            # Stem from the render, suffix from what is actually being sent, so a
+            # re-encoded .webm render is still labelled .mp4.
+            delivered_name = output_file.stem + upload_file.suffix
+
             fields = [
                 ("payload_json", ("payload.json", payload, "application/json")),
-                ("file", (upload_file.name, file_bytes, mime_type))
+                ("file", (delivered_name, file_bytes, mime_type))
             ]
             body, content_type = self._encode_multipart_formdata(fields)
 
@@ -507,6 +513,150 @@ class RTSPTimelapseGUI:
                     pass
 
         return False
+
+    def _send_mqtt(self, output_file: Path, date_str: str) -> bool:
+        """Publish the finished video to the configured MQTT broker.
+
+        For rigs with no internet: nothing is uploaded from here, the video is
+        published to a local broker and an external consumer relays it onward.
+        Metadata goes out first on <base>/metadata, then the raw bytes on
+        <base>/video.
+
+        Short-lived connection: connect, publish, confirm, disconnect. The size
+        limit and auto-reduce settings are shared with the Discord path, so the
+        same .discord_encode scratch dir and cleanup contract apply.
+        """
+        cfg = self.config_manager.astro_schedule
+        host = cfg.mqtt_broker_host.strip()
+        if not host:
+            self.log_message("WARNING", "[MQTT] No broker host configured; delivery skipped")
+            return False
+
+        if not output_file.exists():
+            self.log_message("ERROR", f"[MQTT] Delivery failed: video file not found: {output_file}")
+            return False
+
+        # Imported here (not at module scope) so the app still runs without
+        # paho-mqtt installed; the .spec lists it in hiddenimports for the exe.
+        try:
+            import paho.mqtt.client as mqtt
+        except ImportError:
+            self.log_message("ERROR", "[MQTT] paho-mqtt is not installed; delivery skipped")
+            return False
+
+        max_size_mb = cfg.discord_max_video_size_mb
+        if max_size_mb <= 0:
+            max_size_mb = 8
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
+        # As on the Discord path, what we publish may be a re-encoded temp copy
+        # living in a ".discord_encode" scratch folder. Track it for cleanup.
+        upload_file = output_file
+        temp_dir = None
+
+        try:
+            if cfg.discord_auto_quality_reduction and file_size_mb > max_size_mb:
+                upload_file = self._reencode_for_discord(output_file, max_size_mb)
+                if upload_file != output_file:
+                    temp_dir = upload_file.parent
+                file_size_mb = upload_file.stat().st_size / (1024 * 1024)
+
+            if file_size_mb > max_size_mb:
+                self.log_message(
+                    "WARNING",
+                    f"[MQTT] Delivery skipped: {upload_file.name} is {file_size_mb:.1f} MB, "
+                    f"exceeds limit {max_size_mb} MB"
+                )
+                return False
+
+            with upload_file.open('rb') as f:
+                video_bytes = f.read()
+
+            base_topic = cfg.mqtt_base_topic.strip().strip('/') or "rtsp-timelapse"
+            qos = cfg.mqtt_qos if cfg.mqtt_qos in (0, 1) else 1
+            # Always the render's own name, never the scratch encode's
+            # ("discord_crf32.mp4") - a consumer saving by this name would
+            # otherwise overwrite the same file every night. Stem from the render,
+            # suffix from what is actually published (a re-encoded .webm is .mp4).
+            delivered_name = output_file.stem + upload_file.suffix
+            metadata = json.dumps({
+                "message": f"Timelapse video completed for {date_str}",
+                "filename": delivered_name,
+                "date": date_str,
+                "size_bytes": len(video_bytes),
+            })
+
+            self.log_message(
+                "INFO",
+                f"[MQTT] Publishing video to {host}:{cfg.mqtt_broker_port} on "
+                f"{base_topic}/video ({file_size_mb:.1f} MB, QoS {qos})..."
+            )
+
+            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+            if cfg.mqtt_username:
+                client.username_pw_set(cfg.mqtt_username, cfg.mqtt_password)
+            if cfg.mqtt_use_tls:
+                client.tls_set()
+
+            try:
+                client.connect(host, cfg.mqtt_broker_port, keepalive=30)
+                # Required: without the network loop running, the QoS-1 PUBACK is
+                # never read and wait_for_publish() blocks until its timeout.
+                client.loop_start()
+                try:
+                    info_meta = client.publish(
+                        f"{base_topic}/metadata", metadata, qos=qos, retain=False)
+                    info_meta.wait_for_publish(timeout=30)
+                    info_video = client.publish(
+                        f"{base_topic}/video", video_bytes, qos=qos, retain=False)
+                    info_video.wait_for_publish(timeout=120)
+                finally:
+                    # disconnect first so the DISCONNECT packet is still written by
+                    # the running loop, then join the loop thread.
+                    client.disconnect()
+                    client.loop_stop()
+            except (OSError, ValueError, RuntimeError) as e:
+                self.log_message("ERROR", f"[MQTT] Delivery failed: {e}")
+                return False
+
+            # wait_for_publish() returns None, so confirmation has to be read back.
+            if not (info_meta.is_published() and info_video.is_published()):
+                self.log_message("ERROR", "[MQTT] Broker did not confirm publish (timeout)")
+                return False
+
+            self.log_message("INFO", "[MQTT] Video published successfully")
+
+            # Same option as the Discord path: keep the smaller re-encoded copy
+            # that was actually published, date-stamped inside .discord_encode.
+            if (cfg.discord_keep_reencoded and temp_dir is not None
+                    and upload_file != output_file):
+                try:
+                    kept = temp_dir / output_file.name
+                    upload_file.replace(kept)
+                    self.log_message("INFO", f"[MQTT] Kept re-encoded copy: {kept}")
+                except Exception as e:
+                    self.log_message("WARNING", f"[MQTT] Could not keep re-encoded copy: {e}")
+            return True
+
+        except Exception as e:
+            self.log_message("ERROR", f"[MQTT] Delivery error: {e}")
+            return False
+        finally:
+            # Identical scratch-dir cleanup contract as _send_discord_webhook.
+            if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
+                try:
+                    for f in temp_dir.glob("discord_crf*.mp4"):
+                        f.unlink(missing_ok=True)
+                    if not any(temp_dir.iterdir()):
+                        temp_dir.rmdir()
+                except Exception:
+                    pass
+
+    def _deliver_video(self, output_file: Path, date_str: str) -> bool:
+        """Route the finished video to the configured delivery method."""
+        if self.config_manager.astro_schedule.delivery_method == "mqtt":
+            return self._send_mqtt(output_file, date_str)
+        return self._send_discord_webhook(output_file, date_str)
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -1970,20 +2120,21 @@ class RTSPTimelapseGUI:
                 if result.success:
                     self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
 
-                    # Upload to Discord if webhook is configured
+                    # Hand the video to the configured delivery method (Discord
+                    # webhook or MQTT broker) - both are no-ops when unconfigured.
                     try:
-                        if self._send_discord_webhook(result.output_file, date_str):
-                            self.log_message("INFO", "[Auto Video] Discord upload completed")
+                        if self._deliver_video(result.output_file, date_str):
+                            self.log_message("INFO", "[Auto Video] Video delivery completed")
 
-                            # Optionally delete the generated video after successful Discord upload
+                            # Optionally delete the generated video after a successful delivery
                             try:
                                 if self.config_manager.astro_schedule.delete_video_after_discord_upload:
                                     result.output_file.unlink()
-                                    self.log_message("INFO", f"[Auto Video] Deleted video after Discord upload: {result.output_file}")
+                                    self.log_message("INFO", f"[Auto Video] Deleted video after delivery: {result.output_file}")
                             except Exception as e:
                                 self.log_message("WARNING", f"[Auto Video] Failed to delete video file: {e}")
                     except Exception as e:
-                        self.log_message("ERROR", f"[Auto Video] Discord upload failed: {e}")
+                        self.log_message("ERROR", f"[Auto Video] Video delivery failed: {e}")
 
                     # Update capture history to mark video as created
                     try:
@@ -2026,6 +2177,15 @@ class RTSPTimelapseGUI:
         self._cancel_scheduled_stop()  # drop any pending auto-stop so its timer can't fire mid-shutdown
         if getattr(self, 'remote_server', None):
             self.remote_server.stop()
+        # The Integrations tab self-saves on <FocusOut>/<Return>, which never fires
+        # if the window is closed while an entry still has focus - so a broker host
+        # or webhook URL typed as the last action would be lost. Flush it first;
+        # save_config() below only writes what the shared config already holds.
+        if hasattr(self, 'integrations_panel'):
+            try:
+                self.integrations_panel._save_to_config()
+            except Exception as e:
+                self.log_message("WARNING", f"Could not save Integrations settings: {e}")
         self.save_config()
         self.cleanup_tray()
         self.root.destroy()

@@ -48,8 +48,9 @@
 
 ### Integrations (NEW in v3.3)
 - **Discord webhook upload** automatically posts each night's generated timelapse to a Discord channel.
+- **MQTT video delivery** as an alternative: publish the finished video to an MQTT broker and let another machine relay it — for rigs with no internet, or a custom pipeline.
 - **Upload size handling** with a configurable max size, optional auto quality reduction (re-encodes to fit), and an export-resolution selector.
-- **Delete video after successful Discord upload** to remove the exported MP4 once it has been posted.
+- **Delete video after successful upload/delivery** to remove the exported MP4 once it has been sent.
 - **Minimize to tray** — start in the tray and/or send the window there with the minimize button (headless or always-running setups).
 - **Start automatically when Windows starts** (per-user, no admin) for unattended rigs.
 
@@ -62,7 +63,7 @@
 
 ### User Experience
 - Four-tab interface: **Capture**, **Video Export**, **Scheduling**, and **Integrations**.
-- **Comprehensive tooltip system** with 44 hover tooltips explaining every control.
+- **Comprehensive tooltip system** with 85 hover tooltips explaining every control.
 - Keyboard shortcuts for common actions.
 - Auto-save configuration when switching tabs and on app close.
 - Thread-safe capture engine keeps the UI responsive.
@@ -87,7 +88,7 @@
 
 ### Integrations Tab (NEW in v3.3)
 ![Integrations Interface](screenshots/Integrations_tab.jpg)
-*Integrations tab: Discord webhook upload of the nightly video (max upload size, auto quality reduction, export resolution, delete-after-upload) plus application options — minimize to tray and start automatically with Windows.*
+*Integrations tab: video delivery of the nightly video — Discord webhook or MQTT broker, with max upload size, auto quality reduction, export resolution and delete-after-delivery — plus application options (minimize to tray, start automatically with Windows) and the remote control API.*
 
 ---
 
@@ -285,7 +286,7 @@ Choose between two scheduling modes:
    [✓] Create video after each night's session
    [ ] Delete snapshots after (use with caution!)
    ```
-   - Enabling **Create video after each night's session** is also what unlocks the optional **Discord upload** — configure the webhook and upload options on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - Enabling **Create video after each night's session** is also what unlocks the optional **video delivery** (Discord webhook or MQTT broker) — configure it on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -317,19 +318,51 @@ Monitor scheduler activity in the color-coded log:
 
 Optional, set-once integrations and unattended-operation options live on their own tab.
 
-### Discord Upload
+### Video Delivery
 
-Automatically post each night's generated timelapse to a Discord channel.
+Automatically send each night's generated timelapse somewhere — a Discord channel, or an MQTT broker for another machine to pick up.
 
-> Requires **Create video after each night's session** on the Scheduling tab — the upload runs as part of that auto-video step.
+> Requires **Create video after each night's session** on the Scheduling tab — delivery runs as part of that auto-video step (or when `POST /video/create` renders one). The Video Export tab's own button never sends anything.
+
+**Delivery method** picks between the two: the dropdown is always visible, only the selected method's fields are shown beneath it, and **the method shown is always the method used**. The settings below the two field groups apply to whichever is selected.
+
+Every setting on this tab — including all the MQTT ones — is written to `config/app_config.json` the moment you change it: when a field loses focus, when you press Enter, or when you tick a box. Closing the app flushes the tab as well, so a value typed just before quitting isn't lost either. There is no Save button.
 
 | Setting | Description |
 |---------|-------------|
-| **Discord Webhook URL** | Webhook to upload the generated video to. Leave blank to disable Discord uploads. |
-| **Max upload size (MB)** | Largest file Discord will accept (default `8`). If the video is bigger, upload is skipped — unless *Auto reduce quality* is on. |
-| **Auto reduce quality if too large** | Re-encode an oversized video to fit: quality steps down through CRF 20 → 45 at the selected export resolution, stopping at the first encode under the size limit. If even the lowest quality can't fit, upload is skipped and the original is kept locally. |
+| **Delivery method** | `Discord webhook` (upload straight to Discord — needs internet) or `MQTT broker` (publish for an external consumer to relay). |
+| **Max upload size (MB)** | Largest file to send (default `8`). If the video is bigger, delivery is skipped — unless *Auto reduce quality* is on. Discord's webhook limit is ~10 MB; a broker's is its own max message size. |
+| **Auto reduce quality if too large** | Re-encode an oversized video to fit: quality steps down through CRF 20 → 45 at the selected export resolution, stopping at the first encode under the size limit. If even the lowest quality can't fit, delivery is skipped and the original is kept locally. |
 | **Export resolution** | Frame size used only when auto-reduce re-encodes (`original`, `720p`, `480p`, `360p`). Smaller resolutions reach the size limit with less visible quality loss than compression alone. |
-| **Delete video after successful Discord upload** | Removes the exported MP4 once it has been posted. Use with caution — deletion is permanent. |
+| **Delete video after successful upload/delivery** | Removes the exported MP4 once it has been sent. Use with caution — deletion is permanent. |
+| **Keep the re-encoded copy that was sent** | Keeps the smaller re-encoded video (date-stamped, inside `.discord_encode/`) instead of discarding it. |
+
+#### Discord webhook
+
+| Setting | Description |
+|---------|-------------|
+| **Discord Webhook URL** | Webhook to upload the generated video to. Leave blank to disable uploads. |
+
+#### MQTT broker
+
+For an observatory PC with **no internet**: instead of uploading, the app publishes the finished video to an MQTT broker, and a consumer on an internet-connected machine relays it onward. It's equally a generic hook — anything that can subscribe can act on the video.
+
+| Setting | Description |
+|---------|-------------|
+| **Broker host** / **Port** | Broker address and TCP port (`1883` plain, `8883` typically TLS). |
+| **Username** / **Password** | Broker credentials; leave the username blank for an anonymous broker. Stored in plain text in `config/app_config.json`, like the camera password. |
+| **Base topic** | Topic prefix the video is published under (default `rtsp-timelapse`). No wildcards. |
+| **QoS** | `1` (recommended) waits for the broker to acknowledge, so the app can report real success. `0` is fire-and-forget. |
+| **Use TLS** | Encrypt the broker connection using the system certificate store. |
+
+**Topic contract** — what a consumer subscribes to:
+
+| Topic | Payload | Notes |
+|-------|---------|-------|
+| `<base>/metadata` | JSON `{"message", "filename", "date", "size_bytes"}` | Published first, at the configured QoS, never retained. `filename` is always the render's own `timelapse-YYYY-MM-DD.<ext>`, even when an oversized video was re-encoded to fit |
+| `<base>/video` | Raw MP4/WebM bytes | Published second; consumers must tolerate metadata being absent |
+
+Nothing is retained, so a consumer that connects later picks up the next video rather than replaying the last one. What it does with it — post it somewhere, archive it, trigger a pipeline — is up to you.
 
 ### Application
 
@@ -338,7 +371,7 @@ Automatically post each night's generated timelapse to a Discord channel.
 | **Minimize to tray** | Starts the app minimized in the system tray, and hides the window to the tray when you minimize it; restore from the tray icon (`Open`). |
 | **Start automatically when Windows starts** | Registers the app to launch at logon (per-user, no admin). Pair with persistent scheduling for an unattended rig. Note: a GUI needs a desktop session, so enable Windows auto-login on a headless machine. |
 
-*Discord and tray settings are saved to `config/app_config.json`; "Start automatically when Windows starts" is stored in the Windows registry (per-user Run key), not in the config file.*
+*Delivery and tray settings are saved to `config/app_config.json`; "Start automatically when Windows starts" is stored in the Windows registry (per-user Run key), not in the config file.*
 
 ---
 
@@ -411,12 +444,19 @@ Stored in the `astro_schedule` and `ui` sections of `config/app_config.json`, ex
 
 | Setting                     | Config key                                       | Default        | Notes                                       |
 |-----------------------------|--------------------------------------------------|----------------|---------------------------------------------|
+| Delivery method             | `astro_schedule.delivery_method`                 | `"discord"`    | `discord` (webhook) / `mqtt` (broker)       |
 | Discord Webhook URL         | `astro_schedule.discord_webhook_url`             | `""`           | Blank disables Discord upload               |
-| Max upload size (MB)        | `astro_schedule.discord_max_video_size_mb`       | `8`            | Skip upload if exceeded (unless auto-reduce)|
+| MQTT broker host            | `astro_schedule.mqtt_broker_host`                | `"127.0.0.1"`  | Only used when the method is `mqtt`         |
+| MQTT broker port            | `astro_schedule.mqtt_broker_port`                | `1883`         | `8883` is the usual TLS port                |
+| MQTT username / password    | `astro_schedule.mqtt_username` / `mqtt_password` | `""`           | Blank username = anonymous; password is plain text |
+| MQTT base topic             | `astro_schedule.mqtt_base_topic`                 | `"rtsp-timelapse"` | Publishes `<base>/metadata` then `<base>/video` |
+| MQTT QoS                    | `astro_schedule.mqtt_qos`                        | `1`            | `0` or `1`; `1` waits for the broker's ack  |
+| MQTT TLS                    | `astro_schedule.mqtt_use_tls`                    | `false`        | Uses the system certificate store           |
+| Max upload size (MB)        | `astro_schedule.discord_max_video_size_mb`       | `8`            | Skip delivery if exceeded (unless auto-reduce)|
 | Auto reduce quality         | `astro_schedule.discord_auto_quality_reduction`  | `false`        | Re-encode CRF 20→45 to fit                  |
 | Export resolution           | `astro_schedule.discord_export_resolution`       | `"original"`   | `original` / `720p` / `480p` / `360p`       |
-| Delete after upload         | `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the original MP4 after a successful upload |
-| Keep re-encoded Discord copy| `astro_schedule.discord_keep_reencoded`          | `false`        | Keep the uploaded re-encode in `.discord_encode/`  |
+| Delete after upload/delivery| `astro_schedule.delete_video_after_discord_upload`| `false`       | Deletes the original MP4 after a successful delivery |
+| Keep re-encoded copy        | `astro_schedule.discord_keep_reencoded`          | `false`        | Keep the sent re-encode in `.discord_encode/`  |
 | Minimize to tray | `ui.minimize_to_tray`                 | `false`        |                                             |
 | Start with Windows          | *(Windows registry, per-user Run key)*           | off            | Not stored in the JSON config               |
 
