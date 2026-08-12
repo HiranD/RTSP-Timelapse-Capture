@@ -8,6 +8,7 @@ Handles image scanning, export preparation, and video creation orchestration.
 import os
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Optional, Tuple, List, Callable, Dict, Any, Sequence
 from dataclasses import dataclass, field
@@ -18,6 +19,11 @@ from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
 from preset_manager import VideoExportSettings
 from event_overlay import build_plan, draw_captions, draw_target_label
 from event_log import EVENTS_FILENAME
+
+# A .temp_export_* folder older than this is an abandoned leftover (its export is
+# long over) and gets swept before the next export. Generous on purpose: no encode
+# runs this long, so a live export's folder is never touched.
+STALE_TEMP_AGE_SECONDS = 3600
 
 
 @dataclass
@@ -353,6 +359,9 @@ class VideoExportController:
                                  "'preserve originals' enabled for this export")
 
             if use_temp_copies:
+                # Sweep leftovers whose cleanup lost the race against an external
+                # handle (see _cleanup_temp), then create this export's own folder.
+                self._sweep_stale_temp_folders(output_folder, log_callback)
                 # Create temp folder in same directory as output
                 temp_folder = output_folder / f".temp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 temp_folder.mkdir(parents=True, exist_ok=True)
@@ -459,7 +468,7 @@ class VideoExportController:
                 input_pattern = str(job.image_collection.source_folder / "%06d.jpg")
 
             if self.cancel_requested:
-                self._cleanup_temp(job)
+                self._cleanup_temp(job, log_callback)
                 return ExportResult(False, "Export cancelled by user", None, 0, 0)
 
             # Step 2: Build FFmpeg command
@@ -512,11 +521,11 @@ class VideoExportController:
             )
 
             if not success:
-                self._cleanup_temp(job)
+                self._cleanup_temp(job, log_callback)
                 return ExportResult(False, f"FFmpeg failed: {msg}", None, 0, 0)
 
             if self.cancel_requested:
-                self._cleanup_temp(job)
+                self._cleanup_temp(job, log_callback)
                 return ExportResult(False, "Export cancelled by user", None, 0, 0)
 
             # Step 4: Finalize
@@ -530,7 +539,7 @@ class VideoExportController:
             if job.temp_folder and job.temp_folder.exists():
                 if log_callback:
                     log_callback("Cleaning up temporary files...")
-                self._cleanup_temp(job)
+                self._cleanup_temp(job, log_callback)
 
             # Get output file size
             output_size = job.output_file.stat().st_size if job.output_file.exists() else 0
@@ -557,7 +566,7 @@ class VideoExportController:
             )
 
         except Exception as e:
-            self._cleanup_temp(job)
+            self._cleanup_temp(job, log_callback)
             self.is_exporting = False
             return ExportResult(False, f"Export error: {str(e)}", None, 0, 0)
 
@@ -722,13 +731,55 @@ class VideoExportController:
                 ok = False
         return ok
 
-    def _cleanup_temp(self, job: ExportJob):
-        """Clean up temporary folder"""
-        if job.temp_folder and job.temp_folder.exists():
+    def _cleanup_temp(self, job: ExportJob,
+                      log_callback: Optional[Callable[[str], None]] = None):
+        """Remove the export's temp folder, retrying briefly.
+
+        On Windows the final directory delete can fail while an external process
+        (indexer, AV scan, folder sync) briefly holds a handle on it - the copies
+        inside are removed but the empty folder stays behind forever. Retry a
+        couple of times; if it still won't go, say so instead of failing silently,
+        and leave it for the next export's stale-folder sweep.
+        """
+        if not job.temp_folder or not job.temp_folder.exists():
+            return
+        for attempt in range(3):
             try:
                 shutil.rmtree(job.temp_folder)
-            except Exception:
-                pass  # Best effort cleanup
+                return
+            except OSError:
+                if attempt < 2:
+                    time.sleep(1)
+        if log_callback:
+            log_callback(f"Could not remove temp folder {job.temp_folder.name} - "
+                         "it will be swept on the next render")
+
+    def _sweep_stale_temp_folders(self, output_folder: Path,
+                                  log_callback: Optional[Callable[[str], None]] = None):
+        """Remove abandoned .temp_export_* folders left by earlier exports.
+
+        A cleanup that lost the race against an external handle leaves an empty
+        folder behind (one per render, forever); sweeping here makes the leak
+        self-healing. Only folders older than STALE_TEMP_AGE_SECONDS are touched,
+        so a concurrent export's live folder is never at risk. Best-effort: a
+        folder that still won't delete is left for the next sweep.
+        """
+        try:
+            candidates = list(output_folder.glob(".temp_export_*"))
+        except OSError:
+            return
+        now = time.time()
+        for folder in candidates:
+            try:
+                if not folder.is_dir():
+                    continue
+                if now - folder.stat().st_mtime < STALE_TEMP_AGE_SECONDS:
+                    continue
+                shutil.rmtree(folder)
+                if log_callback:
+                    log_callback(f"Removed stale temp folder {folder.name}")
+            except OSError:
+                pass
 
     def cancel_export(self):
         """Request cancellation of current export"""
