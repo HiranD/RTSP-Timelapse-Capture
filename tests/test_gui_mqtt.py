@@ -327,14 +327,24 @@ class MqttConfigValidationTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertTrue(any("Delivery method" in e for e in errors), errors)
 
-    def test_qos_2_rejected(self):
+    def test_qos_2_rejected_only_when_mqtt_is_selected(self):
+        # validate() gates start_capture(), so a stale MQTT value must not
+        # stop a Discord-only user from capturing (PR #21 review).
         self.cfg.astro_schedule.mqtt_qos = 2
+        valid, _ = self.cfg.validate()
+        self.assertTrue(valid, "a stale QoS must not fail a Discord config")
+
+        self.cfg.astro_schedule.delivery_method = "mqtt"
         valid, errors = self.cfg.validate()
         self.assertFalse(valid)
         self.assertTrue(any("QoS" in e for e in errors), errors)
 
-    def test_port_out_of_range_rejected(self):
+    def test_port_out_of_range_rejected_only_when_mqtt_is_selected(self):
         self.cfg.astro_schedule.mqtt_broker_port = 70000
+        valid, _ = self.cfg.validate()
+        self.assertTrue(valid, "a stale port must not fail a Discord config")
+
+        self.cfg.astro_schedule.delivery_method = "mqtt"
         valid, errors = self.cfg.validate()
         self.assertFalse(valid)
         self.assertTrue(any("MQTT port" in e for e in errors), errors)

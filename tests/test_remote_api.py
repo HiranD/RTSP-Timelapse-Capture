@@ -296,6 +296,15 @@ class RemoteApiTests(unittest.TestCase):
         self.assertEqual(payload["count"], 2)
         self.assertEqual([e["title"] for e in payload["events"]],
                          ["Autofocus Complete", "Meridian Flip"])
+        self.assertFalse(payload["capturing"])
+
+    def test_get_events_reports_capturing(self):
+        # Part of the documented contract: a poller decides from this single
+        # response whether events are still being accepted (PR #21 review).
+        self.status["capturing"] = True
+        code, payload = self._request("/events")
+        self.assertEqual(code, 200)
+        self.assertTrue(payload["capturing"])
 
     def test_events_wrong_method_is_405(self):
         code, _payload = self._request("/events", method="DELETE")
@@ -336,7 +345,7 @@ class RemoteApiWithoutEventSupportTests(unittest.TestCase):
     def test_get_events_returns_empty(self):
         with urllib.request.urlopen(self.base + "/events", timeout=5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        self.assertEqual(payload, {"events": [], "count": 0})
+        self.assertEqual(payload, {"events": [], "count": 0, "capturing": False})
 
 
 if __name__ == "__main__":

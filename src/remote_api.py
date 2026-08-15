@@ -28,7 +28,7 @@ Endpoints (all JSON):
     POST /events         -> 202 {"status": "recorded", ...} | 400 {"error"} | 409 {"error"}
         JSON body: {"title", "detail"?, "category"?, "time"?, "data"?}
         (records a timestamped session event; 409 when capture isn't running)
-    GET  /events         -> 200 {"events": [...], "capturing": bool}
+    GET  /events         -> 200 {"events": [...], "count": int, "capturing": bool}
 """
 
 import json
@@ -381,6 +381,14 @@ class RemoteControlServer:
 
             def _list_events(self):
                 events = server._get_events() if server._get_events else []
-                self._send_json(200, {"events": events, "count": len(events)})
+                # `capturing` is part of the documented contract (see module
+                # docstring): a poller decides from this single response whether
+                # events are still being accepted, without a second /status hop.
+                try:
+                    status = server._get_status() if server._get_status else {}
+                except Exception:
+                    status = {}
+                self._send_json(200, {"events": events, "count": len(events),
+                                      "capturing": bool(status.get("capturing"))})
 
         return Handler

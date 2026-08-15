@@ -400,13 +400,15 @@ class ConfigManager:
             errors.append(
                 f"Delivery method must be discord/mqtt, got {self.astro_schedule.delivery_method}"
             )
-        if not 1 <= self.astro_schedule.mqtt_broker_port <= 65535:
-            errors.append(f"MQTT port must be 1-65535, got {self.astro_schedule.mqtt_broker_port}")
-        if self.astro_schedule.mqtt_qos not in (0, 1):
-            errors.append(f"MQTT QoS must be 0 or 1, got {self.astro_schedule.mqtt_qos}")
         if self.astro_schedule.delivery_method == "mqtt":
-            # Only enforced when MQTT is the selected method: a blank/wildcard topic
-            # left over from a previous experiment must not fail an unrelated config.
+            # Only enforced when MQTT is the selected method: broken MQTT values
+            # left over from a previous experiment must not fail an unrelated
+            # config - validate() gates start_capture(), so an unconditional
+            # check here would stop a Discord-only user from capturing at all.
+            if not 1 <= self.astro_schedule.mqtt_broker_port <= 65535:
+                errors.append(f"MQTT port must be 1-65535, got {self.astro_schedule.mqtt_broker_port}")
+            if self.astro_schedule.mqtt_qos not in (0, 1):
+                errors.append(f"MQTT QoS must be 0 or 1, got {self.astro_schedule.mqtt_qos}")
             topic = self.astro_schedule.mqtt_base_topic
             if not topic or "#" in topic or "+" in topic:
                 errors.append(
