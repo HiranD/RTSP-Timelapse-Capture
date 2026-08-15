@@ -729,9 +729,25 @@ class SchedulingPanel(ttk.Frame):
         if self.start_capture_callback:
             # Use after() to call on main thread with from_scheduler=True
             # This tells start_capture to use the scheduler's times, not the UI times.
-            # show_dialogs=False: an unattended scheduler run must never block on a
-            # modal error dialog (e.g. bad config) - errors go to the log instead.
-            self.after(0, lambda: self.start_capture_callback(from_scheduler=True, show_dialogs=False))
+            self.after(0, self._start_scheduled_capture)
+
+    def _start_scheduled_capture(self):
+        """Runs on the main thread: start capture for the scheduler and report
+        failure back.
+
+        The scheduler flags capture_active before this runs; if the start fails
+        (bad config, engine error) it must be told via notify_start_failed(),
+        or it believes capture is running forever ("Capturing", zero frames)
+        and never retries. show_dialogs=False: an unattended scheduler run must
+        never block on a modal error dialog - errors go to the log instead.
+        """
+        if not self.start_capture_callback:
+            return
+        ok, err = self.start_capture_callback(from_scheduler=True, show_dialogs=False)
+        if not ok:
+            self._log("ERROR", f"Scheduled capture failed to start: {err}")
+            if self.scheduler:
+                self.scheduler.notify_start_failed()
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
@@ -836,7 +852,9 @@ class SchedulingPanel(ttk.Frame):
         Set callbacks for integration with main GUI.
 
         Args:
-            start_capture: Callback to start capture
+            start_capture: Callback to start capture. Must return
+                (ok: bool, error: str | None) - a failed scheduler start is
+                reported back via scheduler.notify_start_failed() so it retries.
             stop_capture: Callback to stop capture
             create_video: Callback to create video (receives date_str YYYYMMDD and
                 the session's start datetime, or None when the start is unknown)

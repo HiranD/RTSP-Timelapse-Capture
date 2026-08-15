@@ -12,16 +12,18 @@ Features:
 
 import threading
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import Optional, Callable
 from pathlib import Path
 
 try:
     from src.twilight_calculator import TwilightCalculator, DarknessWindow
     from src.config_manager import ConfigManager
+    from src.capture_engine import effective_date
 except ImportError:
     from twilight_calculator import TwilightCalculator, DarknessWindow
     from config_manager import ConfigManager
+    from capture_engine import effective_date
 
 
 class AstroScheduler:
@@ -153,41 +155,42 @@ class AstroScheduler:
         """Check if we should start or stop capture based on schedule."""
         cfg = self.config_manager.astro_schedule
 
-        # No scheduled dates: stop any active session, then bail.
-        # (e.g. user cleared the calendar mid-capture)
-        if not cfg.scheduled_dates:
+        now = datetime.now()
+
+        # Which night does "now" belong to? Decided by the same rollover rule
+        # that files frames into date folders (effective_date): before the
+        # rollover hour, "now" is still the previous evening's night. Gating on
+        # the owning date - instead of calendar-today plus an is-a-session-
+        # already-active check - is what lets a session START mid-window after
+        # midnight: the scheduler enabled, the date ticked, or the app
+        # restarted at 01:00 must still capture the rest of that night.
+        rollover = self.config_manager.schedule.folder_rollover_hour
+        owning_date = effective_date(now, rollover).strftime("%Y-%m-%d")
+
+        if owning_date not in cfg.scheduled_dates:
+            # This night isn't scheduled (or its date was unticked/the calendar
+            # cleared mid-capture): stop any active session, start nothing.
             if self.capture_active:
                 self._stop_capture_session()
             return
 
-        now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
-
-        # Check if today is scheduled
-        if today_str not in cfg.scheduled_dates:
-            # Also check yesterday (for overnight sessions that started yesterday)
-            yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-            if yesterday not in cfg.scheduled_dates:
-                # Neither today nor yesterday is scheduled
-                if self.capture_active:
-                    self._stop_capture_session()
-                return
-            else:
-                # Yesterday was scheduled - only continue if session is already active
-                # Don't start a NEW session for today if today isn't scheduled
-                if not self.capture_active:
-                    return  # Yesterday's session already ended, don't start new one
-
         # Check which mode we're using
         if cfg.use_manual_times:
-            # Manual time mode - use fixed start/end times
-            self._check_manual_schedule(now, today_str)
+            # Manual time mode - use fixed start/end times. The owning date
+            # labels the session, so an after-midnight start still files under
+            # the evening it belongs to.
+            self._check_manual_schedule(now, owning_date)
         else:
             # Twilight-based mode - use astronomical calculations
             self._check_twilight_schedule(now)
 
-    def _check_manual_schedule(self, now: datetime, today_str: str):
-        """Check manual time-based schedule."""
+    def _check_manual_schedule(self, now: datetime, owning_date_str: str):
+        """Check manual time-based schedule.
+
+        `owning_date_str` is the night's owning date (YYYY-MM-DD, per the
+        folder rollover rule) - after midnight that's yesterday, so the
+        session is labelled with the evening it belongs to.
+        """
         cfg = self.config_manager.astro_schedule
 
         start_time_str = cfg.manual_start_time
@@ -201,7 +204,7 @@ class AstroScheduler:
                 # Start capture with manual times
                 self.config_manager.schedule.start_time = start_time_str
                 self.config_manager.schedule.end_time = end_time_str
-                self._start_capture_session_manual(today_str, start_time_str, end_time_str)
+                self._start_capture_session_manual(owning_date_str, start_time_str, end_time_str)
         else:
             if self.capture_active:
                 # Stop capture - outside manual window
@@ -292,6 +295,21 @@ class AstroScheduler:
 
         if self.on_start_capture:
             self.on_start_capture()
+
+    def notify_start_failed(self):
+        """The start callback could not actually start capture.
+
+        capture_active is flagged optimistically before on_start_capture runs;
+        if the downstream start fails (bad config, engine error) the scheduler
+        would otherwise believe capture is running forever - "Capturing" with
+        zero frames - and never retry. Resetting the session bookkeeping here
+        (WITHOUT firing on_session_complete: no session ran, so no auto-video)
+        lets the next monitor poll try again.
+        """
+        self.capture_active = False
+        self.current_session_date = None
+        self.current_window = None
+        self._log("WARNING", "Capture failed to start - will retry on the next check")
 
     def _stop_capture_session(self):
         """Stop a capture session and trigger post-processing."""

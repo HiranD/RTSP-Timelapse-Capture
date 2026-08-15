@@ -40,6 +40,7 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
     'flags;low_delay'           # Force low-delay codec operation
 )
 
+import math
 import time
 import threading
 from datetime import datetime, timedelta, date, time as dtime
@@ -484,9 +485,10 @@ class CaptureEngine:
                 return True
             else:
                 # We're between end and start (e.g., between 07:00 and 22:40)
-                # Wait until start time today
+                # Wait until start time today. Round UP: int() truncation woke
+                # the thread a fraction before the start time.
                 today_start = datetime.combine(now.date(), start_time)
-                wait_seconds = int((today_start - now).total_seconds())
+                wait_seconds = math.ceil((today_start - now).total_seconds())
                 self._log("INFO", f"Outside schedule window. Waiting {wait_seconds}s until start time {start_str}")
                 return not self.stop_event.wait(timeout=wait_seconds)
         else:
@@ -494,7 +496,7 @@ class CaptureEngine:
             today_start = datetime.combine(now.date(), start_time)
 
             if now < today_start:
-                wait_seconds = int((today_start - now).total_seconds())
+                wait_seconds = math.ceil((today_start - now).total_seconds())
                 self._log("INFO", f"Waiting {wait_seconds}s until start time {start_str}")
                 return not self.stop_event.wait(timeout=wait_seconds)
             else:
@@ -766,57 +768,19 @@ class CaptureEngine:
 
     def _calculate_end_time(self) -> datetime:
         """
-        Calculate the end time for the current capture session.
-        Properly handles overnight schedules (e.g., 22:40 to 07:00).
+        End of the current capture session: the next future occurrence of the
+        configured end time.
+
+        Deliberately NOT derived from "are we before or after the start time":
+        this runs right after the start-time wait, which can wake fractionally
+        early, and classifying 19:59:59 as "before the window" once made an
+        overnight session return yesterday's end - already in the past - so
+        the capture loop exited with zero frames.
 
         Returns:
             Datetime when capture should end
         """
-        start_str = self.config["schedule"]["start_time"]
-        end_str = self.config["schedule"]["end_time"]
-
-        start_h, start_m = map(int, start_str.split(":"))
-        end_h, end_m = map(int, end_str.split(":"))
-
-        now = datetime.now()
-
-        # Create time objects for comparison
-        start_time = dtime(hour=start_h, minute=start_m)
-        end_time = dtime(hour=end_h, minute=end_m)
-        current_time = now.time()
-
-        # Calculate today's end datetime
-        today_end = datetime.combine(now.date(), end_time)
-
-        # Check if this is an overnight schedule (end < start)
-        if end_time < start_time:
-            # Overnight schedule (e.g., 22:40 to 07:00)
-            if current_time >= start_time:
-                # We're after start time, so end is tomorrow
-                return today_end + timedelta(days=1)
-            else:
-                # We're before start time, so end is today
-                return today_end
-        else:
-            # Same-day schedule (e.g., 08:00 to 18:00)
-            if current_time < end_time:
-                # End is today
-                return today_end
-            else:
-                # End is tomorrow
-                return today_end + timedelta(days=1)
-
-    def _next_occurrence(self, time_str: str) -> datetime:
-        """
-        Calculate next occurrence of HH:MM time.
-
-        Args:
-            time_str: Time in HH:MM format
-
-        Returns:
-            Next datetime matching the time
-        """
-        h, m = map(int, time_str.split(":"))
+        h, m = map(int, self.config["schedule"]["end_time"].split(":"))
         now = datetime.now()
         candidate = datetime.combine(now.date(), dtime(hour=h, minute=m))
 
