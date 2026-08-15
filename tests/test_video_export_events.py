@@ -130,7 +130,8 @@ class ExportEventOverlayTests(unittest.TestCase):
             settings, collection, self.output_file, since=since,
             log_callback=self.messages.append,
             event_overlay=event_overlay, event_overlay_seconds=event_overlay_seconds,
-            event_csv=event_csv)
+            event_csv=event_csv,
+            temp_dir=str(self.root))  # keep staging inside the test's tmp dir
         self.assertTrue(ok, msg)
         return job
 

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from video_export_controller import (  # noqa: E402
     STALE_TEMP_AGE_SECONDS, VideoExportController,
 )
+from preset_manager import VideoExportSettings  # noqa: E402
 
 
 class TempCleanupTests(unittest.TestCase):
@@ -126,6 +127,72 @@ class TempCleanupTests(unittest.TestCase):
                    side_effect=OSError("held")):
             self.controller._sweep_stale_temp_folders(self.dir, self.log)
         self.assertEqual(self.messages, [])
+
+
+class PrepareExportTempBaseTests(unittest.TestCase):
+    """Where prepare_export stages its temp copies (ui.temp_export_dir).
+
+    Staging inside the output folder leaked one empty .temp_export_* per render
+    when that folder was sync-watched, so the default is now the Windows temp
+    folder (in an RTSP_Timelapse subdir), and the user may pick a folder of
+    their own. The output folder keeps being swept for legacy leftovers.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.out_dir = self.base / "videos"
+        self.out_dir.mkdir()
+        self.src = self.base / "20260814"
+        self.src.mkdir()
+        # scan_folder reads names and stat() only - empty files suffice.
+        (self.src / "20260814-220000.jpg").write_bytes(b"")
+        self.ctrl = VideoExportController(Mock())
+
+    def _prepare(self, temp_dir=""):
+        settings = VideoExportSettings(framerate=24, preserve_originals=True)
+        ok, coll, msg = self.ctrl.scan_folder(self.src)
+        self.assertTrue(ok, msg)
+        ok, job, msg = self.ctrl.prepare_export(
+            settings, coll, self.out_dir / "out.mp4", temp_dir=temp_dir)
+        self.assertTrue(ok, msg)
+        return job
+
+    def _stale(self, parent, name):
+        folder = parent / name
+        folder.mkdir(parents=True)
+        stamp = time.time() - (STALE_TEMP_AGE_SECONDS + 60)
+        os.utime(folder, (stamp, stamp))
+        return folder
+
+    def test_blank_temp_dir_stages_under_windows_temp_not_output(self):
+        fake_tmp = self.base / "wintemp"
+        fake_tmp.mkdir()
+        with patch("video_export_controller.tempfile.gettempdir",
+                   return_value=str(fake_tmp)):
+            job = self._prepare(temp_dir="")
+        self.assertEqual(job.temp_folder.parent, fake_tmp / "RTSP_Timelapse")
+        self.assertTrue(job.temp_folder.is_dir())
+        self.assertEqual(list(self.out_dir.glob(".temp_export_*")), [])
+
+    def test_explicit_temp_dir_is_used(self):
+        chosen = self.base / "scratch"  # created by prepare_export itself
+        job = self._prepare(temp_dir=str(chosen))
+        self.assertEqual(job.temp_folder.parent, chosen)
+        self.assertTrue(job.temp_folder.is_dir())
+        self.assertEqual(list(self.out_dir.glob(".temp_export_*")), [])
+
+    def test_prepare_sweeps_temp_base_and_legacy_output_leftovers(self):
+        fake_tmp = self.base / "wintemp"
+        stale_in_base = self._stale(fake_tmp / "RTSP_Timelapse",
+                                    ".temp_export_20260809_072915")
+        stale_legacy = self._stale(self.out_dir, ".temp_export_20260810_073018")
+        with patch("video_export_controller.tempfile.gettempdir",
+                   return_value=str(fake_tmp)):
+            self._prepare(temp_dir="")
+        self.assertFalse(stale_in_base.exists())
+        self.assertFalse(stale_legacy.exists())
 
 
 if __name__ == "__main__":

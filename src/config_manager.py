@@ -83,6 +83,11 @@ class UIConfig:
     # render - scheduled, remote-API and the Video Export tab's own button - which is
     # why it lives here rather than under astro_schedule.
     delete_snapshots_after_video: bool = False
+    # Where a render stages its temporary frame copies. Blank = the Windows temp
+    # folder (tempfile.gettempdir()/RTSP_Timelapse). Machine-level, not a preset
+    # field, and applies to every render path - staging inside the output folder
+    # leaked one empty .temp_export_* per night when that folder was sync-watched.
+    temp_export_dir: str = ""
 
 
 @dataclass

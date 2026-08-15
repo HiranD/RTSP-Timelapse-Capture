@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 import os
 import sys
+import tempfile
 
 
 def get_app_base_dir() -> Path:
@@ -246,6 +247,33 @@ class VideoExportPanel(ttk.Frame):
         browse_output_btn = ttk.Button(file_frame, text="Browse", command=self.browse_output_file, width=10)
         browse_output_btn.grid(row=0, column=1, padx=(5, 0))
         ToolTip(browse_output_btn, VIDEO_EXPORT_TOOLTIPS["browse_output"])
+
+        row += 1
+
+        # Temp staging folder. Blank = the Windows temp folder (the default):
+        # staging copies inside the output folder leaked one empty .temp_export_*
+        # per night when that folder was sync-watched. Config-backed
+        # (ui.temp_export_dir) because every render path uses it, like the
+        # delete-snapshots setting below.
+        ttk.Label(output_frame, text="Temp Folder:").grid(row=row, column=0, sticky=tk.W, pady=5)
+
+        temp_frame = ttk.Frame(output_frame)
+        temp_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=(5, 0))
+        temp_frame.columnconfigure(0, weight=1)
+
+        self.temp_dir_entry = ttk.Entry(temp_frame)
+        self.temp_dir_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        # Never blank: show the resolved default so the user always sees where
+        # staging happens. Config keeps "" for "default" so a saved choice is
+        # only ever a genuine user selection.
+        saved_temp = self.config_manager.ui.temp_export_dir if self.config_manager else ""
+        self.temp_dir_entry.insert(0, saved_temp or self._default_temp_dir())
+        self.temp_dir_entry.bind("<FocusOut>", lambda _e: self._save_temp_dir_setting())
+        ToolTip(self.temp_dir_entry, VIDEO_EXPORT_TOOLTIPS["temp_dir"])
+
+        browse_temp_btn = ttk.Button(temp_frame, text="Browse", command=self.browse_temp_dir, width=10)
+        browse_temp_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(browse_temp_btn, VIDEO_EXPORT_TOOLTIPS["browse_temp_dir"])
 
         row += 1
 
@@ -709,6 +737,44 @@ class VideoExportPanel(ttk.Frame):
         self.config_manager.ui.delete_snapshots_after_video = self.delete_snapshots_var.get()
         self.config_manager.save_to_file()
 
+    def _default_temp_dir(self) -> str:
+        """The staging default the Temp Folder field shows: the Windows temp
+        folder's RTSP_Timelapse subdir. Must match what prepare_export resolves
+        a blank temp_dir to (video_export_controller.py)."""
+        return str(Path(tempfile.gettempdir()) / "RTSP_Timelapse")
+
+    def _selected_temp_dir(self) -> str:
+        """The setting the entry represents: "" while it shows the default, so
+        config only ever stores a genuine user selection."""
+        value = self.temp_dir_entry.get().strip()
+        if not value or value == self._default_temp_dir():
+            return ""
+        return value
+
+    def browse_temp_dir(self):
+        """Browse for the temp staging folder. Cancel keeps the current value;
+        clearing the entry restores the Windows temp default."""
+        current = self.temp_dir_entry.get().strip()
+        chosen = filedialog.askdirectory(
+            title="Select Temp Folder",
+            initialdir=current if current and Path(current).is_dir() else None)
+        if chosen:
+            self.temp_dir_entry.delete(0, tk.END)
+            self.temp_dir_entry.insert(0, chosen)
+            self._save_temp_dir_setting()
+
+    def _save_temp_dir_setting(self):
+        """Persist ui.temp_export_dir ("" = Windows temp default); unattended
+        renders (the scheduler and POST /video/create) read it from config too.
+        A cleared field snaps back to showing the default path."""
+        value = self._selected_temp_dir()
+        if not value and not self.temp_dir_entry.get().strip():
+            self.temp_dir_entry.insert(0, self._default_temp_dir())
+        if not self.config_manager:
+            return
+        self.config_manager.ui.temp_export_dir = value
+        self.config_manager.save_to_file()
+
     def _save_event_settings(self):
         """Persist the session-event choices so they survive a restart and reach
         unattended renders (the scheduler and POST /video/create read them from config)."""
@@ -773,11 +839,15 @@ class VideoExportPanel(ttk.Frame):
 
         # Overlay settings come from config (the single source), not the preset.
         ui_cfg = self.config_manager.ui if self.config_manager else None
+        # Persist a hand-typed temp folder at the moment it matters, then use it
+        # for this export (blank = Windows temp default).
+        self._save_temp_dir_setting()
         success, job, message = self.controller.prepare_export(
             settings, self.current_collection, output_path, log_callback=self.log_message,
             event_overlay=ui_cfg.event_overlay if ui_cfg else self.event_overlay_var.get(),
             event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds(),
-            event_csv=ui_cfg.event_csv if ui_cfg else self.event_csv_var.get())
+            event_csv=ui_cfg.event_csv if ui_cfg else self.event_csv_var.get(),
+            temp_dir=self._selected_temp_dir())
 
         if not success:
             messagebox.showerror("Export Preparation Failed", message)

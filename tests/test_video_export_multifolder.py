@@ -123,7 +123,8 @@ class PrepareExportMultiFolderTests(unittest.TestCase):
         settings = VideoExportSettings(framerate=24, preserve_originals=False)
         ok, job, msg = self.ctrl.prepare_export(
             settings, coll, self.base / "out.mp4",
-            log_callback=self.messages.append)
+            log_callback=self.messages.append,
+            temp_dir=str(self.base))  # keep staging inside the test's tmp dir
         self.assertTrue(ok, msg)
         self.assertTrue(job.use_temp_copies)
         self.assertTrue(any("Multi-folder render" in m for m in self.messages),

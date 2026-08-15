@@ -67,6 +67,20 @@ VIDEO_EXPORT_TOOLTIPS = {
         "Choose where to save the output video file."
     ),
 
+    "temp_dir": (
+        "Where temporary frame copies are staged during a render "
+        "(removed automatically afterwards).\n"
+        "Shows and uses the Windows temp folder (the default) until "
+        "you pick another location.\n"
+        "Pick a folder on a local, non-synced drive - staging inside "
+        "a synced folder can leave empty leftovers behind."
+    ),
+
+    "browse_temp_dir": (
+        "Choose the temp staging folder. "
+        "Clear the field to go back to the Windows temp default."
+    ),
+
     "preserve_originals": (
         "Creates temporary numbered copies for FFmpeg processing. "
         "Your original timestamped files remain untouched. "

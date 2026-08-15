@@ -7,6 +7,7 @@ Handles image scanning, export preparation, and video creation orchestration.
 
 import os
 import shutil
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -291,7 +292,8 @@ class VideoExportController:
         log_callback: Optional[Callable[[str], None]] = None,
         event_overlay: bool = False,
         event_overlay_seconds: float = 4.0,
-        event_csv: bool = False
+        event_csv: bool = False,
+        temp_dir: str = ""
     ) -> Tuple[bool, Optional[ExportJob], str]:
         """
         Prepare for export (validate, create temp folder if needed)
@@ -310,6 +312,9 @@ class VideoExportController:
             event_overlay_seconds: caption hold time, in seconds of finished video
             event_csv: write <video>.events.csv beside the render. Independent of
                 event_overlay - the log is useful without captions, and vice versa.
+            temp_dir: where temp frame copies are staged (ui.temp_export_dir, an
+                app preference like event_overlay - callers read it from config).
+                Blank = the Windows temp folder.
 
         Returns:
             (success, ExportJob, message) tuple
@@ -359,11 +364,22 @@ class VideoExportController:
                                  "'preserve originals' enabled for this export")
 
             if use_temp_copies:
+                # Stage copies OUTSIDE the output folder: creating them beside
+                # the output leaked one empty .temp_export_* per render when
+                # that folder was sync-watched (the watcher's directory handle
+                # wins the delete race). Blank temp_dir = the Windows temp
+                # folder, in an app subdir so the stale sweep has a safe scope.
+                if temp_dir.strip():
+                    temp_base = Path(temp_dir.strip())
+                else:
+                    temp_base = Path(tempfile.gettempdir()) / "RTSP_Timelapse"
+                temp_base.mkdir(parents=True, exist_ok=True)
                 # Sweep leftovers whose cleanup lost the race against an external
-                # handle (see _cleanup_temp), then create this export's own folder.
+                # handle (see _cleanup_temp): the temp base, plus - for one more
+                # release - the output folder, where older builds staged copies.
+                self._sweep_stale_temp_folders(temp_base, log_callback)
                 self._sweep_stale_temp_folders(output_folder, log_callback)
-                # Create temp folder in same directory as output
-                temp_folder = output_folder / f".temp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                temp_folder = temp_base / f".temp_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 temp_folder.mkdir(parents=True, exist_ok=True)
 
             job = ExportJob(

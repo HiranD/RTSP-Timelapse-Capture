@@ -2095,7 +2095,8 @@ class RTSPTimelapseGUI:
                 log_callback=lambda m: self.log_message("INFO", f"[Auto Video] {m}"),
                 event_overlay=self.config_manager.ui.event_overlay,
                 event_overlay_seconds=self.config_manager.ui.event_overlay_seconds,
-                event_csv=self.config_manager.ui.event_csv)
+                event_csv=self.config_manager.ui.event_csv,
+                temp_dir=self.config_manager.ui.temp_export_dir)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
                 return False, msg, 500
