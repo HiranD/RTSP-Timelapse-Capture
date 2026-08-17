@@ -7,6 +7,7 @@ root or capture engine is needed. _run_on_ui is stubbed to run its callable inli
 """
 
 import sys
+import tempfile
 import threading
 import unittest
 from datetime import datetime, timedelta
@@ -25,6 +26,7 @@ def _fake_gui(**overrides):
     g.is_capturing = False
     g.start_capture.return_value = (True, None)
     g._start_remote_video.return_value = (True, "ok", 202, "20260625")
+    g._sched_pending = None  # mirrors __init__ - MagicMock auto-attrs are truthy
     for key, value in overrides.items():
         setattr(g, key, value)
     return g
@@ -132,7 +134,9 @@ class RemoteStartCaptureTests(unittest.TestCase):
 
 
 class NaturalStopTests(unittest.TestCase):
-    """A natural/automatic stop (disconnect, error, end_dt) must cancel a pending auto-stop."""
+    """A natural/automatic stop (error, end_dt) must cancel a pending auto-stop's
+    timer - but honour its render, so a mid-night outage can't lose the video
+    (the 2026-07-27 regression)."""
 
     def test_natural_stop_cancels_scheduled_timer(self):
         g = _fake_gui(is_capturing=True)
@@ -140,6 +144,56 @@ class NaturalStopTests(unittest.TestCase):
             g, CaptureState.ERROR, {"frame_count": 3, "uptime_seconds": 42})
         g._cancel_scheduled_stop.assert_called_once()
         self.assertFalse(g.is_capturing)
+        g._start_remote_video.assert_not_called()  # nothing was pending
+
+    def test_natural_stop_fires_pending_render(self):
+        g = _fake_gui(is_capturing=True, _sched_pending=(True, "20260727-210000"))
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.STOPPED, {"frame_count": 42, "uptime_seconds": 999})
+        g._cancel_scheduled_stop.assert_called_once()
+        g._start_remote_video.assert_called_once_with(None, "20260727-210000")
+
+    def test_natural_stop_no_render_when_create_video_false(self):
+        g = _fake_gui(is_capturing=True, _sched_pending=(False, "20260727-210000"))
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.ERROR, {"frame_count": 42, "uptime_seconds": 999})
+        g._cancel_scheduled_stop.assert_called_once()
+        g._start_remote_video.assert_not_called()
+
+    def test_pending_read_before_cancel_clears_it(self):
+        # The real _cancel_scheduled_stop clears _sched_pending; the natural-stop
+        # path must read it first or the render is lost.
+        g = _fake_gui(is_capturing=True, _sched_pending=(True, "20260727-210000"))
+        g._cancel_scheduled_stop.side_effect = lambda: setattr(g, "_sched_pending", None)
+        RTSPTimelapseGUI.update_status_from_engine(
+            g, CaptureState.ERROR, {"frame_count": 42, "uptime_seconds": 999})
+        g._start_remote_video.assert_called_once_with(None, "20260727-210000")
+
+
+class SchedPendingLifecycleTests(unittest.TestCase):
+    """The real methods must arm, consume, and clear _sched_pending."""
+
+    def test_schedule_auto_stop_arms_pending(self):
+        g = _fake_gui()
+        far = datetime.now() + timedelta(hours=6)
+        RTSPTimelapseGUI._schedule_auto_stop(g, far, True, "20260727-210000")
+        self.assertEqual(g._sched_pending, (True, "20260727-210000"))
+        g._sched_cancel.set()  # release the real daemon waiter thread
+
+    def test_cancel_clears_pending(self):
+        g = _fake_gui(_sched_pending=(True, "20260727-210000"),
+                      _sched_cancel=threading.Event())
+        RTSPTimelapseGUI._cancel_scheduled_stop(g)
+        self.assertIsNone(g._sched_pending)
+
+    def test_fired_stop_consumes_pending(self):
+        # The timer consuming its own stop must clear pending, or the engine's
+        # STOPPED callback that follows would render a second time.
+        cancel = threading.Event()
+        g = _fake_gui(is_capturing=True, _sched_cancel=cancel,
+                      _sched_pending=(True, "20260727-210000"))
+        RTSPTimelapseGUI._do_scheduled_stop(g, cancel, True, "20260727-210000")
+        self.assertIsNone(g._sched_pending)
 
 
 class RemoteVideoControllerReuseTests(unittest.TestCase):
@@ -156,6 +210,92 @@ class RemoteVideoControllerReuseTests(unittest.TestCase):
         self.assertEqual(code, 404)  # no folders -> resolved before any encode
         g.video_export_panel.controller.get_available_date_folders.assert_called_once()
         MockVEC.assert_not_called()  # no fresh controller (no ffmpeg subprocess) for listing
+
+
+class SessionAwareVideoResolutionTests(unittest.TestCase):
+    """With `since` and no explicit date, the render must cover every existing
+    date folder from the session's start onward (ascending) - not just the
+    newest - so a session that crossed the folder rollover renders whole."""
+
+    def _gui(self, folder_names, rollover=12):
+        g = _fake_gui()
+        g.config_manager.capture.output_folder = "."
+        g.config_manager.schedule.folder_rollover_hour = rollover
+        g.video_export_panel.controller.get_available_date_folders.return_value = [
+            Path(name) for name in sorted(folder_names, reverse=True)]
+        g._auto_create_video_for_date.return_value = (True, "ok", 202)
+        return g
+
+    def test_covers_folders_from_session_start_ascending(self):
+        g = self._gui(["20260724", "20260725", "20260726"])
+        ok, _msg, code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(code, 202)
+        self.assertEqual(resolved, "20260725")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260725", since=datetime(2026, 7, 25, 20, 0, 0),
+            folders=[Path("20260725"), Path("20260726")])
+
+    def test_early_morning_since_maps_to_previous_days_folder(self):
+        """03:00 with rollover 12 belongs to the previous evening's folder."""
+        g = self._gui(["20260725", "20260726"])
+        ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260726-030000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260725")
+
+    def test_missing_start_folder_degrades_to_first_existing(self):
+        """A framing gap: the start-date folder was never created."""
+        g = self._gui(["20260726"])
+        ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260726")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260726", since=datetime(2026, 7, 25, 20, 0, 0),
+            folders=[Path("20260726")])
+
+    def test_no_folders_at_or_after_start_is_404(self):
+        g = self._gui(["20260720"])
+        ok, msg, code, resolved = RTSPTimelapseGUI._start_remote_video(
+            g, None, "20260725-200000")
+        self.assertFalse(ok)
+        self.assertEqual(code, 404)
+        self.assertIsNone(resolved)
+        self.assertIn("session starting", msg)
+        g._auto_create_video_for_date.assert_not_called()
+
+    def test_explicit_date_keeps_single_folder_semantics(self):
+        """A caller who names a folder gets that folder, even with `since`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "20260725").mkdir()
+            g = self._gui(["20260725"])
+            g.config_manager.capture.output_folder = tmp
+            ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(
+                g, "20260725", "20260725-200000")
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260725")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260725", since=datetime(2026, 7, 25, 20, 0, 0), folders=None)
+        g.video_export_panel.controller.get_available_date_folders.assert_not_called()
+
+    def test_no_since_no_date_uses_newest_folder(self):
+        """Regression pin: the plain no-body /video/create behaviour is unchanged."""
+        with tempfile.TemporaryDirectory() as tmp:
+            older = Path(tmp) / "20260725"
+            newest = Path(tmp) / "20260726"
+            older.mkdir()
+            newest.mkdir()
+            g = self._gui([])
+            g.config_manager.capture.output_folder = tmp
+            g.video_export_panel.controller.get_available_date_folders.return_value = [
+                newest, older]
+            ok, _msg, _code, resolved = RTSPTimelapseGUI._start_remote_video(g, None, None)
+        self.assertTrue(ok)
+        self.assertEqual(resolved, "20260726")
+        g._auto_create_video_for_date.assert_called_once_with(
+            "20260726", since=None, folders=None)
 
 
 class RemoteApiDisableTests(unittest.TestCase):

@@ -90,6 +90,7 @@ SCHEDULING_TOOLTIPS = {
         "Automatically create a timelapse video after each\n"
         "night's capture session completes.\n\n"
         "Uses the preset and output folder configured in\n"
-        "the Video Export tab."
+        "the Video Export tab. Deleting snapshots after\n"
+        "the video is made is also set there."
     ),
 }

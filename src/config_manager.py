@@ -69,6 +69,25 @@ class UIConfig:
     auto_start: bool = False
     last_video_export_dir: str = ""  # Last directory used for video export
     last_video_preset: str = "Standard 24fps"  # Last selected video export preset
+    # Burn session events into rendered video as captions (issue #15). Lives here
+    # rather than in a video preset because presets carry encoding choices and are
+    # switched freely, while this is a standing preference that must survive a
+    # restart and apply to unattended renders (scheduler / POST /video/create).
+    event_overlay: bool = False
+    event_overlay_seconds: float = 4.0  # caption hold time, in seconds of finished video
+    # Write <video>.events.csv next to the render. Off by default. Note this is the
+    # only durable copy when "delete snapshots after video" is on, since events.jsonl
+    # lives inside the snapshot folder that gets removed.
+    event_csv: bool = False
+    # Delete the snapshot folder after a video is created from it. Applies to every
+    # render - scheduled, remote-API and the Video Export tab's own button - which is
+    # why it lives here rather than under astro_schedule.
+    delete_snapshots_after_video: bool = False
+    # Where a render stages its temporary frame copies. Blank = the Windows temp
+    # folder (tempfile.gettempdir()/RTSP_Timelapse). Machine-level, not a preset
+    # field, and applies to every render path - staging inside the output folder
+    # leaked one empty .temp_export_* per night when that folder was sync-watched.
+    temp_export_dir: str = ""
 
 
 @dataclass
@@ -81,13 +100,26 @@ class AstroScheduleConfig:
     end_offset_minutes: int = 0  # Minutes before darkness ends (can be negative)
     scheduled_dates: List[str] = field(default_factory=list)  # ["2025-12-15", "2025-12-16"]
     auto_create_video: bool = False  # Automatically create video after each night
-    delete_snapshots_after_video: bool = False  # Delete snapshot folder after video creation
+    # NOTE: delete_snapshots_after_video moved to UIConfig - it governs every render,
+    # not just scheduled ones. from_dict migrates the old key.
     discord_webhook_url: str = ""  # Discord webhook URL for automatic uploads
     discord_max_video_size_mb: int = 8  # Maximum file size to upload to Discord in MB
     discord_export_resolution: str = "original"  # Resolution for Discord export: original/720p/480p/360p
     discord_auto_quality_reduction: bool = False  # Auto re-encode with lower quality if file exceeds limit
     delete_video_after_discord_upload: bool = False  # Delete generated video after successful Discord upload
     discord_keep_reencoded: bool = False  # Keep the re-encoded copy uploaded to Discord (in .discord_encode/)
+    # Video delivery: "discord" = direct webhook upload (needs internet);
+    # "mqtt" = publish to an MQTT broker for an external consumer to relay - the
+    # offline-observatory case, where only a local broker is reachable. The size
+    # limit / auto-reduce / delete-after settings above apply to BOTH methods.
+    delivery_method: str = "discord"  # "discord" | "mqtt"
+    mqtt_broker_host: str = "127.0.0.1"
+    mqtt_broker_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_password: str = ""  # plaintext, same convention as the camera password
+    mqtt_base_topic: str = "rtsp-timelapse"
+    mqtt_qos: int = 1  # 0 or 1
+    mqtt_use_tls: bool = False
     # Manual time mode settings
     use_manual_times: bool = False  # True = use manual times, False = use twilight calculation
     manual_start_time: str = "20:00"  # HH:MM format - capture start time
@@ -170,12 +202,21 @@ class ConfigManager:
         if "capture" in config_dict:
             self.capture = CaptureConfig(**_known_fields(CaptureConfig, config_dict["capture"]))
 
-        if "ui" in config_dict:
-            ui_data = dict(config_dict["ui"])
+        # Backward compat: "delete_snapshots_after_video" used to live under
+        # astro_schedule, back when only the scheduler acted on it. Carried over here
+        # rather than inside the "ui" branch below so it also applies to a config that
+        # has an astro_schedule section but no ui section at all. An explicit ui value
+        # always wins; the stale astro_schedule key is dropped on the next save.
+        legacy_delete = config_dict.get("astro_schedule", {}).get("delete_snapshots_after_video")
+
+        if "ui" in config_dict or legacy_delete is not None:
+            ui_data = dict(config_dict.get("ui") or {})
             # Backward compat: "minimize_to_tray_on_startup" was renamed to
             # "minimize_to_tray" (it now also governs the minimize button).
             if "minimize_to_tray_on_startup" in ui_data:
                 ui_data.setdefault("minimize_to_tray", ui_data.pop("minimize_to_tray_on_startup"))
+            if legacy_delete is not None:
+                ui_data.setdefault("delete_snapshots_after_video", legacy_delete)
             self.ui = UIConfig(**_known_fields(UIConfig, ui_data))
 
         if "astro_schedule" in config_dict:
@@ -203,7 +244,10 @@ class ConfigManager:
             filepath = str(config_path)
 
         try:
-            with open(filepath, 'w') as f:
+            # Explicit UTF-8 (no BOM): the default encoding is the system locale,
+            # which mangles non-ASCII paths - e.g. an output folder under an
+            # accented user name.
+            with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, indent=2)
 
             return True, f"Configuration saved to {filepath}"
@@ -228,7 +272,12 @@ class ConfigManager:
             return False, f"Configuration file not found: {filepath}"
 
         try:
-            with open(filepath, 'r') as f:
+            # utf-8-sig, not the locale default: hand-editing this file in Notepad
+            # or writing it from PowerShell adds a UTF-8 BOM, which json.load then
+            # chokes on. That failure is silent and total - the app falls back to
+            # defaults and every setting (camera, output folders, API port) appears
+            # to reset itself. utf-8-sig transparently strips a BOM if present.
+            with open(filepath, 'r', encoding='utf-8-sig') as f:
                 config_dict = json.load(f)
 
             self.from_dict(config_dict)
@@ -324,6 +373,9 @@ class ConfigManager:
         # Validate UI
         if self.ui.preview_size not in ["small", "medium", "large"]:
             errors.append(f"Preview size must be small/medium/large, got {self.ui.preview_size}")
+        if not 1 <= self.ui.event_overlay_seconds <= 30:
+            errors.append(
+                f"Event overlay hold must be 1-30 seconds, got {self.ui.event_overlay_seconds}")
 
         # Validate astro_schedule
         if not -90 <= self.astro_schedule.latitude <= 90:
@@ -344,6 +396,24 @@ class ConfigManager:
             errors.append(
                 f"Discord export resolution must be original/720p/480p/360p, got {self.astro_schedule.discord_export_resolution}"
             )
+        if self.astro_schedule.delivery_method not in ["discord", "mqtt"]:
+            errors.append(
+                f"Delivery method must be discord/mqtt, got {self.astro_schedule.delivery_method}"
+            )
+        if self.astro_schedule.delivery_method == "mqtt":
+            # Only enforced when MQTT is the selected method: broken MQTT values
+            # left over from a previous experiment must not fail an unrelated
+            # config - validate() gates start_capture(), so an unconditional
+            # check here would stop a Discord-only user from capturing at all.
+            if not 1 <= self.astro_schedule.mqtt_broker_port <= 65535:
+                errors.append(f"MQTT port must be 1-65535, got {self.astro_schedule.mqtt_broker_port}")
+            if self.astro_schedule.mqtt_qos not in (0, 1):
+                errors.append(f"MQTT QoS must be 0 or 1, got {self.astro_schedule.mqtt_qos}")
+            topic = self.astro_schedule.mqtt_base_topic
+            if not topic or "#" in topic or "+" in topic:
+                errors.append(
+                    f"MQTT base topic must be non-empty without wildcards, got '{topic}'"
+                )
 
         # Validate remote API
         if self.remote_api.enabled and not 1024 <= self.remote_api.port <= 65535:

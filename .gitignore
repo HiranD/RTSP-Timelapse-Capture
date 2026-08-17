@@ -46,6 +46,9 @@ user_data/
 config/*.json
 !config/app_config_example.json
 
+# Written into the repo root by tests/test_backend.py on every run
+test_config.json
+
 # Logs
 *.log
 logs/

@@ -34,6 +34,9 @@ class VideoExportSettings:
     add_timestamp: bool = False
     preserve_originals: bool = True
     open_when_done: bool = False
+    # NOTE: event overlays are deliberately NOT a preset field. They're a standing
+    # app preference in config/app_config.json (UIConfig.event_overlay), so there is
+    # one place to configure them and switching preset can't silently turn them off.
 
     def to_dict(self) -> dict:
         """Convert to dictionary"""

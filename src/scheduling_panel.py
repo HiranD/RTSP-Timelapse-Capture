@@ -335,26 +335,10 @@ class SchedulingPanel(ttk.Frame):
             command=self._on_auto_video_toggle
         )
         auto_video_check.pack(side="left")
+        # "Delete snapshots after" used to sit here. It lives on the Video Export tab
+        # because it governs every render - scheduled, remote-API and manual - not just
+        # scheduled ones; the tooltip points there so this tab doesn't need a caption.
         ToolTip(auto_video_check, SCHEDULING_TOOLTIPS["auto_video"])
-
-        # Delete snapshots checkbox
-        self.delete_snapshots_var = tk.BooleanVar(value=False)
-        self.delete_snapshots_check = ttk.Checkbutton(
-            row_frame,
-            text="Delete snapshots after",
-            variable=self.delete_snapshots_var,
-            command=self._on_delete_snapshots_toggle
-        )
-        self.delete_snapshots_check.pack(side="left", padx=(20, 0))
-        ToolTip(self.delete_snapshots_check,
-            "Automatically delete the snapshot folder after\n"
-            "successfully creating the video.\n\n"
-            "WARNING: This permanently deletes all captured\n"
-            "images for that date. Use with caution!"
-        )
-
-        # Initially disable the delete-snapshots checkbox if auto video is off
-        self._update_video_widgets_state()
 
     def _create_log_section(self, parent: ttk.LabelFrame):
         """Create scheduler control and log display"""
@@ -455,7 +439,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         self.auto_video_var.set(cfg.auto_create_video)
-        self.delete_snapshots_var.set(cfg.delete_snapshots_after_video)
 
         # Load scheduled dates into calendar
         if cfg.scheduled_dates:
@@ -468,7 +451,6 @@ class SchedulingPanel(ttk.Frame):
         self._update_twilight_calculator()
         self._update_hemisphere_display()
         self._update_twilight_description()
-        self._update_video_widgets_state()
         self._update_time_mode_widgets()
 
     def _save_to_config(self):
@@ -507,7 +489,6 @@ class SchedulingPanel(ttk.Frame):
 
         # Auto video settings
         cfg.auto_create_video = self.auto_video_var.get()
-        cfg.delete_snapshots_after_video = self.delete_snapshots_var.get()
         cfg.scheduled_dates = list(self.calendar.get_selected_dates())
 
         # Scheduler UI state
@@ -603,11 +584,6 @@ class SchedulingPanel(ttk.Frame):
         desc = descriptions.get(self.twilight_type_var.get(), "")
         self.twilight_desc_label.config(text=desc)
 
-    def _update_video_widgets_state(self):
-        """Enable/disable video widgets based on checkbox"""
-        state = "normal" if self.auto_video_var.get() else "disabled"
-        self.delete_snapshots_check.config(state=state)
-
     def _update_time_mode_widgets(self):
         """Enable/disable twilight or manual widgets based on selected mode"""
         is_manual = (self.time_mode_var.get() == "manual")
@@ -662,11 +638,6 @@ class SchedulingPanel(ttk.Frame):
 
     def _on_auto_video_toggle(self):
         """Handle auto video checkbox toggle"""
-        self._update_video_widgets_state()
-        self._save_to_config()
-
-    def _on_delete_snapshots_toggle(self):
-        """Handle delete snapshots checkbox toggle"""
         self._save_to_config()
 
     def _on_scheduler_toggle(self):
@@ -758,9 +729,25 @@ class SchedulingPanel(ttk.Frame):
         if self.start_capture_callback:
             # Use after() to call on main thread with from_scheduler=True
             # This tells start_capture to use the scheduler's times, not the UI times.
-            # show_dialogs=False: an unattended scheduler run must never block on a
-            # modal error dialog (e.g. bad config) - errors go to the log instead.
-            self.after(0, lambda: self.start_capture_callback(from_scheduler=True, show_dialogs=False))
+            self.after(0, self._start_scheduled_capture)
+
+    def _start_scheduled_capture(self):
+        """Runs on the main thread: start capture for the scheduler and report
+        failure back.
+
+        The scheduler flags capture_active before this runs; if the start fails
+        (bad config, engine error) it must be told via notify_start_failed(),
+        or it believes capture is running forever ("Capturing", zero frames)
+        and never retries. show_dialogs=False: an unattended scheduler run must
+        never block on a modal error dialog - errors go to the log instead.
+        """
+        if not self.start_capture_callback:
+            return
+        ok, err = self.start_capture_callback(from_scheduler=True, show_dialogs=False)
+        if not ok:
+            self._log("ERROR", f"Scheduled capture failed to start: {err}")
+            if self.scheduler:
+                self.scheduler.notify_start_failed()
 
     def _on_scheduler_stop_capture(self):
         """Called by scheduler when it's time to stop capture"""
@@ -780,6 +767,12 @@ class SchedulingPanel(ttk.Frame):
         """Called by the scheduler on its monitor thread when a session completes."""
         self._log("INFO", f"Session complete for {date_str}")
 
+        # Capture the start before anything can clear it: the auto-video render
+        # is session-aware (it covers every folder from this start onward), so it
+        # needs the value that _record_capture_session/the clear below consume.
+        # The datetime is immutable, so handing it to the main thread is safe.
+        session_start = self.session_start_time
+
         # Record to history on this (monitor) thread on purpose: it globs the
         # snapshot directory (file I/O that could block the Tk event loop on a
         # large session), and the only Tk it touches (_log, calendar refresh) is
@@ -792,10 +785,11 @@ class SchedulingPanel(ttk.Frame):
         self.session_start_time = None
 
         # auto_video_var is a tk.BooleanVar - read it (and kick off the video) on
-        # the main thread.
-        self.after(0, lambda: self._maybe_autocreate_video(date_str))
+        # the main thread. Default-arg binding, so the lambda holds the captured
+        # values rather than late-bound locals.
+        self.after(0, lambda d=date_str, s=session_start: self._maybe_autocreate_video(d, s))
 
-    def _maybe_autocreate_video(self, date_str: str):
+    def _maybe_autocreate_video(self, date_str: str, session_start=None):
         """Runs on the main thread - safe to read auto_video_var here."""
         # Guard against teardown between scheduling this callback and it firing:
         # if the widget is gone, auto_video_var.get() would raise TclError.
@@ -804,8 +798,9 @@ class SchedulingPanel(ttk.Frame):
         if self.auto_video_var.get():
             self._log("INFO", f"Auto-creating video for {date_str}")
             if self.create_video_callback:
-                # Pass the date string so the callback can find the right folder
-                self.create_video_callback(date_str)
+                # The date names the video; the start time lets the callback
+                # render exactly this session (session-aware, multi-folder).
+                self.create_video_callback(date_str, session_start)
 
     def _record_capture_session(self, date_str: str):
         """Record a completed capture session to history"""
@@ -857,9 +852,12 @@ class SchedulingPanel(ttk.Frame):
         Set callbacks for integration with main GUI.
 
         Args:
-            start_capture: Callback to start capture
+            start_capture: Callback to start capture. Must return
+                (ok: bool, error: str | None) - a failed scheduler start is
+                reported back via scheduler.notify_start_failed() so it retries.
             stop_capture: Callback to stop capture
-            create_video: Callback to create video (receives date_str YYYYMMDD)
+            create_video: Callback to create video (receives date_str YYYYMMDD and
+                the session's start datetime, or None when the start is unknown)
             log: Callback to log messages (level, message)
         """
         self.start_capture_callback = start_capture

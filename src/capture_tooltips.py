@@ -76,6 +76,13 @@ CAPTURE_TOOLTIPS = {
         "Select the folder where timelapse snapshots will be saved."
     ),
 
+    "folder_rollover_hour": (
+        "Frames saved before this hour go into the previous day's folder, "
+        "so an overnight session stays in one folder. "
+        "Pick an hour you never capture across (default 12 = noon). "
+        "Locked while capture is running."
+    ),
+
     "jpeg_quality": (
         "JPEG compression quality for saved images. "
         "Range: 1-100. Higher = better quality but larger files. "

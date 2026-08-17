@@ -2,7 +2,8 @@
 Integrations Panel - Optional, set-once integrations and unattended-operation options.
 
 Collects controls that are not part of the per-capture/video/schedule workflow:
-- Discord webhook upload of the auto-created nightly video.
+- Delivery of the auto-created nightly video: a Discord webhook upload, or an MQTT
+  publish for an off-machine consumer to relay (rigs with no internet).
 - Application options: minimize to tray on startup, start automatically with Windows.
 
 Future (v3.4.0, issue #12): a "Remote control" section exposing a localhost HTTP API
@@ -27,7 +28,11 @@ except ImportError:
 
 
 class IntegrationsPanel(ttk.Frame):
-    """Integrations tab: Discord upload + application/startup options."""
+    """Integrations tab: video delivery + application/startup options."""
+
+    # Delivery methods: config value <-> the label shown in the dropdown.
+    _METHOD_LABELS = {"discord": "Discord webhook", "mqtt": "MQTT broker"}
+    _METHOD_VALUES = {label: value for value, label in _METHOD_LABELS.items()}
 
     def __init__(self, parent, config_manager: ConfigManager, **kwargs):
         """
@@ -57,10 +62,10 @@ class IntegrationsPanel(ttk.Frame):
         """Create all panel widgets."""
         self.columnconfigure(0, weight=1)
 
-        # === Discord Upload Section ===
-        discord_frame = ttk.LabelFrame(self, text="Discord Upload", padding=10)
-        discord_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        self._create_discord_section(discord_frame)
+        # === Video Delivery Section ===
+        delivery_frame = ttk.LabelFrame(self, text="Video Delivery", padding=10)
+        delivery_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        self._create_delivery_section(delivery_frame)
 
         # === Application Section ===
         app_frame = ttk.LabelFrame(self, text="Application", padding=10)
@@ -72,11 +77,15 @@ class IntegrationsPanel(ttk.Frame):
         remote_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         self._create_remote_control_section(remote_frame)
 
-    def _create_discord_section(self, parent: ttk.LabelFrame):
-        """Discord webhook upload settings."""
+    def _create_delivery_section(self, parent: ttk.LabelFrame):
+        """Where the auto-created video is sent: Discord webhook or MQTT broker.
+
+        The method dropdown swaps which group of fields is shown (row 2); the
+        size/quality/delete rows below apply to whichever method is selected.
+        """
         parent.columnconfigure(1, weight=1)
 
-        # Dependency hint: Discord upload only runs as part of the scheduler's
+        # Dependency hint: delivery only runs as part of the scheduler's
         # auto-video step, so it requires that option on the Scheduling tab.
         hint = ttk.Label(
             parent,
@@ -86,32 +95,50 @@ class IntegrationsPanel(ttk.Frame):
         )
         hint.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        # Webhook URL
-        webhook_tip = (
-            "Discord webhook URL used to upload the generated timelapse video. "
-            "Leave blank to disable automatic Discord uploads."
+        # Delivery method
+        method_tip = (
+            "How the finished video leaves this PC.\n\n"
+            "Discord webhook: uploaded straight to Discord (needs internet).\n"
+            "MQTT broker: published to a broker for another machine to pick up "
+            "and forward — for rigs with no internet, or a custom pipeline."
         )
-        webhook_label = ttk.Label(parent, text="Discord Webhook URL:")
-        webhook_label.grid(row=1, column=0, sticky="w")
-        self.discord_webhook_var = tk.StringVar(value="")
-        self.discord_webhook_entry = ttk.Entry(parent, textvariable=self.discord_webhook_var, width=60)
-        self.discord_webhook_entry.grid(row=1, column=1, sticky="ew", padx=(10, 0))
-        self.discord_webhook_entry.bind("<FocusOut>", self._on_discord_settings_change)
-        self.discord_webhook_entry.bind("<Return>", self._on_discord_settings_change)
-        ToolTip(webhook_label, webhook_tip)
-        ToolTip(self.discord_webhook_entry, webhook_tip)
+        method_label = ttk.Label(parent, text="Delivery method:")
+        method_label.grid(row=1, column=0, sticky="w")
+        self.delivery_method_var = tk.StringVar(value=self._METHOD_LABELS["discord"])
+        self.delivery_method_combo = ttk.Combobox(
+            parent,
+            textvariable=self.delivery_method_var,
+            values=list(self._METHOD_LABELS.values()),
+            state="readonly",
+            width=18
+        )
+        self.delivery_method_combo.grid(row=1, column=1, sticky="w", padx=(10, 0))
+        self.delivery_method_combo.bind("<<ComboboxSelected>>", self._on_delivery_method_change)
+        ToolTip(method_label, method_tip)
+        ToolTip(self.delivery_method_combo, method_tip)
+
+        # Row 2 holds exactly one of these two frames; the other is grid_remove()d
+        # (which keeps its grid options, so re-showing it needs no arguments).
+        self.webhook_frame = ttk.Frame(parent)
+        self.webhook_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self._create_webhook_fields(self.webhook_frame)
+
+        self.mqtt_frame = ttk.Frame(parent)
+        self.mqtt_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self._create_mqtt_fields(self.mqtt_frame)
 
         # Max upload size
         max_size_tip = (
-            "Largest file size (MB) Discord will accept. If the video is bigger, "
-            "upload is skipped — unless 'Auto reduce quality' is on, which "
-            "re-encodes it (at lower quality) to fit."
+            "Largest file size (MB) to send. If the video is bigger, delivery is "
+            "skipped — unless 'Auto reduce quality' is on, which re-encodes it "
+            "(at lower quality) to fit. Discord's own webhook limit is about 10 MB; "
+            "an MQTT broker's is whatever its max message size allows."
         )
         max_size_label = ttk.Label(parent, text="Max upload size (MB):")
-        max_size_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
+        max_size_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
         self.discord_max_size_var = tk.StringVar(value="8")
         self.discord_max_size_entry = ttk.Entry(parent, textvariable=self.discord_max_size_var, width=8)
-        self.discord_max_size_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.discord_max_size_entry.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.discord_max_size_entry.bind("<FocusOut>", self._on_discord_settings_change)
         self.discord_max_size_entry.bind("<Return>", self._on_discord_settings_change)
         ToolTip(max_size_label, max_size_tip)
@@ -125,7 +152,7 @@ class IntegrationsPanel(ttk.Frame):
             "source resolution (relies on compression only)."
         )
         resolution_label = ttk.Label(parent, text="Export resolution:")
-        resolution_label.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        resolution_label.grid(row=4, column=0, sticky="w", pady=(10, 0))
         self.discord_resolution_var = tk.StringVar(value="original")
         self.discord_resolution_combo = ttk.Combobox(
             parent,
@@ -134,7 +161,7 @@ class IntegrationsPanel(ttk.Frame):
             state="readonly",
             width=12
         )
-        self.discord_resolution_combo.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.discord_resolution_combo.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
         self.discord_resolution_combo.bind("<<ComboboxSelected>>", self._on_discord_settings_change)
         ToolTip(resolution_label, resolution_tip)
         ToolTip(self.discord_resolution_combo, resolution_tip)
@@ -147,49 +174,190 @@ class IntegrationsPanel(ttk.Frame):
             variable=self.discord_auto_quality_var,
             command=self._on_discord_settings_change
         )
-        self.discord_auto_quality_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.discord_auto_quality_check.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.discord_auto_quality_check,
             "When a video is over the size limit, re-encode it to fit: quality is "
             "stepped down through CRF 20 → 25 → 28 → 32 → 35 → 40 → 45 (each step "
             "smaller but lossier), at the selected Export resolution, stopping at "
             "the first encode that fits under Max upload size. If even the lowest "
-            "quality can't fit, upload is skipped and the original video is kept "
+            "quality can't fit, delivery is skipped and the original video is kept "
             "locally."
         )
 
-        # Delete video after successful upload
+        # Delete video after a successful delivery
         self.delete_video_after_discord_var = tk.BooleanVar(value=False)
         self.delete_video_after_discord_check = ttk.Checkbutton(
             parent,
-            text="Delete video after successful Discord upload",
+            text="Delete video after successful upload/delivery",
             variable=self.delete_video_after_discord_var,
             command=self._on_discord_settings_change
         )
-        self.delete_video_after_discord_check.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.delete_video_after_discord_check.grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.delete_video_after_discord_check,
-            "After a SUCCESSFUL Discord upload, delete the original full-quality video "
-            "(timelapse_YYYYMMDD.mp4). This does NOT affect the smaller re-encoded copy "
-            "that's actually posted to Discord. Only triggers on success — a skipped or "
-            "failed upload never deletes. Use with caution: the full-quality video is "
-            "permanently removed."
+            "After a SUCCESSFUL upload/delivery (Discord webhook or MQTT publish), delete "
+            "the original full-quality video (timelapse-YYYY-MM-DD.mp4). This does NOT affect "
+            "the smaller re-encoded copy that's actually sent. Only triggers on success — a "
+            "skipped or failed delivery never deletes. Use with caution: the full-quality "
+            "video is permanently removed."
         )
 
-        # Keep the re-encoded copy that was uploaded to Discord
+        # Keep the re-encoded copy that was actually sent
         self.discord_keep_reencoded_var = tk.BooleanVar(value=False)
         self.discord_keep_reencoded_check = ttk.Checkbutton(
             parent,
-            text="Keep the re-encoded copy sent to Discord",
+            text="Keep the re-encoded copy that was sent",
             variable=self.discord_keep_reencoded_var,
             command=self._on_discord_settings_change
         )
-        self.discord_keep_reencoded_check.grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.discord_keep_reencoded_check.grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ToolTip(self.discord_keep_reencoded_check,
-            "After a successful upload, keep the smaller re-encoded video that was posted "
-            "to Discord — saved as timelapse_YYYYMMDD.mp4 inside the .discord_encode folder "
+            "After a successful delivery, keep the smaller re-encoded video that was sent "
+            "— saved as timelapse-YYYY-MM-DD.mp4 inside the .discord_encode folder "
             "(next to your videos) — instead of deleting it. Only applies when 'Auto reduce "
             "quality' actually re-encoded the video; if the original was small enough to "
-            "upload as-is, there's no separate copy to keep."
+            "send as-is, there's no separate copy to keep."
         )
+
+    def _create_webhook_fields(self, parent: ttk.Frame):
+        """Fields shown when the delivery method is 'Discord webhook'."""
+        parent.columnconfigure(1, weight=1)
+
+        webhook_tip = (
+            "Discord webhook URL used to upload the generated timelapse video. "
+            "Leave blank to disable automatic Discord uploads."
+        )
+        webhook_label = ttk.Label(parent, text="Discord Webhook URL:")
+        webhook_label.grid(row=0, column=0, sticky="w")
+        self.discord_webhook_var = tk.StringVar(value="")
+        self.discord_webhook_entry = ttk.Entry(parent, textvariable=self.discord_webhook_var, width=60)
+        self.discord_webhook_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        self.discord_webhook_entry.bind("<FocusOut>", self._on_discord_settings_change)
+        self.discord_webhook_entry.bind("<Return>", self._on_discord_settings_change)
+        ToolTip(webhook_label, webhook_tip)
+        ToolTip(self.discord_webhook_entry, webhook_tip)
+
+    def _create_mqtt_fields(self, parent: ttk.Frame):
+        """Fields shown when the delivery method is 'MQTT broker'.
+
+        Nothing is uploaded from this PC: the video is published to the broker
+        and a consumer elsewhere relays it.
+        """
+        parent.columnconfigure(1, weight=1)
+        parent.columnconfigure(3, weight=1)
+
+        # Broker host + port
+        host_tip = (
+            "Hostname or IP of the MQTT broker to publish to. For a broker running "
+            "on this same PC, use 127.0.0.1."
+        )
+        host_label = ttk.Label(parent, text="Broker host:")
+        host_label.grid(row=0, column=0, sticky="w")
+        self.mqtt_host_var = tk.StringVar(value="127.0.0.1")
+        self.mqtt_host_entry = ttk.Entry(parent, textvariable=self.mqtt_host_var, width=24)
+        self.mqtt_host_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        self._bind_save(self.mqtt_host_entry)
+        ToolTip(host_label, host_tip)
+        ToolTip(self.mqtt_host_entry, host_tip)
+
+        port_tip = "Broker TCP port (1-65535). 1883 is the MQTT default, 8883 for TLS."
+        port_label = ttk.Label(parent, text="Port:")
+        port_label.grid(row=0, column=2, sticky="w", padx=(15, 0))
+        self.mqtt_port_var = tk.StringVar(value="1883")
+        self.mqtt_port_entry = ttk.Entry(parent, textvariable=self.mqtt_port_var, width=8)
+        self.mqtt_port_entry.grid(row=0, column=3, sticky="w", padx=(10, 0))
+        self._bind_save(self.mqtt_port_entry)
+        ToolTip(port_label, port_tip)
+        ToolTip(self.mqtt_port_entry, port_tip)
+
+        # Credentials
+        cred_tip = (
+            "Broker username and password. Leave the username blank for an "
+            "anonymous broker. The password is stored in plain text in "
+            "config/app_config.json, like the camera password."
+        )
+        user_label = ttk.Label(parent, text="Username:")
+        user_label.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.mqtt_username_var = tk.StringVar(value="")
+        self.mqtt_username_entry = ttk.Entry(parent, textvariable=self.mqtt_username_var, width=24)
+        self.mqtt_username_entry.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(8, 0))
+        self._bind_save(self.mqtt_username_entry)
+        ToolTip(user_label, cred_tip)
+        ToolTip(self.mqtt_username_entry, cred_tip)
+
+        pass_label = ttk.Label(parent, text="Password:")
+        pass_label.grid(row=1, column=2, sticky="w", padx=(15, 0), pady=(8, 0))
+        self.mqtt_password_var = tk.StringVar(value="")
+        self.mqtt_password_entry = ttk.Entry(
+            parent, textvariable=self.mqtt_password_var, width=20, show="*"
+        )
+        self.mqtt_password_entry.grid(row=1, column=3, sticky="ew", padx=(10, 0), pady=(8, 0))
+        self._bind_save(self.mqtt_password_entry)
+        ToolTip(pass_label, cred_tip)
+        ToolTip(self.mqtt_password_entry, cred_tip)
+
+        # Base topic
+        topic_tip = (
+            "Videos publish to <base>/metadata (JSON info) and <base>/video (raw file "
+            "bytes). Point your MQTT consumer at these topics."
+        )
+        topic_label = ttk.Label(parent, text="Base topic:")
+        topic_label.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.mqtt_topic_var = tk.StringVar(value="rtsp-timelapse")
+        self.mqtt_topic_entry = ttk.Entry(parent, textvariable=self.mqtt_topic_var, width=24)
+        self.mqtt_topic_entry.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=(8, 0))
+        self._bind_save(self.mqtt_topic_entry)
+        ToolTip(topic_label, topic_tip)
+        ToolTip(self.mqtt_topic_entry, topic_tip)
+
+        # QoS + TLS
+        qos_tip = (
+            "Delivery guarantee for the publish. 1 = the broker acknowledges receipt "
+            "(recommended — the app can then report success). 0 = fire and forget: "
+            "the app reports success as soon as the bytes reach the socket, even if "
+            "the broker never stored them."
+        )
+        qos_label = ttk.Label(parent, text="QoS:")
+        qos_label.grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.mqtt_qos_var = tk.StringVar(value="1")
+        self.mqtt_qos_combo = ttk.Combobox(
+            parent,
+            textvariable=self.mqtt_qos_var,
+            values=["0", "1"],
+            state="readonly",
+            width=5
+        )
+        self.mqtt_qos_combo.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
+        self.mqtt_qos_combo.bind("<<ComboboxSelected>>", self._on_discord_settings_change)
+        ToolTip(qos_label, qos_tip)
+        ToolTip(self.mqtt_qos_combo, qos_tip)
+
+        self.mqtt_tls_var = tk.BooleanVar(value=False)
+        self.mqtt_tls_check = ttk.Checkbutton(
+            parent,
+            text="Use TLS",
+            variable=self.mqtt_tls_var,
+            command=self._on_discord_settings_change
+        )
+        self.mqtt_tls_check.grid(row=3, column=2, columnspan=2, sticky="w", padx=(15, 0), pady=(8, 0))
+        ToolTip(self.mqtt_tls_check,
+            "Encrypt the connection to the broker (usually port 8883). Uses the "
+            "system's default certificate store, so the broker needs a certificate "
+            "your PC already trusts. Leave off for a plain local broker."
+        )
+
+    def _bind_save(self, entry: ttk.Entry):
+        """Persist an entry's value on focus loss and Enter (house self-save pattern)."""
+        entry.bind("<FocusOut>", self._on_discord_settings_change)
+        entry.bind("<Return>", self._on_discord_settings_change)
+
+    def _update_delivery_visibility(self):
+        """Show only the selected method's fields."""
+        if self._METHOD_VALUES.get(self.delivery_method_var.get(), "discord") == "mqtt":
+            self.webhook_frame.grid_remove()
+            self.mqtt_frame.grid()
+        else:
+            self.mqtt_frame.grid_remove()
+            self.webhook_frame.grid()
 
     def _create_application_section(self, parent: ttk.LabelFrame):
         """Application / unattended-startup options."""
@@ -259,9 +427,9 @@ class IntegrationsPanel(ttk.Frame):
         self.remote_api_enabled_check.grid(row=1, column=0, columnspan=2, sticky="w")
         ToolTip(self.remote_api_enabled_check,
             "Start a small HTTP server bound to 127.0.0.1 (this machine only). "
-            "External tools can then POST to /capture/start, /capture/stop and "
-            "/video/create, or GET /status. Not exposed to the network and there "
-            "is no auth token — only programs running on this PC can reach it."
+            "External tools can then POST to /capture/start, /capture/stop, "
+            "/video/create and /events, or GET /status. Not exposed to the network "
+            "and there is no auth token — only programs running on this PC can reach it."
         )
 
         # Lock note (shown when disabled because the scheduler is on).
@@ -310,13 +478,34 @@ class IntegrationsPanel(ttk.Frame):
         )
         examples_hint.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
+        # The controls for what happens to events live on the Video Export tab (they
+        # only take effect at render time), so point there from here - this is where
+        # the API that receives them gets set up, and otherwise nothing connects the two.
+        events_hint = ttk.Label(
+            parent,
+            text="Events sent to /events can be shown on the timelapse — see the Video Export tab.",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        events_hint.grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
     # ------------------------------------------------------------- config
 
     def _load_from_config(self):
         """Load settings from the shared config manager."""
         cfg = self.config_manager.astro_schedule
 
+        self.delivery_method_var.set(
+            self._METHOD_LABELS.get(cfg.delivery_method, self._METHOD_LABELS["discord"])
+        )
         self.discord_webhook_var.set(cfg.discord_webhook_url)
+        self.mqtt_host_var.set(cfg.mqtt_broker_host)
+        self.mqtt_port_var.set(str(cfg.mqtt_broker_port))
+        self.mqtt_username_var.set(cfg.mqtt_username)
+        self.mqtt_password_var.set(cfg.mqtt_password)
+        self.mqtt_topic_var.set(cfg.mqtt_base_topic)
+        self.mqtt_qos_var.set(str(cfg.mqtt_qos))
+        self.mqtt_tls_var.set(cfg.mqtt_use_tls)
         self.discord_max_size_var.set(str(cfg.discord_max_video_size_mb))
         self.discord_resolution_var.set(cfg.discord_export_resolution)
         self.discord_auto_quality_var.set(cfg.discord_auto_quality_reduction)
@@ -334,15 +523,37 @@ class IntegrationsPanel(ttk.Frame):
         # "Start with Windows" reflects the live registry state, not config.
         self.start_with_windows_var.set(startup_manager.is_enabled())
 
+        # Show the field group belonging to the loaded method.
+        self._update_delivery_visibility()
+
     def _save_to_config(self):
-        """Persist Discord + tray settings to the shared config and disk.
+        """Persist delivery + tray settings to the shared config and disk.
 
         Note: start-with-Windows is registry-driven (handled in its own toggle)
         and is intentionally not written here.
         """
         cfg = self.config_manager.astro_schedule
 
+        cfg.delivery_method = self._METHOD_VALUES.get(
+            self.delivery_method_var.get(), "discord")
         cfg.discord_webhook_url = self.discord_webhook_var.get().strip()
+
+        cfg.mqtt_broker_host = self.mqtt_host_var.get().strip()
+        try:
+            mqtt_port = int(self.mqtt_port_var.get())
+        except ValueError:
+            mqtt_port = 1883
+        cfg.mqtt_broker_port = max(1, min(65535, mqtt_port))
+        cfg.mqtt_username = self.mqtt_username_var.get().strip()
+        cfg.mqtt_password = self.mqtt_password_var.get()
+        cfg.mqtt_base_topic = self.mqtt_topic_var.get().strip().strip('/')
+        try:
+            qos = int(self.mqtt_qos_var.get())
+        except ValueError:
+            qos = 1
+        cfg.mqtt_qos = qos if qos in (0, 1) else 1
+        cfg.mqtt_use_tls = self.mqtt_tls_var.get()
+
         try:
             size_mb = int(self.discord_max_size_var.get())
         except ValueError:
@@ -368,7 +579,12 @@ class IntegrationsPanel(ttk.Frame):
     # ------------------------------------------------------------ handlers
 
     def _on_discord_settings_change(self, event=None):
-        """Handle any Discord setting change."""
+        """Handle any video-delivery setting change."""
+        self._save_to_config()
+
+    def _on_delivery_method_change(self, event=None):
+        """Swap the visible field group, then persist the new method."""
+        self._update_delivery_visibility()
         self._save_to_config()
 
     def _on_minimize_to_tray_toggle(self):

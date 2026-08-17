@@ -40,6 +40,15 @@ def get_config_path() -> Path:
     return get_app_base_dir() / "config" / "app_config.json"
 
 
+def video_filename(date_str: str, fmt: str) -> str:
+    """Output name for a render of YYYYMMDD `date_str`.
+
+    Dashed for readability, and the one convention every render path shares -
+    the Video Export tab suggests the same shape from the first frame's date.
+    """
+    return f"timelapse-{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}.{fmt}"
+
+
 def get_resource_path(relative: str) -> Path:
     """Resolve a bundled resource (e.g. assets/icon.ico).
 
@@ -58,7 +67,7 @@ def get_app_icon_path() -> Path:
     return get_resource_path("assets/icon.ico")
 
 from config_manager import ConfigManager
-from capture_engine import CaptureEngine, CaptureState
+from capture_engine import CaptureEngine, CaptureState, effective_date
 from video_export_panel import VideoExportPanel
 from scheduling_panel import SchedulingPanel
 from integrations_panel import IntegrationsPanel
@@ -68,11 +77,12 @@ from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
 from capture_history import get_capture_history
 from remote_api import RemoteControlServer
+from event_log import EventLog
 import startup_manager
 
 # App version reported by the remote API's /health endpoint. Keep in sync with
 # src/__init__.py / version_info.txt on release.
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.6.0"
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -114,6 +124,10 @@ class RTSPTimelapseGUI:
         # App-owned timer for a scheduled (/capture/schedule) auto-stop.
         self._sched_cancel = None
         self._sched_thread = None
+        # (create_video, since) while a scheduled stop is armed, else None. Kept
+        # outside the waiter closure so a natural stop (camera outage, window
+        # end) can still honour the render instead of losing it with the timer.
+        self._sched_pending = None
         self.tray_icon = None
         self.pystray = None
         self._pystray_available = None
@@ -201,7 +215,7 @@ class RTSPTimelapseGUI:
         self.scheduling_panel.set_callbacks(
             start_capture=self.start_capture,
             stop_capture=self.stop_capture,
-            create_video=self._auto_create_video_for_date,
+            create_video=self._scheduler_create_video,
             log=self.log_message
         )
 
@@ -445,9 +459,15 @@ class RTSPTimelapseGUI:
                 "username": "RTSP Timelapse Bot"
             }).encode('utf-8')
 
+            # Always deliver under the render's own name - uploading the scratch
+            # encode as "discord_crf32.mp4" made every night's post look identical.
+            # Stem from the render, suffix from what is actually being sent, so a
+            # re-encoded .webm render is still labelled .mp4.
+            delivered_name = output_file.stem + upload_file.suffix
+
             fields = [
                 ("payload_json", ("payload.json", payload, "application/json")),
-                ("file", (upload_file.name, file_bytes, mime_type))
+                ("file", (delivered_name, file_bytes, mime_type))
             ]
             body, content_type = self._encode_multipart_formdata(fields)
 
@@ -493,6 +513,150 @@ class RTSPTimelapseGUI:
                     pass
 
         return False
+
+    def _send_mqtt(self, output_file: Path, date_str: str) -> bool:
+        """Publish the finished video to the configured MQTT broker.
+
+        For rigs with no internet: nothing is uploaded from here, the video is
+        published to a local broker and an external consumer relays it onward.
+        Metadata goes out first on <base>/metadata, then the raw bytes on
+        <base>/video.
+
+        Short-lived connection: connect, publish, confirm, disconnect. The size
+        limit and auto-reduce settings are shared with the Discord path, so the
+        same .discord_encode scratch dir and cleanup contract apply.
+        """
+        cfg = self.config_manager.astro_schedule
+        host = cfg.mqtt_broker_host.strip()
+        if not host:
+            self.log_message("WARNING", "[MQTT] No broker host configured; delivery skipped")
+            return False
+
+        if not output_file.exists():
+            self.log_message("ERROR", f"[MQTT] Delivery failed: video file not found: {output_file}")
+            return False
+
+        # Imported here (not at module scope) so the app still runs without
+        # paho-mqtt installed; the .spec lists it in hiddenimports for the exe.
+        try:
+            import paho.mqtt.client as mqtt
+        except ImportError:
+            self.log_message("ERROR", "[MQTT] paho-mqtt is not installed; delivery skipped")
+            return False
+
+        max_size_mb = cfg.discord_max_video_size_mb
+        if max_size_mb <= 0:
+            max_size_mb = 8
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+
+        # As on the Discord path, what we publish may be a re-encoded temp copy
+        # living in a ".discord_encode" scratch folder. Track it for cleanup.
+        upload_file = output_file
+        temp_dir = None
+
+        try:
+            if cfg.discord_auto_quality_reduction and file_size_mb > max_size_mb:
+                upload_file = self._reencode_for_discord(output_file, max_size_mb)
+                if upload_file != output_file:
+                    temp_dir = upload_file.parent
+                file_size_mb = upload_file.stat().st_size / (1024 * 1024)
+
+            if file_size_mb > max_size_mb:
+                self.log_message(
+                    "WARNING",
+                    f"[MQTT] Delivery skipped: {upload_file.name} is {file_size_mb:.1f} MB, "
+                    f"exceeds limit {max_size_mb} MB"
+                )
+                return False
+
+            with upload_file.open('rb') as f:
+                video_bytes = f.read()
+
+            base_topic = cfg.mqtt_base_topic.strip().strip('/') or "rtsp-timelapse"
+            qos = cfg.mqtt_qos if cfg.mqtt_qos in (0, 1) else 1
+            # Always the render's own name, never the scratch encode's
+            # ("discord_crf32.mp4") - a consumer saving by this name would
+            # otherwise overwrite the same file every night. Stem from the render,
+            # suffix from what is actually published (a re-encoded .webm is .mp4).
+            delivered_name = output_file.stem + upload_file.suffix
+            metadata = json.dumps({
+                "message": f"Timelapse video completed for {date_str}",
+                "filename": delivered_name,
+                "date": date_str,
+                "size_bytes": len(video_bytes),
+            })
+
+            self.log_message(
+                "INFO",
+                f"[MQTT] Publishing video to {host}:{cfg.mqtt_broker_port} on "
+                f"{base_topic}/video ({file_size_mb:.1f} MB, QoS {qos})..."
+            )
+
+            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+            if cfg.mqtt_username:
+                client.username_pw_set(cfg.mqtt_username, cfg.mqtt_password)
+            if cfg.mqtt_use_tls:
+                client.tls_set()
+
+            try:
+                client.connect(host, cfg.mqtt_broker_port, keepalive=30)
+                # Required: without the network loop running, the QoS-1 PUBACK is
+                # never read and wait_for_publish() blocks until its timeout.
+                client.loop_start()
+                try:
+                    info_meta = client.publish(
+                        f"{base_topic}/metadata", metadata, qos=qos, retain=False)
+                    info_meta.wait_for_publish(timeout=30)
+                    info_video = client.publish(
+                        f"{base_topic}/video", video_bytes, qos=qos, retain=False)
+                    info_video.wait_for_publish(timeout=120)
+                finally:
+                    # disconnect first so the DISCONNECT packet is still written by
+                    # the running loop, then join the loop thread.
+                    client.disconnect()
+                    client.loop_stop()
+            except (OSError, ValueError, RuntimeError) as e:
+                self.log_message("ERROR", f"[MQTT] Delivery failed: {e}")
+                return False
+
+            # wait_for_publish() returns None, so confirmation has to be read back.
+            if not (info_meta.is_published() and info_video.is_published()):
+                self.log_message("ERROR", "[MQTT] Broker did not confirm publish (timeout)")
+                return False
+
+            self.log_message("INFO", "[MQTT] Video published successfully")
+
+            # Same option as the Discord path: keep the smaller re-encoded copy
+            # that was actually published, date-stamped inside .discord_encode.
+            if (cfg.discord_keep_reencoded and temp_dir is not None
+                    and upload_file != output_file):
+                try:
+                    kept = temp_dir / output_file.name
+                    upload_file.replace(kept)
+                    self.log_message("INFO", f"[MQTT] Kept re-encoded copy: {kept}")
+                except Exception as e:
+                    self.log_message("WARNING", f"[MQTT] Could not keep re-encoded copy: {e}")
+            return True
+
+        except Exception as e:
+            self.log_message("ERROR", f"[MQTT] Delivery error: {e}")
+            return False
+        finally:
+            # Identical scratch-dir cleanup contract as _send_discord_webhook.
+            if temp_dir is not None and temp_dir.name == ".discord_encode" and temp_dir.exists():
+                try:
+                    for f in temp_dir.glob("discord_crf*.mp4"):
+                        f.unlink(missing_ok=True)
+                    if not any(temp_dir.iterdir()):
+                        temp_dir.rmdir()
+                except Exception:
+                    pass
+
+    def _deliver_video(self, output_file: Path, date_str: str) -> bool:
+        """Route the finished video to the configured delivery method."""
+        if self.config_manager.astro_schedule.delivery_method == "mqtt":
+            return self._send_mqtt(output_file, date_str)
+        return self._send_discord_webhook(output_file, date_str)
 
     def create_capture_tab(self):
         """Create the capture tab (original main view)"""
@@ -645,6 +809,15 @@ class RTSPTimelapseGUI:
         ToolTip(browse_btn, CAPTURE_TOOLTIPS["browse_output"])
         row += 1
 
+        # Governs which date subfolder frames land in (schedule.folder_rollover_hour);
+        # lives here beside Output Folder because it's about how snapshots are filed.
+        ttk.Label(settings_frame, text="Folder Rollover Hour (0-23):").grid(row=row, column=0, sticky=tk.W, pady=2)
+        self.rollover_hour_spinbox = ttk.Spinbox(settings_frame, from_=0, to=23, increment=1, width=20)
+        self.rollover_hour_spinbox.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        self.rollover_hour_spinbox.set(str(self.config_manager.schedule.folder_rollover_hour))
+        ToolTip(self.rollover_hour_spinbox, CAPTURE_TOOLTIPS["folder_rollover_hour"])
+        row += 1
+
         ttk.Label(settings_frame, text="JPEG Quality (1-100):").grid(row=row, column=0, sticky=tk.W, pady=2)
         self.jpeg_quality_entry = ttk.Entry(settings_frame, width=20)
         self.jpeg_quality_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
@@ -722,11 +895,21 @@ class RTSPTimelapseGUI:
         self.start_stop_btn.pack(fill=tk.X, pady=5)
         self.start_stop_tooltip = ToolTip(self.start_stop_btn, CAPTURE_TOOLTIPS["start_capture"])
 
-        # Status indicator
-        self.status_indicator = tk.Canvas(control_frame, height=30, bg="white")
-        self.status_indicator.pack(fill=tk.X, pady=10)
-        self.indicator_circle = self.status_indicator.create_oval(10, 5, 30, 25, fill="gray", outline="darkgray")
-        self.indicator_text = self.status_indicator.create_text(40, 15, anchor=tk.W, text="Ready", font=("Arial", 10))
+        # Status indicator: a dot-sized canvas + label, centered under the buttons.
+        # The canvas is only as big as the dot and takes the theme background, so it
+        # reads as a status line rather than a stray white strip.
+        indicator_frame = ttk.Frame(control_frame)
+        indicator_frame.pack(pady=10)  # pack without fill centers it under the buttons
+        # The vista theme often returns "" from Style().lookup - fall back to the
+        # Windows default face color.
+        bg = ttk.Style().lookup("TLabelframe", "background") or "SystemButtonFace"
+        self.status_indicator = tk.Canvas(indicator_frame, width=20, height=20, bg=bg,
+                                          highlightthickness=0, borderwidth=0)
+        self.status_indicator.pack(side="left")
+        self.indicator_circle = self.status_indicator.create_oval(2, 2, 18, 18,
+                                                                  fill="gray", outline="darkgray")
+        self.indicator_label = ttk.Label(indicator_frame, text="Ready", font=("Arial", 10))
+        self.indicator_label.pack(side="left", padx=(8, 0))
 
     def create_log_panel(self, parent):
         """Create activity log panel"""
@@ -1067,6 +1250,14 @@ class RTSPTimelapseGUI:
         self.config_manager.capture.jpeg_quality = int(self.jpeg_quality_entry.get())
         self.config_manager.capture.proactive_reconnect_seconds = int(self.proactive_reconnect_entry.get())
 
+        # Guarded rather than bare int(): this runs on every tab change, and a
+        # half-typed spinbox value must not abort the whole auto-save.
+        try:
+            rollover = int(self.rollover_hour_spinbox.get())
+        except (ValueError, tk.TclError):
+            rollover = self.config_manager.schedule.folder_rollover_hour
+        self.config_manager.schedule.folder_rollover_hour = max(0, min(23, rollover))
+
     def update_config_ui(self):
         """Update UI inputs from ConfigManager"""
         self.ip_entry.delete(0, tk.END)
@@ -1102,6 +1293,8 @@ class RTSPTimelapseGUI:
 
         self.proactive_reconnect_entry.delete(0, tk.END)
         self.proactive_reconnect_entry.insert(0, str(self.config_manager.capture.proactive_reconnect_seconds))
+
+        self.rollover_hour_spinbox.set(str(self.config_manager.schedule.folder_rollover_hour))
 
     def test_connection(self):
         """Test camera connection"""
@@ -1203,6 +1396,9 @@ class RTSPTimelapseGUI:
             self.capture_engine.start_capture()
 
             self.is_capturing = True
+            # Open the event log for this session - events are only accepted while
+            # capture is running, since there are no frames to attach them to otherwise.
+            self.event_log.begin_session()
             self.start_stop_btn.configure(text="Stop Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["stop_capture"])
             self.log_message("INFO", "Capture started")
@@ -1225,6 +1421,12 @@ class RTSPTimelapseGUI:
         """Stop the capture process"""
         # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
         self._cancel_scheduled_stop()
+
+        # Close the event log before dropping the engine: end_session() takes the log's
+        # lock, so it waits for any in-flight write and blocks later ones. Clearing
+        # self.capture_engine first would leave a racing writer with no date folder.
+        self.event_log.end_session()
+
         if self.capture_engine:
             self.capture_engine.stop_capture()
             self.capture_engine = None
@@ -1249,11 +1451,17 @@ class RTSPTimelapseGUI:
         Called once at startup after both the Scheduling and Integrations panels
         exist (and the scheduler state has been restored).
         """
+        # Session event log. Its directory provider resolves to the live capture
+        # engine's date folder, so events land beside the frames they describe.
+        self.event_log = EventLog(dir_provider=self._event_dir, log=self.log_message)
+
         self.remote_server = RemoteControlServer(
             on_start=self._remote_start_capture,
             on_stop=self._remote_stop_capture,
             on_create_video=self._remote_create_video,
             on_schedule=self._remote_schedule,
+            on_event=self._remote_record_event,
+            get_events=self.event_log.recent,
             get_status=self._remote_status,
             version=APP_VERSION,
             host="127.0.0.1",
@@ -1389,6 +1597,7 @@ class RTSPTimelapseGUI:
         self._cancel_scheduled_stop()
         cancel = threading.Event()
         self._sched_cancel = cancel
+        self._sched_pending = (create_video, since)
 
         def _waiter():
             delay = (stop_at_dt - datetime.now()).total_seconds()
@@ -1408,12 +1617,15 @@ class RTSPTimelapseGUI:
             return
         self._sched_cancel = None
         self._sched_thread = None
+        # This timer is consuming its own pending stop - the engine-STOPPED
+        # callback that follows stop_capture() must not render a second time.
+        self._sched_pending = None
         if self.is_capturing:
             self.stop_capture()
         if create_video:
-            # Renders the newest date folder filtered by `since`. With the default rollover (noon) a
-            # dusk->dawn session is a single folder; a non-default folder_rollover_hour could split a
-            # midnight-crossing session so only the latest part renders.
+            # Renders the session: every date folder from its start onward, filtered
+            # by `since`, so a session that crossed the folder rollover is stitched
+            # into one video rather than losing its earlier half.
             ok, message, _code, _resolved = self._start_remote_video(None, since)
             self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
 
@@ -1423,6 +1635,29 @@ class RTSPTimelapseGUI:
             self._sched_cancel.set()
         self._sched_cancel = None
         self._sched_thread = None
+        self._sched_pending = None
+
+    def _event_dir(self):
+        """Current session's snapshot folder, for the event log (called off the Tk thread).
+
+        Delegates to the capture engine so the folder_rollover_hour rule lives in one
+        place. Raises OSError when there is no engine, which EventLog turns into a
+        clean failure rather than an AttributeError out of an HTTP worker thread.
+        """
+        engine = self.capture_engine
+        if engine is None:
+            raise OSError("no active capture session")
+        return engine.ensure_date_dir()
+
+    def _remote_record_event(self, title, detail, category, when, data):
+        """Record a session event for the remote API. Returns (ok, error, stored).
+
+        Deliberately *not* wrapped in _run_on_ui: the event log touches no Tk state,
+        so the HTTP worker writes straight to disk. Hopping onto the Tk thread would
+        put a file write behind the UI event queue for no benefit, and a burst of
+        events during a busy sequence would compete with the preview redraw.
+        """
+        return self.event_log.record(title, detail, category, when, data)
 
     def _remote_status(self):
         """Thread-safe status snapshot for the remote API."""
@@ -1475,6 +1710,7 @@ class RTSPTimelapseGUI:
                 return False, "invalid since (expected YYYYMMDD-HHMMSS)", 400, None
 
         output_folder = Path(self.config_manager.capture.output_folder)
+        folders_arg = None
         if date:
             if not re.fullmatch(r"\d{8}", date):
                 return False, "invalid date (expected YYYYMMDD)", 400, None
@@ -1485,15 +1721,32 @@ class RTSPTimelapseGUI:
             folders = self.video_export_panel.controller.get_available_date_folders(output_folder)
             if not folders:
                 return False, "no capture folders found", 404, None
-            target = folders[0].name
+            if since_dt is None:
+                target = folders[0].name
+            else:
+                # Session-aware: the session is defined by its start time, not by a
+                # single folder. Cover every existing date folder from the session's
+                # start onward so a session that crossed the folder rollover is
+                # stitched into one video. Later folders are harmless - the `since`
+                # timestamp filter is the real selector.
+                rollover = self.config_manager.schedule.folder_rollover_hour
+                start_name = effective_date(since_dt, rollover).strftime("%Y%m%d")
+                candidates = sorted((f for f in folders if f.name >= start_name),
+                                    key=lambda f: f.name)
+                if not candidates:
+                    return False, f"no capture folders found for session starting {since}", 404, None
+                target = candidates[0].name
+                folders_arg = candidates
 
-        if not (output_folder / target).exists():
+        # Candidate folders came from a directory listing, so only the caller-supplied
+        # and newest-folder targets still need an existence check.
+        if folders_arg is None and not (output_folder / target).exists():
             return False, f"no snapshots for {target}", 404, target
 
         # _auto_create_video_for_date does the synchronous prep (scan/preset/ffmpeg)
         # then runs the encode in a thread; surface that synchronous outcome so a
         # bad 'since', empty folder, etc. become real 404/500s instead of a 202.
-        ok, message, code = self._auto_create_video_for_date(target, since=since_dt)
+        ok, message, code = self._auto_create_video_for_date(target, since=since_dt, folders=folders_arg)
         return ok, message, code, target
 
     def set_config_inputs_state(self, state):
@@ -1507,7 +1760,10 @@ class RTSPTimelapseGUI:
             self.stream_path_entry, self.start_time_entry, self.end_time_entry,
             self.start_at_radio, self.start_now_radio,
             self.interval_entry, self.output_entry, self.jpeg_quality_entry,
-            self.proactive_reconnect_entry
+            self.proactive_reconnect_entry,
+            # Locked during capture: the engine snapshots config at session start,
+            # so a mid-session rollover change would silently not apply anyway.
+            self.rollover_hour_spinbox
         ]
         for widget in inputs:
             widget.configure(state=state)
@@ -1540,37 +1796,29 @@ class RTSPTimelapseGUI:
 
     def update_status_from_engine(self, state: CaptureState, stats: dict):
         """Update status display from engine stats"""
-        # Update state
+        # Update state - one color map drives both the Status panel's state label
+        # and the Controls panel's dot.
         state_text = state.value
         state_colors = {
             "Stopped": "gray",
-            "Starting": "orange",
+            "Starting...": "orange",
             "Running": "green",
-            "Paused": "blue",
+            "Reconnecting": "orange",
+            "Stopping...": "gray",
             "Error": "red"
         }
-        self.state_label.configure(
-            text=state_text,
-            foreground=state_colors.get(state_text, "gray")
-        )
+        state_color = state_colors.get(state_text, "gray")
+        self.state_label.configure(text=state_text, foreground=state_color)
 
         # Update indicator
-        indicator_colors = {
-            "Stopped": "gray",
-            "Starting": "orange",
-            "Running": "green",
-            "Paused": "blue",
-            "Error": "red"
-        }
-        self.status_indicator.itemconfig(
-            self.indicator_circle,
-            fill=indicator_colors.get(state_text, "gray")
-        )
-        self.status_indicator.itemconfig(self.indicator_text, text=state_text)
+        self.status_indicator.itemconfig(self.indicator_circle, fill=state_color)
+        self.indicator_label.configure(text=state_text)
 
         # Update connection status
         if state == CaptureState.RUNNING:
             self.connection_label.configure(text="Connected", foreground="green")
+        elif state == CaptureState.RECONNECTING:
+            self.connection_label.configure(text="Reconnecting...", foreground="orange")
         elif state == CaptureState.ERROR:
             self.connection_label.configure(text="Error", foreground="red")
         elif state == CaptureState.STARTING:
@@ -1580,16 +1828,30 @@ class RTSPTimelapseGUI:
 
         # Handle automatic stop when capture ends naturally (reached end time or error)
         if (state == CaptureState.STOPPED or state == CaptureState.ERROR) and self.is_capturing:
-            # Clean up GUI state. A natural/automatic stop (end_dt, disconnect, error) also
-            # cancels any pending /capture/schedule auto-stop, so a stale timer can't later
-            # stop a manually-restarted session or render with the old 'since'.
+            # Clean up GUI state. A natural/automatic stop (end_dt, error) also cancels
+            # any pending /capture/schedule auto-stop, so a stale timer can't later
+            # stop a manually-restarted session or render with the old 'since' - but
+            # the render the schedule promised is honoured below, not lost with it.
+            pending = self._sched_pending  # before _cancel_scheduled_stop() clears it
             self._cancel_scheduled_stop()
             self.is_capturing = False
+            # Capture ended on its own (end time, error) - close the event log here
+            # too, or events would keep being accepted with no frames arriving.
+            self.event_log.end_session()
             self.start_stop_btn.configure(text="Start Capture")
             self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
             # Re-enable config inputs
             self.set_config_inputs_state(tk.NORMAL)
             self._apply_start_mode_ui()
+            # A scheduled stop with create_video was pending: render what was
+            # captured now rather than never (the 2026-07-27 outage lost a whole
+            # night's video this way). After teardown, so events.jsonl is closed.
+            if pending:
+                create_video, since = pending
+                if create_video:
+                    self.log_message("INFO", "[Scheduled] Capture ended before the scheduled stop - rendering the session now")
+                    ok, message, _code, _resolved = self._start_remote_video(None, since)
+                    self.log_message("INFO" if ok else "ERROR", f"[Scheduled] {message}")
 
         # Update stats
         self.frames_label.configure(text=str(stats.get('frame_count', 0)))
@@ -1714,15 +1976,38 @@ class RTSPTimelapseGUI:
             avg_interval = duration / (self.total_captures - 1)
             self.avg_interval_label.configure(text=f"{avg_interval:.1f}s")
 
-    def _auto_create_video_for_date(self, date_str: str, since=None):
+    def _scheduler_create_video(self, date_str: str, session_start=None):
+        """Nightly auto-video for the astro scheduler (runs on the main thread,
+        invoked via after()).
+
+        With a known session start this renders exactly the session - the same
+        session-aware path as the scheduled stop and POST /video/create - so a
+        session that crossed the folder rollover is stitched whole, and frames
+        captured before the session (e.g. a framing check) stay out of it.
+        Without a start (shouldn't happen in practice) it falls back to the
+        whole-folder render for the scheduler's date.
+        """
+        if session_start is not None:
+            since = session_start.strftime("%Y%m%d-%H%M%S")
+            ok, message, _code, _resolved = self._start_remote_video(None, since)
+            self.log_message("INFO" if ok else "ERROR", f"[Auto Video] {message}")
+        else:
+            self._auto_create_video_for_date(date_str)
+
+    def _auto_create_video_for_date(self, date_str: str, since=None, folders=None):
         """
         Automatically create a timelapse video for a specific date's captures.
 
         Args:
-            date_str: Date string in YYYYMMDD format
+            date_str: Date string in YYYYMMDD format; names the output video and
+                keys the capture history entry.
             since: Optional datetime; if set, only frames captured at/after it are
                 included, so a session that shares a date folder with earlier
                 frames (e.g. a test run) renders only its own footage.
+            folders: Optional ascending list of date folders to scan as one merged
+                collection - the session-aware path, for a session that may have
+                crossed the folder rollover. None keeps the single-folder behaviour
+                (scan output_folder/date_str).
 
         Returns:
             (ok: bool, message: str, http_code: int) for the synchronous outcome.
@@ -1738,7 +2023,9 @@ class RTSPTimelapseGUI:
             output_folder = Path(self.config_manager.capture.output_folder)
             date_folder = output_folder / date_str
 
-            if not date_folder.exists():
+            # Candidate lists come from a directory listing, so only the
+            # single-folder path needs the existence check.
+            if folders is None and not date_folder.exists():
                 self.log_message("ERROR", f"[Auto Video] Folder not found: {date_folder}")
                 return False, f"no snapshots folder for {date_str}", 404
 
@@ -1774,8 +2061,15 @@ class RTSPTimelapseGUI:
                 self.log_message("ERROR", f"[Auto Video] {ffmpeg_msg}")
                 return False, ffmpeg_msg, 500
 
-            # Scan folder for images
-            success, collection, msg = controller.scan_folder(date_folder, since=since)
+            # Scan for images - across every candidate folder on the session-aware
+            # path, so a rollover-crossing session renders as one video.
+            if folders is None:
+                success, collection, msg = controller.scan_folder(date_folder, since=since)
+            else:
+                if len(folders) > 1:
+                    self.log_message("INFO", "[Auto Video] Session may span "
+                                     f"{len(folders)} folders: {', '.join(f.name for f in folders)}")
+                success, collection, msg = controller.scan_folders(folders, since=since)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
                 return False, msg, 404
@@ -1788,10 +2082,21 @@ class RTSPTimelapseGUI:
                 output_path = Path.cwd() / output_path
             output_path.mkdir(parents=True, exist_ok=True)
 
-            output_file = output_path / f"timelapse_{date_str}.{settings.format}"
+            output_file = output_path / video_filename(date_str, settings.format)
 
             # Prepare and run export
-            success, job, msg = controller.prepare_export(settings, collection, output_file)
+            # Pass `since` so the overlay covers this session's events only, matching
+            # the frame filter applied by scan_folder above. Event overlays come from
+            # config/app_config.json, not the preset - this is the unattended path
+            # (scheduler and POST /video/create), so it must honour the same saved
+            # setting the Video Export tab shows.
+            success, job, msg = controller.prepare_export(
+                settings, collection, output_file, since=since,
+                log_callback=lambda m: self.log_message("INFO", f"[Auto Video] {m}"),
+                event_overlay=self.config_manager.ui.event_overlay,
+                event_overlay_seconds=self.config_manager.ui.event_overlay_seconds,
+                event_csv=self.config_manager.ui.event_csv,
+                temp_dir=self.config_manager.ui.temp_export_dir)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")
                 return False, msg, 500
@@ -1801,8 +2106,9 @@ class RTSPTimelapseGUI:
                 if progress > 0:
                     self.log_message("INFO", f"[Auto Video] {status}: {progress:.0f}%")
 
-            # Check if we should delete snapshots after video creation
-            delete_snapshots = self.config_manager.astro_schedule.delete_snapshots_after_video
+            # Check if we should delete snapshots after video creation. Set on the Video
+            # Export tab - it applies to every render, not just scheduled ones.
+            delete_snapshots = self.config_manager.ui.delete_snapshots_after_video
 
             # Run export (this runs in current thread, called via after() so it's safe)
             def run_export():
@@ -1815,20 +2121,21 @@ class RTSPTimelapseGUI:
                 if result.success:
                     self.log_message("INFO", f"[Auto Video] Video created: {result.output_file}")
 
-                    # Upload to Discord if webhook is configured
+                    # Hand the video to the configured delivery method (Discord
+                    # webhook or MQTT broker) - both are no-ops when unconfigured.
                     try:
-                        if self._send_discord_webhook(result.output_file, date_str):
-                            self.log_message("INFO", "[Auto Video] Discord upload completed")
+                        if self._deliver_video(result.output_file, date_str):
+                            self.log_message("INFO", "[Auto Video] Video delivery completed")
 
-                            # Optionally delete the generated video after successful Discord upload
+                            # Optionally delete the generated video after a successful delivery
                             try:
                                 if self.config_manager.astro_schedule.delete_video_after_discord_upload:
                                     result.output_file.unlink()
-                                    self.log_message("INFO", f"[Auto Video] Deleted video after Discord upload: {result.output_file}")
+                                    self.log_message("INFO", f"[Auto Video] Deleted video after delivery: {result.output_file}")
                             except Exception as e:
                                 self.log_message("WARNING", f"[Auto Video] Failed to delete video file: {e}")
                     except Exception as e:
-                        self.log_message("ERROR", f"[Auto Video] Discord upload failed: {e}")
+                        self.log_message("ERROR", f"[Auto Video] Video delivery failed: {e}")
 
                     # Update capture history to mark video as created
                     try:
@@ -1837,14 +2144,14 @@ class RTSPTimelapseGUI:
                     except Exception as e:
                         self.log_message("WARNING", f"[Auto Video] Could not update capture history: {e}")
 
-                    # Delete snapshot folder if enabled
+                    # Delete the rendered frames if enabled - exactly what went into
+                    # the video, so a `since`-filtered render can't remove frames it
+                    # never used. Unattended path - never prompts; the Video Export
+                    # tab confirms instead, since a human is there.
                     if delete_snapshots:
-                        try:
-                            self.log_message("INFO", f"[Auto Video] Deleting snapshot folder: {date_folder}")
-                            shutil.rmtree(date_folder)
-                            self.log_message("INFO", f"[Auto Video] Snapshot folder deleted successfully")
-                        except Exception as e:
-                            self.log_message("ERROR", f"[Auto Video] Failed to delete snapshot folder: {e}")
+                        VideoExportController.delete_rendered_snapshots(
+                            collection.images,
+                            lambda m: self.log_message("INFO", f"[Auto Video] {m}"))
                 else:
                     self.log_message("ERROR", f"[Auto Video] Export failed: {result.message}")
 
@@ -1871,6 +2178,15 @@ class RTSPTimelapseGUI:
         self._cancel_scheduled_stop()  # drop any pending auto-stop so its timer can't fire mid-shutdown
         if getattr(self, 'remote_server', None):
             self.remote_server.stop()
+        # The Integrations tab self-saves on <FocusOut>/<Return>, which never fires
+        # if the window is closed while an entry still has focus - so a broker host
+        # or webhook URL typed as the last action would be lost. Flush it first;
+        # save_config() below only writes what the shared config already holds.
+        if hasattr(self, 'integrations_panel'):
+            try:
+                self.integrations_panel._save_to_config()
+            except Exception as e:
+                self.log_message("WARNING", f"Could not save Integrations settings: {e}")
         self.save_config()
         self.cleanup_tray()
         self.root.destroy()

@@ -67,6 +67,20 @@ VIDEO_EXPORT_TOOLTIPS = {
         "Choose where to save the output video file."
     ),
 
+    "temp_dir": (
+        "Where temporary frame copies are staged during a render "
+        "(removed automatically afterwards).\n"
+        "Shows and uses the Windows temp folder (the default) until "
+        "you pick another location.\n"
+        "Pick a folder on a local, non-synced drive - staging inside "
+        "a synced folder can leave empty leftovers behind."
+    ),
+
+    "browse_temp_dir": (
+        "Choose the temp staging folder. "
+        "Clear the field to go back to the Windows temp default."
+    ),
+
     "preserve_originals": (
         "Creates temporary numbered copies for FFmpeg processing. "
         "Your original timestamped files remain untouched. "
@@ -80,6 +94,35 @@ VIDEO_EXPORT_TOOLTIPS = {
 
     "open_when_done": (
         "Automatically opens the video in your default media player after export completes."
+    ),
+
+    "delete_snapshots": (
+        "Deletes the source snapshot folder once the video has been created successfully.\n\n"
+        "Applies to every video: scheduled sessions, videos created via the remote API "
+        "(NINA plugin or scripts), and exports started from this tab. Exporting from this "
+        "tab asks for confirmation first; scheduled and remote renders do not, as they run "
+        "unattended.\n\n"
+        "WARNING: This permanently deletes all captured images for that date. Use with caution!"
+    ),
+
+    "event_overlay": (
+        "Burns session events into the video as captions at the moment they happened "
+        "(e.g. 'Autofocus Complete — HFR 2.31 → 1.62'). Events are sent by NINA or "
+        "another program while capture is running."
+    ),
+
+    "event_overlay_seconds": (
+        "How long each event caption stays on screen, in seconds of finished video "
+        "(not real time). Default: 4 seconds."
+    ),
+
+    "event_csv": (
+        "Writes a CSV of the session's events next to the video, with both wall-clock "
+        "time and video timecode, for lining events up against the footage or importing "
+        "them into a video editor.\n\n"
+        "Note: the events file inside the snapshot folder is deleted along with the "
+        "snapshots when 'Delete snapshots after video' is enabled — with that on and "
+        "this off, the session's events are not kept anywhere."
     ),
 
     # ========================================

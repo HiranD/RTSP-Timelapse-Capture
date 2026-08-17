@@ -3,3 +3,4 @@ numpy==1.26.4
 Pillow>=10.0.0
 pystray>=0.19.5
 astral>=3.2
+paho-mqtt>=2.0.0

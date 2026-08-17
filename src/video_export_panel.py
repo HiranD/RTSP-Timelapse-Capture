@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 import os
 import sys
+import tempfile
 
 
 def get_app_base_dir() -> Path:
@@ -76,10 +77,11 @@ class VideoExportPanel(ttk.Frame):
     def create_widgets(self):
         """Create all UI widgets"""
 
-        # Configure grid weights
+        # Configure grid weights. Row 6 is the Export Log - the only section that
+        # should take up slack. (This used to target row 4, which is Progress: the
+        # log has sticky=NSEW but was never given the weight to use it.)
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=0)  # Progress section doesn't expand
-        self.rowconfigure(4, weight=1)  # Log section expands
+        self.rowconfigure(6, weight=1)  # Log section expands
 
         # Input Selection Section
         self.create_input_section()
@@ -92,6 +94,9 @@ class VideoExportPanel(ttk.Frame):
 
         # Presets Section
         self.create_presets_section()
+
+        # Session Events Section
+        self.create_events_section()
 
         # Progress Section
         self.create_progress_section()
@@ -245,6 +250,33 @@ class VideoExportPanel(ttk.Frame):
 
         row += 1
 
+        # Temp staging folder. Blank = the Windows temp folder (the default):
+        # staging copies inside the output folder leaked one empty .temp_export_*
+        # per night when that folder was sync-watched. Config-backed
+        # (ui.temp_export_dir) because every render path uses it, like the
+        # delete-snapshots setting below.
+        ttk.Label(output_frame, text="Temp Folder:").grid(row=row, column=0, sticky=tk.W, pady=5)
+
+        temp_frame = ttk.Frame(output_frame)
+        temp_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=(5, 0))
+        temp_frame.columnconfigure(0, weight=1)
+
+        self.temp_dir_entry = ttk.Entry(temp_frame)
+        self.temp_dir_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        # Never blank: show the resolved default so the user always sees where
+        # staging happens. Config keeps "" for "default" so a saved choice is
+        # only ever a genuine user selection.
+        saved_temp = self.config_manager.ui.temp_export_dir if self.config_manager else ""
+        self.temp_dir_entry.insert(0, saved_temp or self._default_temp_dir())
+        self.temp_dir_entry.bind("<FocusOut>", lambda _e: self._save_temp_dir_setting())
+        ToolTip(self.temp_dir_entry, VIDEO_EXPORT_TOOLTIPS["temp_dir"])
+
+        browse_temp_btn = ttk.Button(temp_frame, text="Browse", command=self.browse_temp_dir, width=10)
+        browse_temp_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(browse_temp_btn, VIDEO_EXPORT_TOOLTIPS["browse_temp_dir"])
+
+        row += 1
+
         # Options checkboxes
         options_frame = ttk.Frame(output_frame)
         options_frame.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
@@ -264,8 +296,64 @@ class VideoExportPanel(ttk.Frame):
         self.open_when_done_var = tk.BooleanVar(value=False)
         open_check = ttk.Checkbutton(options_frame, text="Open video when complete",
                         variable=self.open_when_done_var)
-        open_check.pack(side=tk.LEFT)
+        open_check.pack(side=tk.LEFT, padx=(0, 15))
         ToolTip(open_check, VIDEO_EXPORT_TOOLTIPS["open_when_done"])
+
+        # Destructive, and applies to every render (scheduled, remote API, and the
+        # Export button below), so it's config-backed rather than a preset field and
+        # the label spells out what it deletes.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        self.delete_snapshots_var = tk.BooleanVar(
+            value=ui_cfg.delete_snapshots_after_video if ui_cfg else False)
+        delete_check = ttk.Checkbutton(options_frame, text="Delete snapshots after creating video",
+                        variable=self.delete_snapshots_var,
+                        command=self._save_delete_snapshots_setting)
+        delete_check.pack(side=tk.LEFT)
+        ToolTip(delete_check, VIDEO_EXPORT_TOOLTIPS["delete_snapshots"])
+
+    def create_events_section(self):
+        """Create session events section (issue #15).
+
+        Its own section rather than a row inside Output Options: the checkboxes
+        there are preset fields, while these are app-level config
+        (ui.event_overlay / ui.event_csv) that survives a preset switch and also
+        drives unattended renders. Sitting after Presets puts them outside the
+        preset-backed cluster, so the layout itself carries that distinction.
+        """
+        events_frame = ttk.LabelFrame(self, text="Session Events", padding="10")
+        events_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+
+        options_frame = ttk.Frame(events_frame)
+        options_frame.pack(fill=tk.X)
+
+        # Restored from config, not from the selected preset - see the docstring.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        self.event_overlay_var = tk.BooleanVar(value=ui_cfg.event_overlay if ui_cfg else False)
+        event_check = ttk.Checkbutton(options_frame, text="Overlay session events",
+                        variable=self.event_overlay_var,
+                        command=self._save_event_settings)
+        event_check.pack(side=tk.LEFT, padx=(0, 5))
+        ToolTip(event_check, VIDEO_EXPORT_TOOLTIPS["event_overlay"])
+
+        ttk.Label(options_frame, text="hold").pack(side=tk.LEFT, padx=(10, 3))
+        self.event_overlay_seconds_var = tk.StringVar(
+            value=str(ui_cfg.event_overlay_seconds if ui_cfg else 4.0))
+        seconds_spin = ttk.Spinbox(options_frame, from_=1.0, to=30.0, increment=0.5,
+                        width=5, textvariable=self.event_overlay_seconds_var,
+                        command=self._save_event_settings)
+        seconds_spin.pack(side=tk.LEFT)
+        seconds_spin.bind("<FocusOut>", lambda _e: self._save_event_settings())
+        ttk.Label(options_frame, text="s").pack(side=tk.LEFT, padx=(3, 0))
+        ToolTip(seconds_spin, VIDEO_EXPORT_TOOLTIPS["event_overlay_seconds"])
+
+        # Independent of the overlay: the log is useful without captions, and captions
+        # are useful without the log.
+        self.event_csv_var = tk.BooleanVar(value=ui_cfg.event_csv if ui_cfg else False)
+        csv_check = ttk.Checkbutton(options_frame, text="Write events CSV",
+                        variable=self.event_csv_var,
+                        command=self._save_event_settings)
+        csv_check.pack(side=tk.LEFT, padx=(15, 0))
+        ToolTip(csv_check, VIDEO_EXPORT_TOOLTIPS["event_csv"])
 
     def create_presets_section(self):
         """Create presets section"""
@@ -298,7 +386,7 @@ class VideoExportPanel(ttk.Frame):
     def create_progress_section(self):
         """Create progress section"""
         progress_frame = ttk.LabelFrame(self, text="Progress", padding="10")
-        progress_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        progress_frame.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         progress_frame.columnconfigure(0, weight=1)
 
         # Status label
@@ -318,7 +406,7 @@ class VideoExportPanel(ttk.Frame):
     def create_log_section(self):
         """Create log section"""
         log_frame = ttk.LabelFrame(self, text="Export Log", padding="10")
-        log_frame.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        log_frame.grid(row=6, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -332,7 +420,7 @@ class VideoExportPanel(ttk.Frame):
     def create_action_buttons(self):
         """Create action buttons at bottom"""
         button_frame = ttk.Frame(self)
-        button_frame.grid(row=6, column=0, sticky=(tk.W, tk.E))
+        button_frame.grid(row=7, column=0, sticky=(tk.W, tk.E))
 
         self.create_video_btn = ttk.Button(button_frame, text="Create Video", command=self.start_export)
         self.create_video_btn.pack(side=tk.RIGHT, padx=5)
@@ -451,7 +539,7 @@ class VideoExportPanel(ttk.Frame):
             # Auto-suggest output filename with full path based on date
             if collection.first_timestamp:
                 date_str = collection.first_timestamp.strftime("%Y-%m-%d")
-                suggested_name = f"timelapse-{date_str}.mp4"
+                suggested_name = f"timelapse-{date_str}.{self.format_var.get()}"
 
                 # Determine output directory
                 # Priority: 1) Last used dir, 2) Parent of source folder, 3) Current directory
@@ -521,6 +609,9 @@ class VideoExportPanel(ttk.Frame):
             self.add_timestamp_var.set(preset.add_timestamp)
             self.preserve_originals_var.set(preset.preserve_originals)
             self.open_when_done_var.set(preset.open_when_done)
+            # Event overlays are deliberately NOT restored from the preset - they're a
+            # standing preference held in config. Switching preset to change resolution
+            # shouldn't silently stop events appearing on the video.
 
             self.log_message(f"Loaded preset: {preset_name}")
             self.update_estimates()
@@ -628,6 +719,72 @@ class VideoExportPanel(ttk.Frame):
             open_when_done=self.open_when_done_var.get()
         )
 
+    def get_overlay_seconds(self) -> float:
+        """Caption hold time from the spinbox, falling back to the default.
+
+        The spinbox is free-text, so a typed-in value can be anything; a bad entry
+        shouldn't block an export.
+        """
+        try:
+            return max(1.0, min(30.0, float(self.event_overlay_seconds_var.get())))
+        except (ValueError, TypeError):
+            return 4.0
+
+    def _save_delete_snapshots_setting(self):
+        """Persist the delete-snapshots choice; the scheduler and remote API read it too."""
+        if not self.config_manager:
+            return
+        self.config_manager.ui.delete_snapshots_after_video = self.delete_snapshots_var.get()
+        self.config_manager.save_to_file()
+
+    def _default_temp_dir(self) -> str:
+        """The staging default the Temp Folder field shows: the Windows temp
+        folder's RTSP_Timelapse subdir. Must match what prepare_export resolves
+        a blank temp_dir to (video_export_controller.py)."""
+        return str(Path(tempfile.gettempdir()) / "RTSP_Timelapse")
+
+    def _selected_temp_dir(self) -> str:
+        """The setting the entry represents: "" while it shows the default, so
+        config only ever stores a genuine user selection."""
+        value = self.temp_dir_entry.get().strip()
+        if not value or value == self._default_temp_dir():
+            return ""
+        return value
+
+    def browse_temp_dir(self):
+        """Browse for the temp staging folder. Cancel keeps the current value;
+        clearing the entry restores the Windows temp default."""
+        current = self.temp_dir_entry.get().strip()
+        chosen = filedialog.askdirectory(
+            title="Select Temp Folder",
+            initialdir=current if current and Path(current).is_dir() else None)
+        if chosen:
+            self.temp_dir_entry.delete(0, tk.END)
+            self.temp_dir_entry.insert(0, chosen)
+            self._save_temp_dir_setting()
+
+    def _save_temp_dir_setting(self):
+        """Persist ui.temp_export_dir ("" = Windows temp default); unattended
+        renders (the scheduler and POST /video/create) read it from config too.
+        A cleared field snaps back to showing the default path."""
+        value = self._selected_temp_dir()
+        if not value and not self.temp_dir_entry.get().strip():
+            self.temp_dir_entry.insert(0, self._default_temp_dir())
+        if not self.config_manager:
+            return
+        self.config_manager.ui.temp_export_dir = value
+        self.config_manager.save_to_file()
+
+    def _save_event_settings(self):
+        """Persist the session-event choices so they survive a restart and reach
+        unattended renders (the scheduler and POST /video/create read them from config)."""
+        if not self.config_manager:
+            return
+        self.config_manager.ui.event_overlay = self.event_overlay_var.get()
+        self.config_manager.ui.event_overlay_seconds = self.get_overlay_seconds()
+        self.config_manager.ui.event_csv = self.event_csv_var.get()
+        self.config_manager.save_to_file()
+
     def update_estimates(self):
         """Update estimated duration and file size"""
         if not self.current_collection:
@@ -680,7 +837,17 @@ class VideoExportPanel(ttk.Frame):
         settings = self.get_current_settings()
         output_path = Path(output_file)
 
-        success, job, message = self.controller.prepare_export(settings, self.current_collection, output_path)
+        # Overlay settings come from config (the single source), not the preset.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        # Persist a hand-typed temp folder at the moment it matters, then use it
+        # for this export (blank = Windows temp default).
+        self._save_temp_dir_setting()
+        success, job, message = self.controller.prepare_export(
+            settings, self.current_collection, output_path, log_callback=self.log_message,
+            event_overlay=ui_cfg.event_overlay if ui_cfg else self.event_overlay_var.get(),
+            event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds(),
+            event_csv=ui_cfg.event_csv if ui_cfg else self.event_csv_var.get(),
+            temp_dir=self._selected_temp_dir())
 
         if not success:
             messagebox.showerror("Export Preparation Failed", message)
@@ -743,12 +910,19 @@ class VideoExportPanel(ttk.Frame):
                 self.log_message(f"Size: {result.output_size_bytes / (1024*1024):.2f} MB")
                 self.log_message("=" * 50)
 
-                # Save the directory for next time
+                # Save the directory for next time. No filename argument: save_to_file()
+                # writes to the app's real config path. (This used to pass
+                # "camera_config.json", a relative path nothing ever read, so the
+                # directory never actually persisted from a manual export.)
                 if self.config_manager and result.output_file:
                     output_dir = str(result.output_file.parent)
                     self.config_manager.ui.last_video_export_dir = output_dir
-                    # Save config to disk
-                    self.config_manager.save_to_file("camera_config.json")
+                    self.config_manager.save_to_file()
+
+                # Delete the source snapshots if enabled. Confirmed first: this is the
+                # only render path with a human present, and unlike a scheduled run the
+                # source is whatever folder they happened to browse to.
+                self._maybe_delete_snapshots()
 
                 # Open video if requested
                 if self.open_when_done_var.get() and result.output_file:
@@ -764,6 +938,37 @@ class VideoExportPanel(ttk.Frame):
 
         # Update UI on main thread
         self.after(0, update_ui)
+
+    def _maybe_delete_snapshots(self):
+        """Delete the rendered snapshots, if the option is on and the user agrees.
+
+        Runs only for exports started from this tab. The scheduler and remote API delete
+        without prompting - they are unattended by definition - but here someone is
+        watching, and the source is whatever folder they selected, so it is worth one
+        confirmation before removing a night's frames irreversibly.
+        """
+        if not self.delete_snapshots_var.get() or not self.current_collection:
+            return
+
+        folder = self.current_collection.source_folder
+        count = self.current_collection.total_count
+        confirmed = messagebox.askyesno(
+            "Delete snapshots?",
+            f"The video was created successfully.\n\n"
+            f"Delete the source snapshots now?\n\n"
+            f"{folder}\n({count} images)\n\n"
+            f"This cannot be undone.",
+            icon="warning",
+            default="no",
+        )
+        if not confirmed:
+            self.log_message("Snapshots kept.")
+            return
+
+        # This tab scans whole folders (no `since` filter), so the rendered list
+        # covers every frame and the folder itself is removed once emptied.
+        VideoExportController.delete_rendered_snapshots(
+            self.current_collection.images, self.log_message)
 
     def test_ffmpeg(self):
         """Test FFmpeg installation"""
