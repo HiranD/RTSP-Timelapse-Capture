@@ -37,14 +37,14 @@
 - Non-destructive—source images are never modified.
 - Real-time progress, ETA, and output size estimates.
 - Optional frame counter overlay.
-- **Session-event overlays (NEW in v3.6)** — events reported during the night (autofocus,
+- **Session-event overlays** — events reported during the night (autofocus,
   meridian flip, filter changes…) burned in as captions at the moment they occurred, the
   imaging target as a standing bottom-right label, and an optional `<video>.events.csv`
   with wall-clock time and video timecode per event.
 - **Delete snapshots after creating video** (optional) — removes exactly the frames that went
   into the video; manual exports ask for confirmation first.
 
-### Astronomical Scheduling (NEW in v3.0)
+### Astronomical Scheduling
 - **Long-term capture planning** with calendar-based date selection.
 - **Twilight calculations** for automatic darkness detection (civil, nautical, astronomical).
 - **Manual time mode** as alternative to twilight-based scheduling.
@@ -56,7 +56,7 @@
 - **Color-coded scheduler log** for monitoring automated capture activity.
 - Start/end time offsets to fine-tune the darkness window.
 
-### Integrations (NEW in v3.3)
+### Integrations
 - **Discord webhook upload** automatically posts each night's generated timelapse to a Discord channel.
 - **MQTT video delivery** as an alternative: publish the finished video to an MQTT broker and let another machine relay it — for rigs with no internet, or a custom pipeline.
 - **Upload size handling** with a configurable max size, optional auto quality reduction (re-encodes to fit), and an export-resolution selector.
@@ -64,7 +64,7 @@
 - **Minimize to tray** — start in the tray and/or send the window there with the minimize button (headless or always-running setups).
 - **Start automatically when Windows starts** (per-user, no admin) for unattended rigs.
 
-### Remote Control / External API (NEW in v3.4)
+### Remote Control / External API
 - **Opt-in localhost HTTP API** to start/stop capture and create videos from external software (e.g. **N.I.N.A.**).
 - **Scheduled timelapse** — a single call starts capture and auto-stops (and optionally renders the video) at a set time.
 - **Local-only, no auth token** — bound to `127.0.0.1`; mutually exclusive with automatic scheduling.
@@ -86,19 +86,19 @@
 
 ### Capture Tab
 ![Snapshot Capturing Interface](screenshots/Snapshot_capturing.jpg)
-*Live capture interface showing camera configuration, real-time preview, session statistics, and activity logging.*
+*A live overnight session: Camera, Capture Window and Capture Settings groups (including the Folder Rollover Hour), connection status, real-time all-sky preview, session statistics, and the activity log.*
 
 ### Video Export Tab
 ![Video Export Interface](screenshots/Video_export.jpg)
-*Video export interface with input selection, customizable settings, presets management, and real-time encoding progress.*
+*Video export: input selection, video settings with live duration/size estimates, output options (temp folder, delete snapshots after creating the video), presets, and the Session Events group — overlay events as captions and write the events CSV.*
 
-### Scheduling Tab (NEW in v3.0)
+### Scheduling Tab
 ![Scheduling Interface](screenshots/Scheduling_tab.jpg)
-*Astronomical scheduling interface: twilight or manual time modes, two-month capture calendar (captured / scheduled / past), auto video creation with optional snapshot cleanup, a live scheduler status indicator, and scheduler log.*
+*Astronomical scheduling: twilight or manual time modes with tonight's computed window, the two-month capture calendar (captured / scheduled / past), auto video creation, and the scheduler control/log.*
 
-### Integrations Tab (NEW in v3.3)
+### Integrations Tab
 ![Integrations Interface](screenshots/Integrations_tab.jpg)
-*Integrations tab: video delivery of the nightly video — Discord webhook or MQTT broker, with max upload size, auto quality reduction, export resolution and delete-after-delivery — plus application options (minimize to tray, start automatically with Windows) and the remote control API.*
+*Integrations: Video Delivery with the delivery method choice — Discord webhook or MQTT broker — plus size limit and auto quality reduction, application options (minimize to tray, start with Windows), and the Remote Control API for NINA and other external software.*
 
 ---
 
@@ -229,7 +229,7 @@ Ultra Speed:
 
 ---
 
-## Using the Scheduling Tab (NEW in v3.0)
+## Using the Scheduling Tab
 
 The Scheduling tab enables **automated long-term capture planning** based on astronomical twilight times or manual schedules.
 
@@ -295,7 +295,7 @@ Choose between two scheduling modes:
    ```
    [✓] Create video after each night's session
    ```
-   - Enabling **Create video after each night's session** is also what unlocks the optional **video delivery** (Discord webhook or MQTT broker) — configure it on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - Enabling **Create video after each night's session** is also what unlocks the optional **video delivery** (Discord webhook or MQTT broker) — configure it on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab)).
    - To free disk space afterwards, tick **Delete snapshots after creating video** on the
      **Video Export tab** (moved there in v3.6; applies to every video and deletes only the
      frames that went into it).
@@ -308,7 +308,7 @@ Choose between two scheduling modes:
    - Capture stops automatically when darkness ends
    - Videos are created automatically if enabled
 5. **Startup & Tray Options**
-   - **Minimize to tray** and **Start automatically when Windows starts** now live on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - **Minimize to tray** and **Start automatically when Windows starts** now live on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab)).
    - Restore a tray-minimized window by double-clicking the tray icon or choosing `Open`.
 
 ### Scheduler Status
@@ -326,7 +326,7 @@ Monitor scheduler activity in the color-coded log:
 
 ---
 
-## Using the Integrations Tab (NEW in v3.3)
+## Using the Integrations Tab
 
 Optional, set-once integrations and unattended-operation options live on their own tab.
 
@@ -387,7 +387,7 @@ Nothing is retained, so a consumer that connects later picks up the next video r
 
 ---
 
-## Remote Control / API (NEW in v3.4)
+## Remote Control / API
 
 Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in HTTP API that runs inside the app.
 
