@@ -6,7 +6,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
@@ -18,9 +18,11 @@
 ## Key Features
 
 ### Image Capture
-- RTSP stream capture with optional TCP forcing for stability.
+- RTSP stream capture (always TCP transport, for stability).
 - **Multi-threaded bufferless capture** for accurate timestamps (±5 second precision).
 - **Proactive reconnection** to prevent camera firmware timeouts (100% capture success rate).
+- **Outage-resilient**: a camera dropout never ends the session — capture keeps retrying with
+  escalating backoff (shown as an orange *Reconnecting* status) until the window ends.
 - Smart scheduling that supports overnight windows (e.g., 20:00 → 08:00).
 - Automatic interval capture from 1 to 3600 seconds.
 - Automatic date-based folder structure for snapshots.
@@ -35,14 +37,22 @@
 - Non-destructive—source images are never modified.
 - Real-time progress, ETA, and output size estimates.
 - Optional frame counter overlay.
+- **Session-event overlays (NEW in v3.6)** — events reported during the night (autofocus,
+  meridian flip, filter changes…) burned in as captions at the moment they occurred, the
+  imaging target as a standing bottom-right label, and an optional `<video>.events.csv`
+  with wall-clock time and video timecode per event.
+- **Delete snapshots after creating video** (optional) — removes exactly the frames that went
+  into the video; manual exports ask for confirmation first.
 
 ### Astronomical Scheduling (NEW in v3.0)
 - **Long-term capture planning** with calendar-based date selection.
 - **Twilight calculations** for automatic darkness detection (civil, nautical, astronomical).
 - **Manual time mode** as alternative to twilight-based scheduling.
 - **Two-month calendar view** showing captured dates, scheduled dates, and today.
-- **Auto video creation** after each night's capture session completes.
-- **Auto delete snapshots** option to free up disk space after video creation.
+- **Auto video creation** after each night's capture session completes — session-aware: a
+  night that crosses the folder rollover hour renders whole, and only the session's frames.
+- Pairs with **Delete snapshots after creating video** (on the Video Export tab since v3.6)
+  to free disk space once the night's video exists.
 - **Color-coded scheduler log** for monitoring automated capture activity.
 - Start/end time offsets to fine-tune the darkness window.
 
@@ -96,8 +106,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/rtsp-timelapse.git
-   cd rtsp-timelapse
+   git clone https://github.com/HiranD/RTSP-Timelapse-Capture.git
+   cd RTSP-Timelapse-Capture
    ```
 
 2. **Install dependencies**
@@ -284,9 +294,11 @@ Choose between two scheduling modes:
 3. **Configure Auto Video (Optional)**
    ```
    [✓] Create video after each night's session
-   [ ] Delete snapshots after (use with caution!)
    ```
    - Enabling **Create video after each night's session** is also what unlocks the optional **video delivery** (Discord webhook or MQTT broker) — configure it on the **Integrations tab** (see [Using the Integrations Tab](#using-the-integrations-tab-new-in-v33)).
+   - To free disk space afterwards, tick **Delete snapshots after creating video** on the
+     **Video Export tab** (moved there in v3.6; applies to every video and deletes only the
+     frames that went into it).
    *Note: Uses preset and output folder from Video Export tab*
 
 4. **Enable Scheduler**
@@ -386,7 +398,7 @@ Trigger capture from external software (e.g. **N.I.N.A.**) over a small, opt-in 
 **Using it with NINA:**
 
 - **Example scripts** *(available now)* — ready-to-use `.bat` files and a PowerShell variant (no install; they use `curl`), wired into NINA via the *External Script* instruction. The full endpoint reference and step-by-step setup live in **[`examples/README.md`](examples/README.md)**, shipped in the `examples/` folder next to the app.
-- **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, plus a scheduled timelapse that auto-stops and renders the video). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
+- **NINA plugin** — *RTSP Timelapse Control*, a native plugin that drives this API from inside NINA (start/stop, a scheduled timelapse that auto-stops and renders the video, and — from plugin **1.5.0** — a *Report Timelapse Events* trigger that sends autofocus runs, filter changes, meridian flips, target changes and guiding loss automatically for captioning). Install from **[github.com/HiranD/nina-rtsp-timelapse](https://github.com/HiranD/nina-rtsp-timelapse)**.
 
 **Session events:**
 
@@ -433,7 +445,7 @@ Overnight windows (start later than end) are handled automatically.
 | Interval (seconds)       | Time between captures            | `30` |
 | JPEG Quality             | Saved image quality (higher = better quality but larger files) | `95` |
 | Buffer Frames            | Frames to buffer in OpenCV       | `1` |
-| Max Retries              | Connection retry attempts        | `3` |
+| Max Retries              | Quick connection attempts before escalating backoff takes over (the session is never given up) | `3` |
 | Proactive Reconnect (s)  | Reconnect interval to prevent camera timeout | `300` (5 min) |
 
 **v2.3.0 Defaults**: Optimized for maximum timestamp accuracy and reliability. These ready to use values achieve ±5 second precision with 100% capture success rate.
@@ -714,7 +726,7 @@ A: Use **"Ultra Speed 16×"** preset or set Speed Multiplier to 8×/16×/32×.
 A: Not built-in. Use video editing software (like DaVinci Resolve, Premiere, or OpenShot) to add audio after export.
 
 **Q: Why are my original files safe?**
-A: The export creates temporary numbered copies in a `.temp_export_*/` folder. Your originals are never renamed or modified. The temp folder is automatically deleted after export.
+A: The export works on temporary numbered copies staged outside your output folder (under `%TEMP%\RTSP_Timelapse` by default). Your originals are never renamed or modified, and the temp folder is automatically deleted after export.
 
 **Q: What is Proactive Reconnect and should I use it?**
 A: Proactive Reconnect automatically disconnects and reconnects to the camera at a scheduled interval **before** the camera's firmware timeout occurs. This prevents failed captures during timeout periods. Enable it if you notice connection drops at regular intervals (e.g., every 5-10 minutes). Set the value to ~40 seconds before your camera's timeout. For Annke I81EM cameras, use 420 seconds (7 minutes).
@@ -780,6 +792,21 @@ A: Tooltips are built into the interface and cannot be disabled. However, they o
 ---
 
 ## Version History
+
+### v3.6.0 (2026-08-17)
+**Session Events + MQTT Delivery**
+
+- **New**: **Session events** ([#15](https://github.com/HiranD/RTSP-Timelapse-Capture/issues/15)) — external programs (e.g. the *RTSP Timelapse Control* NINA plugin 1.5.0) can `POST /events` to record what happened during the night. **Overlay session events** (Video Export tab) burns them into the video as captions at the moment they occurred; the imaging target is drawn as a standing bottom-right label; **Write events CSV** saves a `<video>.events.csv` with wall-clock time and video timecode.
+- **New**: **MQTT delivery** — the Integrations tab's Discord Upload section is now **Video Delivery**: send the finished video to a Discord webhook (as before) or publish it to an MQTT broker (`<base>/metadata` then `<base>/video`), so a capture PC with no internet can hand it to a local broker.
+- **New**: **Folder Rollover Hour** is editable in the app (Capture tab).
+- **Changed**: renders driven by a session start are **session-aware** — they cover every date folder from the session's start onward, so a night crossing the rollover hour renders whole, and the nightly auto-video renders exactly the session.
+- **Changed**: **Delete snapshots after creating video** moved to the Video Export tab, applies to every video (manual exports confirm first), and deletes only the frames that went into the video.
+- **Changed**: every render names its video `timelapse-YYYY-MM-DD.<ext>`, and a delivered video keeps that name even when re-encoded to fit the size limit.
+- **Fixed**: a camera outage no longer ends the session — capture retries with escalating backoff (orange *Reconnecting* status) until stopped or the window ends.
+- **Fixed**: starting the scheduler mid-window (or after midnight) captures the remainder of the window instead of instantly completing; scheduled end times can never land in the past.
+- **Fixed**: a UTF-8 BOM in `app_config.json` no longer silently resets every setting; an Integrations field typed just before closing the app is no longer lost.
+
+---
 
 ### v3.5.0 (2026-07-24)
 **Start Now + Stream Path fix**
