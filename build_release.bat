@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.5.0"
+set "VERSION=3.6.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,31 +69,38 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Start Now + Stream Path fix
+echo    Session Events + MQTT Delivery
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * NEW: "Start Now" on the Capture tab. The Capture Window has a Start
-echo     choice - At time ^(wait until the Start Time^) or Now ^(begin capturing
-echo     immediately, still stopping at the End Time^). No more setting a Start
-echo     Time in the past just to start right away.
-echo   * NEW: the Capture tab is reorganized into three groups - Camera,
-echo     Capture Window, and Capture Settings - so the schedule fields no
-echo     longer sit under a "camera" heading.
-echo   * FIXED: the Stream Path setting was ignored - the app always requested
-echo     /stream1 no matter what you entered, so Hikvision, Dahua and UniFi
-echo     cameras could not connect. Your configured path is now used exactly
-echo     as typed, query string included. ^(issue #16^)
-echo   * The Activity Log now shows the stream URL being opened, with the
-echo     password masked, for both Test Connection and Start Capture.
-echo   * REMOVED: the "Force TCP" checkbox. It never switched transport - every
-echo     connection already used TCP - so nothing changes except that the box
-echo     no longer implies a choice that was not there.
-echo.
-echo   NOTE: if you once typed a wrong Stream Path while troubleshooting a
-echo   camera that also answers on /stream1, it was connecting by accident and
-echo   will now fail, because your setting is finally honoured. Check the URL
-echo   in the Activity Log, correct the field, or clear it to use /stream1.
+echo   * NEW: Session events. External programs - like the RTSP Timelapse
+echo     Control NINA plugin 1.5.0 - can tell the app what happened during
+echo     the night ^(autofocus, filter changes, meridian flip, target,
+echo     guiding^) via POST /events, and the app burns them into the video
+echo     as captions at the moment they occurred. The imaging target is
+echo     drawn as a standing label in the bottom-right corner. An optional
+echo     .events.csv can be written next to the video ^(Video Export tab^).
+echo   * NEW: MQTT delivery. The Integrations tab's Discord Upload section
+echo     is now Video Delivery - send each finished video to a Discord
+echo     webhook ^(as before^) or publish it to an MQTT broker, so a capture
+echo     PC with no internet can hand the video to a local broker.
+echo   * NEW: Folder Rollover Hour is editable on the Capture tab.
+echo   * IMPROVED: renders are session-aware - a night that crosses the
+echo     rollover hour renders whole across date folders, and the nightly
+echo     auto-video renders exactly the session. "Delete snapshots after
+echo     creating video" moved to the Video Export tab, applies to every
+echo     video, and deletes only the frames that went into the video.
+echo   * IMPROVED: a camera outage no longer ends the session - capture
+echo     keeps retrying with escalating backoff ^(orange "Reconnecting"
+echo     status^) until capture is stopped or the window ends.
+echo   * FIXED: starting the scheduler mid-window ^(or after midnight^) now
+echo     captures instead of instantly completing; scheduled end times can
+echo     never land in the past.
+echo   * FIXED: every render names its video timelapse-YYYY-MM-DD, and a
+echo     delivered video keeps that name ^(no more discord_crf32.mp4^).
+echo   * FIXED: a UTF-8 BOM in app_config.json ^(e.g. after editing it in
+echo     Notepad^) no longer silently resets every setting; Integrations
+echo     fields typed just before closing the app are no longer lost.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE

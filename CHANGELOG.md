@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.6.0] - 2026-08-17
 
 ### Added
 - **MQTT broker delivery for the nightly video.** The Integrations tab's Discord Upload section
