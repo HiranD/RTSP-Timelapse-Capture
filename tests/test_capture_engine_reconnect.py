@@ -29,6 +29,19 @@ def _engine():
 
 
 FAST_BACKOFF = mock.patch("capture_engine._RECONNECT_BACKOFF", (0.01,))
+GRACE_FAST = mock.patch("capture_engine._FIRST_FRAME_GRACE", 0.3)
+
+
+def _fake_cap(read_results=None, opened=True):
+    """A stand-in RTSPBufferlessCapture: opens, and reads per `read_results`
+    (a side_effect list) or never delivers a frame (the default)."""
+    cap = mock.Mock()
+    cap.isOpened.return_value = opened
+    if read_results is None:
+        cap.read.return_value = (False, None)
+    else:
+        cap.read.side_effect = read_results
+    return cap
 
 
 class ReconnectUntilTests(unittest.TestCase):
@@ -93,6 +106,68 @@ class ReconnectUntilTests(unittest.TestCase):
         with FAST_BACKOFF:
             self.assertTrue(eng._reconnect_until("rtsp://x", datetime.max))
         self.assertEqual(eng.disconnect_count, 1)
+
+
+class FirstFrameGraceTests(unittest.TestCase):
+    """_open_capture must only return a connection that has delivered a frame.
+
+    Pins the fix for 2026-08-28: a rig whose first frame arrives ~6s after open
+    (past the 5s steady-state read timeout) could never capture a single frame -
+    and because an open alone counted as a successful reconnect, the outage
+    backoff never engaged and the camera was reopened every ~12s all night.
+    """
+
+    def test_returns_cap_once_frame_arrives(self):
+        eng = _engine()
+        cap = _fake_cap(read_results=[(True, "frame")])
+        with mock.patch("capture_engine.RTSPBufferlessCapture", return_value=cap):
+            result = eng._open_capture("rtsp://x", retries=1)
+        self.assertIs(result, cap)
+        cap.release.assert_not_called()
+
+    def test_late_first_frame_within_grace_succeeds(self):
+        # The remote-rig regression: early reads come back empty, the frame
+        # lands later but inside the grace - must be a success, not a teardown.
+        eng = _engine()
+        cap = _fake_cap(read_results=[(False, None), (False, None), (True, "frame")])
+        with mock.patch("capture_engine.RTSPBufferlessCapture", return_value=cap):
+            result = eng._open_capture("rtsp://x", retries=1)
+        self.assertIs(result, cap)
+
+    def test_opened_but_frameless_fails_and_releases(self):
+        eng = _engine()
+        cap = _fake_cap()  # opens fine, never delivers a frame
+        with GRACE_FAST, mock.patch("capture_engine.RTSPBufferlessCapture",
+                                    return_value=cap):
+            result = eng._open_capture("rtsp://x", retries=1)
+        self.assertIsNone(result)
+        cap.release.assert_called()
+
+    def test_reconnect_until_frameless_keeps_retrying_without_error(self):
+        # Open-but-frameless is a failed attempt like any other: the retry loop
+        # must keep going (backoff engaged) instead of "succeeding" instantly.
+        eng = _engine()
+        opens = []
+
+        def make_cap(url, buffer_size=1):
+            opens.append(url)
+            if len(opens) >= 3:
+                eng.stop_event.set()
+            return _fake_cap()
+
+        with GRACE_FAST, FAST_BACKOFF, \
+                mock.patch("capture_engine.RTSPBufferlessCapture", side_effect=make_cap):
+            ok = eng._reconnect_until("rtsp://x", datetime.max)
+        self.assertFalse(ok)
+        self.assertGreaterEqual(len(opens), 2)
+        self.assertNotEqual(eng.state, CaptureState.ERROR)
+
+    def test_stop_during_grace_returns_false(self):
+        eng = _engine()
+        eng.stop_event.set()
+        cap = _fake_cap(read_results=[(True, "frame")])
+        self.assertFalse(eng._await_first_frame(cap))
+        cap.read.assert_not_called()
 
 
 class InitialConnectFailureTests(unittest.TestCase):

@@ -12,6 +12,14 @@ from typing import Optional
 import os
 import sys
 import tempfile
+import threading
+
+from app_logging import get_logger
+
+# Shared with the main window's file log (gui_app owns the handler on the root
+# logger): with file logging enabled there, Export Log lines land in
+# logs/app.log too. Without a handler this logger is a no-op.
+_FILE_LOGGER = get_logger("export")
 
 
 def get_app_base_dir() -> Path:
@@ -783,6 +791,10 @@ class VideoExportPanel(ttk.Frame):
         self.config_manager.ui.event_overlay = self.event_overlay_var.get()
         self.config_manager.ui.event_overlay_seconds = self.get_overlay_seconds()
         self.config_manager.ui.event_csv = self.event_csv_var.get()
+        _FILE_LOGGER.debug("event settings saved: overlay=%s, hold=%.1fs, csv=%s",
+                           self.config_manager.ui.event_overlay,
+                           self.config_manager.ui.event_overlay_seconds,
+                           self.config_manager.ui.event_csv)
         self.config_manager.save_to_file()
 
     def update_estimates(self):
@@ -857,6 +869,14 @@ class VideoExportPanel(ttk.Frame):
         if output_path.exists():
             if not messagebox.askyesno("Overwrite File", f"File '{output_file}' already exists. Overwrite?"):
                 return
+
+        _FILE_LOGGER.debug(
+            "manual export starting: %d image(s) from %s -> %s (preset=%r, fps=%s, "
+            "crf=%s, speed=%sx, res=%s, fmt=%s, delete_snapshots=%s)",
+            self.current_collection.total_count, self.current_collection.source_folder,
+            output_file, self.preset_var.get(), settings.framerate, settings.quality,
+            settings.speed_multiplier, settings.resolution, settings.format,
+            self.delete_snapshots_var.get())
 
         # Update UI state
         self.is_exporting = True
@@ -961,6 +981,8 @@ class VideoExportPanel(ttk.Frame):
             icon="warning",
             default="no",
         )
+        _FILE_LOGGER.debug("delete-snapshots prompt for %s (%d images): %s",
+                           folder, count, "confirmed" if confirmed else "declined")
         if not confirmed:
             self.log_message("Snapshots kept.")
             return
@@ -1000,11 +1022,25 @@ class VideoExportPanel(ttk.Frame):
             self.log_message("  Install FFmpeg from: https://ffmpeg.org/download.html")
 
     def log_message(self, message: str):
-        """Add message to log"""
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.insert(tk.END, f"{message}\n")
-        self.log_text.see(tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        """Add message to the Export Log (and the shared file log, if enabled).
+
+        Safe to call from any thread: the export runs in a worker thread and
+        logs through this via log_callback, so the Tk widget update is
+        marshalled onto the main thread when needed.
+        """
+        # The logger name ("rtsp.export") already identifies the area in the file.
+        _FILE_LOGGER.info(message)
+
+        def append():
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.insert(tk.END, f"{message}\n")
+            self.log_text.see(tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+
+        if threading.current_thread() is threading.main_thread():
+            append()
+        else:
+            self.after(0, append)
 
     def clear_log(self):
         """Clear log"""

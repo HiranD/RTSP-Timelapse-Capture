@@ -18,8 +18,12 @@ import calendar
 
 try:
     from src.capture_history import get_capture_history, CaptureHistoryManager
+    from src.app_logging import get_logger
 except ImportError:
     from capture_history import get_capture_history, CaptureHistoryManager
+    from app_logging import get_logger
+
+LOG = get_logger("calendar")
 
 
 class TwoMonthCalendar(ttk.Frame):
@@ -346,8 +350,10 @@ class TwoMonthCalendar(ttk.Frame):
         # Toggle selection
         if date_str in self.selected_dates:
             self.selected_dates.remove(date_str)
+            LOG.debug("unscheduled %s (%d date(s) selected)", date_str, len(self.selected_dates))
         else:
             self.selected_dates.add(date_str)
+            LOG.debug("scheduled %s (%d date(s) selected)", date_str, len(self.selected_dates))
 
         # Update display
         self._update_display()
@@ -402,6 +408,7 @@ class TwoMonthCalendar(ttk.Frame):
 
     def _clear_all(self):
         """Clear all selected dates"""
+        LOG.debug("clear all: %d date(s) unscheduled", len(self.selected_dates))
         self.selected_dates.clear()
         self._update_display()
 

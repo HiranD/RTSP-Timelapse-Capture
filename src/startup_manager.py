@@ -19,6 +19,13 @@ import sys
 import platform
 from pathlib import Path
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("startup")
+
 # Registry value name and the standard per-user "Run" key.
 APP_NAME = "RTSP_Timelapse"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -101,6 +108,7 @@ def enable() -> tuple[bool, str]:
         # Creates the key if missing, opens it for writing otherwise.
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, command)
+        LOG.debug("registered Run key %s\\%s = %s", RUN_KEY, APP_NAME, command)
         return True, "App will start automatically when Windows starts."
     except OSError as e:
         return False, f"Could not enable start with Windows: {e}"
@@ -118,6 +126,7 @@ def disable() -> tuple[bool, str]:
             winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE
         ) as key:
             winreg.DeleteValue(key, APP_NAME)
+        LOG.debug("removed Run key value %s\\%s", RUN_KEY, APP_NAME)
         return True, "App will no longer start automatically with Windows."
     except FileNotFoundError:
         # Already absent - treat as success (desired end state reached).

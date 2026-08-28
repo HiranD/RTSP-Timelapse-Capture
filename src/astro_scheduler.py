@@ -20,10 +20,16 @@ try:
     from src.twilight_calculator import TwilightCalculator, DarknessWindow
     from src.config_manager import ConfigManager
     from src.capture_engine import effective_date
+    from src.app_logging import get_logger
 except ImportError:
     from twilight_calculator import TwilightCalculator, DarknessWindow
     from config_manager import ConfigManager
     from capture_engine import effective_date
+    from app_logging import get_logger
+
+# File-log detail. The monitor loop polls every 15s, so lines here are
+# transition-based (decisions that changed), never per-poll.
+LOG = get_logger("scheduler")
 
 
 class AstroScheduler:
@@ -67,6 +73,11 @@ class AstroScheduler:
         self.current_session_date: Optional[str] = None
         self.capture_active = False
         self.current_window: Optional[DarknessWindow] = None
+
+        # Change-detection for file-log lines, so the 15s poll logs decisions
+        # once instead of four times a minute.
+        self._logged_unscheduled_date: Optional[str] = None
+        self._logged_window_range: Optional[str] = None
 
     def start(self):
         """Start the scheduler monitoring thread."""
@@ -170,9 +181,14 @@ class AstroScheduler:
         if owning_date not in cfg.scheduled_dates:
             # This night isn't scheduled (or its date was unticked/the calendar
             # cleared mid-capture): stop any active session, start nothing.
+            if self._logged_unscheduled_date != owning_date:
+                self._logged_unscheduled_date = owning_date
+                LOG.debug("night %s not scheduled (%d date(s) selected)",
+                          owning_date, len(cfg.scheduled_dates))
             if self.capture_active:
                 self._stop_capture_session()
             return
+        self._logged_unscheduled_date = None
 
         # Check which mode we're using
         if cfg.use_manual_times:
@@ -268,6 +284,13 @@ class AstroScheduler:
         if not window:
             self._log("WARNING", "Could not calculate darkness window (polar day/night?)")
             return
+
+        window_range = f"{window.date} {window.get_time_range_str()}"
+        if window_range != self._logged_window_range:
+            self._logged_window_range = window_range
+            LOG.debug("darkness window (%s, offsets %+d/%+d min): %s, active_now=%s",
+                      cfg.twilight_type, cfg.start_offset_minutes,
+                      cfg.end_offset_minutes, window_range, window.is_active_now())
 
         self.current_window = window
 

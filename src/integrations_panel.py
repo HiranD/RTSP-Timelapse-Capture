@@ -21,10 +21,14 @@ try:
     from src.config_manager import ConfigManager
     from src.tooltip import ToolTip
     from src import startup_manager
+    from src.app_logging import get_logger
 except ImportError:
     from config_manager import ConfigManager
     from tooltip import ToolTip
     import startup_manager
+    from app_logging import get_logger
+
+LOG = get_logger("integrations")
 
 
 class IntegrationsPanel(ttk.Frame):
@@ -52,6 +56,10 @@ class IntegrationsPanel(ttk.Frame):
         # Remote-control toggle callback (set by the app). Called with the
         # desired enabled state; returns (ok, error) so we can resync on failure.
         self._remote_toggle_cb = None
+
+        # File-logging toggle callback (set by the app). Same contract: called
+        # with the desired state, returns (ok, error) for resync on failure.
+        self._file_logging_cb = None
 
         self._create_widgets()
         self._load_from_config()
@@ -400,6 +408,26 @@ class IntegrationsPanel(ttk.Frame):
         if not startup_manager.is_supported():
             self.start_with_windows_checkbox.config(state="disabled")
 
+        # Mirror the Activity Log into a file - the "send me your logs" story
+        # for remote troubleshooting. Off by default so a normal install writes
+        # nothing to disk.
+        self.file_logging_var = tk.BooleanVar(value=False)
+        self.file_logging_checkbox = ttk.Checkbutton(
+            parent,
+            text="Write a log file (logs\\app.log)",
+            variable=self.file_logging_var,
+            command=self._on_file_logging_toggle
+        )
+        self.file_logging_checkbox.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ToolTip(self.file_logging_checkbox,
+            "Save a detailed diagnostic log into logs\\app.log next to the app "
+            "(kept to ~5 MB, with 3 older files retained). Includes everything "
+            "the Activity Log shows plus fine-grained detail from every part of "
+            "the app — connections, frames, renders, settings changes — with "
+            "passwords masked. Takes effect immediately.\n\nTurn this on when "
+            "reporting a problem, reproduce it, then send the logs folder."
+        )
+
     def _create_remote_control_section(self, parent: ttk.LabelFrame):
         """Localhost HTTP API for external control (e.g. NINA). See issue #12."""
         parent.columnconfigure(1, weight=1)
@@ -513,6 +541,7 @@ class IntegrationsPanel(ttk.Frame):
         self.discord_keep_reencoded_var.set(cfg.discord_keep_reencoded)
 
         self.minimize_to_tray_var.set(self.config_manager.ui.minimize_to_tray)
+        self.file_logging_var.set(self.config_manager.ui.file_logging)
 
         # Remote control API
         remote = self.config_manager.remote_api
@@ -565,6 +594,7 @@ class IntegrationsPanel(ttk.Frame):
         cfg.discord_keep_reencoded = self.discord_keep_reencoded_var.get()
 
         self.config_manager.ui.minimize_to_tray = self.minimize_to_tray_var.get()
+        self.config_manager.ui.file_logging = self.file_logging_var.get()
 
         # Remote control API
         self.config_manager.remote_api.enabled = self.remote_api_enabled_var.get()
@@ -574,6 +604,16 @@ class IntegrationsPanel(ttk.Frame):
             port = 8787
         self.config_manager.remote_api.port = max(1024, min(65535, port))
 
+        LOG.debug("settings saved: delivery=%s, mqtt=%s:%s topic=%r qos=%s tls=%s, "
+                  "max_size=%sMB res=%s auto_reduce=%s delete_after=%s keep_reencoded=%s, "
+                  "tray=%s file_log=%s, api=%s port=%s",
+                  cfg.delivery_method, cfg.mqtt_broker_host, cfg.mqtt_broker_port,
+                  cfg.mqtt_base_topic, cfg.mqtt_qos, cfg.mqtt_use_tls,
+                  cfg.discord_max_video_size_mb, cfg.discord_export_resolution,
+                  cfg.discord_auto_quality_reduction, cfg.delete_video_after_discord_upload,
+                  cfg.discord_keep_reencoded, self.config_manager.ui.minimize_to_tray,
+                  self.config_manager.ui.file_logging,
+                  self.config_manager.remote_api.enabled, self.config_manager.remote_api.port)
         self.config_manager.save_to_file()
 
     # ------------------------------------------------------------ handlers
@@ -590,6 +630,19 @@ class IntegrationsPanel(ttk.Frame):
     def _on_minimize_to_tray_toggle(self):
         """Handle tray-on-startup checkbox toggle."""
         self._save_to_config()
+
+    def _on_file_logging_toggle(self):
+        """Attach/detach the app's file log when the checkbox toggles."""
+        enabled = self.file_logging_var.get()
+        self._save_to_config()
+        if not self._file_logging_cb:
+            return
+        ok, err = self._file_logging_cb(enabled)
+        if not ok:
+            # Couldn't open the log file (e.g. read-only folder): resync + report.
+            self.file_logging_var.set(False)
+            self._save_to_config()
+            self._log("ERROR", f"File logging: {err}")
 
     def _on_start_with_windows_toggle(self):
         """Register/unregister the app to launch at Windows logon."""
@@ -660,6 +713,18 @@ class IntegrationsPanel(ttk.Frame):
         """Reflect an externally-changed enabled state (e.g. autostart failed)."""
         self.remote_api_enabled_var.set(enabled)
         self.config_manager.remote_api.enabled = enabled
+        self.config_manager.save_to_file()
+
+    # ---------------------------------------------------------- file logging
+
+    def set_file_logging_callback(self, on_toggle):
+        """Wire the "Write a log file" checkbox to the app's handler attach/detach."""
+        self._file_logging_cb = on_toggle
+
+    def sync_file_logging_enabled(self, enabled: bool):
+        """Reflect an externally-changed state (e.g. enabling at startup failed)."""
+        self.file_logging_var.set(enabled)
+        self.config_manager.ui.file_logging = enabled
         self.config_manager.save_to_file()
 
     # ------------------------------------------------------------ logging

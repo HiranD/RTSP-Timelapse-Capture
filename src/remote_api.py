@@ -314,6 +314,7 @@ class RemoteControlServer:
                 if server._on_schedule is None:
                     self._send_json(400, {"error": "scheduling not supported"})
                     return
+                server._log("DEBUG", f"/capture/schedule stop_at={stop_at} create_video={create_video}")
                 ok, err, status = server._on_schedule(stop_at, create_video)
                 if ok:
                     self._send_json(202, {"status": "scheduling", "stop_at": stop_at, **(status or {})})
@@ -327,6 +328,7 @@ class RemoteControlServer:
                     return
                 date = self._opt_str(body, "date")
                 since = self._opt_str(body, "since")
+                server._log("DEBUG", f"/video/create date={date} since={since}")
                 ok, message, code, resolved = server._on_create_video(date, since)
                 key = "status" if ok else "error"
                 # Echo the resolved target (e.g. the newest session) when known,
@@ -363,6 +365,8 @@ class RemoteControlServer:
                     self._send_json(400, {"error": "data must be an object"})
                     return
 
+                server._log("DEBUG", f"/events title={title!r} category={self._opt_str(body, 'category')} "
+                                     f"time={raw_time}")
                 ok, err, stored = server._on_event(
                     title,
                     self._opt_str(body, "detail"),

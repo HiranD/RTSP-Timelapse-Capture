@@ -25,6 +25,7 @@ try:
     from src.tooltip import ToolTip
     from src.scheduling_tooltips import SCHEDULING_TOOLTIPS
     from src.capture_history import get_capture_history
+    from src.app_logging import get_logger
 except ImportError:
     from calendar_widget import TwoMonthCalendar
     from twilight_calculator import TwilightCalculator
@@ -34,6 +35,9 @@ except ImportError:
     from tooltip import ToolTip
     from scheduling_tooltips import SCHEDULING_TOOLTIPS
     from capture_history import get_capture_history
+    from app_logging import get_logger
+
+LOG = get_logger("scheduling")
 
 
 class SchedulingPanel(ttk.Frame):
@@ -493,6 +497,14 @@ class SchedulingPanel(ttk.Frame):
 
         # Scheduler UI state
         cfg.scheduler_enabled = self.scheduler_enabled_var.get()
+
+        LOG.debug("settings saved: mode=%s, lat=%s lon=%s, twilight=%s offsets=%+d/%+d, "
+                  "manual=%s-%s, %d scheduled date(s), auto_video=%s, scheduler_enabled=%s",
+                  "manual" if cfg.use_manual_times else "twilight",
+                  cfg.latitude, cfg.longitude, cfg.twilight_type,
+                  cfg.start_offset_minutes, cfg.end_offset_minutes,
+                  cfg.manual_start_time, cfg.manual_end_time,
+                  len(cfg.scheduled_dates), cfg.auto_create_video, cfg.scheduler_enabled)
 
         # Save to file
         self.config_manager.save_to_file()

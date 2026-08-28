@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("presets")
+
 
 def get_app_base_dir() -> Path:
     """Get the application's base directory (where exe or main script is located)."""
@@ -158,6 +165,8 @@ class PresetManager:
         if name in self.custom_presets:
             return self.custom_presets[name]
 
+        LOG.debug("preset '%s' not found (custom presets: %s)",
+                  name, sorted(self.custom_presets.keys()))
         return None
 
     def save_preset(self, name: str, settings: VideoExportSettings) -> Tuple[bool, str]:
@@ -311,9 +320,12 @@ class PresetManager:
             with open(self.presets_file, 'w') as f:
                 json.dump(data, f, indent=2)
 
+            LOG.debug("saved %d custom preset(s) to %s",
+                      len(self.custom_presets), self.presets_file)
             return True, f"Saved {len(self.custom_presets)} custom preset(s)"
 
         except Exception as e:
+            LOG.warning("saving custom presets to %s failed: %s", self.presets_file, e)
             return False, f"Failed to save custom presets: {str(e)}"
 
     def export_presets(self, export_file: Path) -> Tuple[bool, str]:

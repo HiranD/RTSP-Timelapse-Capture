@@ -29,7 +29,10 @@ import os
 from bisect import bisect_left, bisect_right
 from typing import List, Optional, Sequence
 
+from app_logging import get_logger
 from event_log import SessionEvent, read_events  # noqa: F401  (read_events re-exported)
+
+LOG = get_logger("events")
 
 # Cap on captions drawn at once. A busy few minutes (autofocus + filter change +
 # dither) can overlap; beyond this the panel would swallow the frame, so the
@@ -386,6 +389,9 @@ def build_plan(date_dirs, frame_times, framerate, speed_multiplier=1,
         date_dirs = [date_dirs]
     events = [event for d in date_dirs for event in read_events(d, since=since)]
     events.sort(key=lambda event: event.time)
+    LOG.debug("build_plan: %d event(s) from %d folder(s)%s",
+              len(events), len(date_dirs),
+              f" since {since:%Y%m%d-%H%M%S}" if since else "")
     if not events:
         return None
     plan = EventOverlayPlan(events, frame_times, framerate, speed_multiplier, hold_seconds)

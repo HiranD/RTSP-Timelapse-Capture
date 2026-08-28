@@ -33,6 +33,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("events")
+
 # Filename written inside each session's date folder.
 EVENTS_FILENAME = "events.jsonl"
 
@@ -148,6 +155,7 @@ class EventLog:
 
     def begin_session(self):
         """Start accepting events. Clears the in-memory list from the last run."""
+        LOG.debug("event session opened")
         with self._lock:
             self._active = True
             self._recent = []
@@ -155,7 +163,11 @@ class EventLog:
     def end_session(self):
         """Stop accepting events. The on-disk log is left in place."""
         with self._lock:
+            was_active = self._active
             self._active = False
+            count = len(self._recent)
+        if was_active:
+            LOG.debug("event session closed (%d event(s) recorded)", count)
 
     # ----------------------------------------------------------------- record
 
@@ -204,6 +216,7 @@ class EventLog:
         path = Path(self._dir_provider()) / EVENTS_FILENAME
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
+        LOG.debug("event appended to %s: %s", path, event.to_dict())
 
     def recent(self) -> list:
         """Serialised events recorded this session, oldest first (for GET /events)."""

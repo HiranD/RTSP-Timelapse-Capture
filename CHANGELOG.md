@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Cameras whose first frame takes longer than 5 seconds can now capture at all.** On some rigs
+  (seen on a high-latency link with an H.265 camera) the stream opens fine but the first decodable
+  frame arrives a fixed ~6 seconds later — deterministically just past the capture loop's 5-second
+  read timeout. Every session died one second short of its first frame, forever: connect, fail at
+  exactly 5s, reconnect, repeat all night with zero frames — while **Test Connection passed**,
+  because it waits as long as the first frame needs. A freshly opened stream now gets a 15-second
+  first-frame grace before the connection is judged dead; the steady-state timeout is unchanged.
+- **A connection now only counts once it has delivered a frame.** Reconnects used to be declared
+  successful as soon as the stream *opened*, so against a camera that opens but never feeds frames
+  the escalating outage backoff never engaged and the camera was reopened every ~12 seconds all
+  night. Open-but-frameless is now a failed attempt like any other, and the backoff paces retries.
+- **Test Connection now reports timing** — `(open X.Xs, first frame +Y.Ys)` — so a slow-to-first-frame
+  camera is diagnosable from the success message alone.
+- **Log messages arriving from background threads (remote API, session events, video export) no
+  longer touch the UI off the main thread** — a latent crash risk; they are now marshalled onto the
+  Tk main loop.
+
+### Added
+- **Optional diagnostic log file** (Integrations tab → Application → *Write a log file*). Writes a
+  detailed log to `logs\app.log` beside the app (rotating, ~5 MB × 3 files kept): everything the
+  Activity Log and Export Log show, plus fine-grained DEBUG detail from every part of the app —
+  stream opens with timing, per-frame saves, state transitions, the exact (password-masked)
+  configuration each capture session starts with, render pipeline steps and the full FFmpeg
+  command, remote API requests, scheduler decisions, and settings changes. Each line carries the
+  area (`rtsp.capture`, `rtsp.export`, …) and the thread it came from, and the file opens with the
+  app version that wrote it. Off by default; turn it on when reporting a problem, reproduce it, and
+  send the `logs` folder. Deliberately quiet paths: mouse-hover tooltips, the once-a-second status
+  tick, and the per-frame stream reader log only meaningful transitions, so a night's log stays
+  readable instead of drowning in repeats.
+
 ## [3.6.0] - 2026-08-17
 
 ### Added
