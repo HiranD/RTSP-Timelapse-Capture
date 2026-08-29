@@ -36,9 +36,19 @@ import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
 # The event wire format is owned by event_log (stdlib-only, no GUI), so the
 # handler parses timestamps with the same format the log writes.
 from event_log import TIME_FORMAT
+
+# Request-parameter detail for the file log only. server._log routes into the
+# visible Activity Log (which already carries one access-log line per request),
+# so parameter dumps go through this file-only channel instead.
+LOG = get_logger("api")
 
 # Hostnames accepted in the Host header (loopback only).
 _ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
@@ -314,7 +324,7 @@ class RemoteControlServer:
                 if server._on_schedule is None:
                     self._send_json(400, {"error": "scheduling not supported"})
                     return
-                server._log("DEBUG", f"/capture/schedule stop_at={stop_at} create_video={create_video}")
+                LOG.debug("/capture/schedule stop_at=%s create_video=%s", stop_at, create_video)
                 ok, err, status = server._on_schedule(stop_at, create_video)
                 if ok:
                     self._send_json(202, {"status": "scheduling", "stop_at": stop_at, **(status or {})})
@@ -328,7 +338,7 @@ class RemoteControlServer:
                     return
                 date = self._opt_str(body, "date")
                 since = self._opt_str(body, "since")
-                server._log("DEBUG", f"/video/create date={date} since={since}")
+                LOG.debug("/video/create date=%s since=%s", date, since)
                 ok, message, code, resolved = server._on_create_video(date, since)
                 key = "status" if ok else "error"
                 # Echo the resolved target (e.g. the newest session) when known,
@@ -365,8 +375,8 @@ class RemoteControlServer:
                     self._send_json(400, {"error": "data must be an object"})
                     return
 
-                server._log("DEBUG", f"/events title={title!r} category={self._opt_str(body, 'category')} "
-                                     f"time={raw_time}")
+                LOG.debug("/events title=%r category=%s time=%s",
+                          title, self._opt_str(body, "category"), raw_time)
                 ok, err, stored = server._on_event(
                     title,
                     self._opt_str(body, "detail"),

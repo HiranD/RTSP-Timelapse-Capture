@@ -34,9 +34,9 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional
 
 try:
-    from src.app_logging import get_logger
+    from src.app_logging import get_logger, trunc
 except ImportError:
-    from app_logging import get_logger
+    from app_logging import get_logger, trunc
 
 LOG = get_logger("events")
 
@@ -216,7 +216,10 @@ class EventLog:
         path = Path(self._dir_provider()) / EVENTS_FILENAME
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
-        LOG.debug("event appended to %s: %s", path, event.to_dict())
+        # trunc: `data` is the one field not capped by _clean(), and a remote
+        # caller can push tens of KB of it - events.jsonl gets it all, but a
+        # log line doesn't need to.
+        LOG.debug("event appended to %s: %s", path, trunc(event.to_dict()))
 
     def recent(self) -> list:
         """Serialised events recorded this session, oldest first (for GET /events)."""
