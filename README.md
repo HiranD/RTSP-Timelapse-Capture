@@ -6,7 +6,7 @@
 
 > A professional Windows desktop application for capturing and creating timelapse videos from RTSP camera streams.
 
-![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.6.1-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)

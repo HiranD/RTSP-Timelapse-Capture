@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.6.0"
+set "VERSION=3.6.1"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,38 +69,30 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Session Events + MQTT Delivery
+echo    First-Frame Fix + Diagnostic Logging
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * NEW: Session events. External programs - like the RTSP Timelapse
-echo     Control NINA plugin 1.5.0 - can tell the app what happened during
-echo     the night ^(autofocus, filter changes, meridian flip, target,
-echo     guiding^) via POST /events, and the app burns them into the video
-echo     as captions at the moment they occurred. The imaging target is
-echo     drawn as a standing label in the bottom-right corner. An optional
-echo     .events.csv can be written next to the video ^(Video Export tab^).
-echo   * NEW: MQTT delivery. The Integrations tab's Discord Upload section
-echo     is now Video Delivery - send each finished video to a Discord
-echo     webhook ^(as before^) or publish it to an MQTT broker, so a capture
-echo     PC with no internet can hand the video to a local broker.
-echo   * NEW: Folder Rollover Hour is editable on the Capture tab.
-echo   * IMPROVED: renders are session-aware - a night that crosses the
-echo     rollover hour renders whole across date folders, and the nightly
-echo     auto-video renders exactly the session. "Delete snapshots after
-echo     creating video" moved to the Video Export tab, applies to every
-echo     video, and deletes only the frames that went into the video.
-echo   * IMPROVED: a camera outage no longer ends the session - capture
-echo     keeps retrying with escalating backoff ^(orange "Reconnecting"
-echo     status^) until capture is stopped or the window ends.
-echo   * FIXED: starting the scheduler mid-window ^(or after midnight^) now
-echo     captures instead of instantly completing; scheduled end times can
-echo     never land in the past.
-echo   * FIXED: every render names its video timelapse-YYYY-MM-DD, and a
-echo     delivered video keeps that name ^(no more discord_crf32.mp4^).
-echo   * FIXED: a UTF-8 BOM in app_config.json ^(e.g. after editing it in
-echo     Notepad^) no longer silently resets every setting; Integrations
-echo     fields typed just before closing the app are no longer lost.
+echo   * FIXED: cameras whose first frame arrives more than 5 seconds
+echo     after the stream opens ^(seen with H.265 over a high-latency
+echo     link^) can now capture at all. Capture used to give up exactly
+echo     5s after every connect and reconnect forever with zero frames
+echo     - even while Test Connection passed. A freshly opened stream
+echo     now gets a 15-second first-frame grace.
+echo   * FIXED: a reconnect only counts once a frame has actually
+echo     arrived, so the escalating retry backoff engages properly
+echo     against a camera that opens but never sends frames ^(instead
+echo     of reopening it every ~12 seconds all night^).
+echo   * IMPROVED: Test Connection now reports timing - "open X.Xs,
+echo     first frame +Y.Ys" - so a slow-starting camera is visible
+echo     straight from the success message.
+echo   * NEW: optional diagnostic log file. Integrations tab -^>
+echo     Application -^> "Write a log file" saves a detailed
+echo     logs\app.log next to the app ^(rotating, ~5 MB x 3 kept^):
+echo     connections with timing, frames, renders, scheduler decisions,
+echo     settings changes - with passwords always masked. Turn it on
+echo     when reporting a problem, reproduce it, then send the logs
+echo     folder. Off by default.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE

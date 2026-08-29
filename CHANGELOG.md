@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.6.1] - 2026-08-29
 
 ### Fixed
 - **Cameras whose first frame takes longer than 5 seconds can now capture at all.** On some rigs
