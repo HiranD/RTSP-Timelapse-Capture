@@ -41,6 +41,7 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
 )
 
 import math
+import re
 import time
 import threading
 from datetime import datetime, timedelta, date, time as dtime
@@ -51,6 +52,19 @@ import queue
 import cv2
 import numpy as np
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+# File-log detail channel; near-free while file logging is off (see app_logging).
+LOG = get_logger("capture")
+
+
+def sanitize_url(url: str) -> str:
+    """Remove the password from an RTSP URL for logging."""
+    return re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', url)
+
 
 # Used when the camera's stream path is left blank in the configuration.
 DEFAULT_STREAM_PATH = "/stream1"
@@ -58,6 +72,14 @@ DEFAULT_STREAM_PATH = "/stream1"
 # Escalating waits between reconnect attempts during an outage; the last value
 # repeats. Module-level so tests can patch it down to milliseconds.
 _RECONNECT_BACKOFF = (5, 10, 30, 60, 120)
+
+# How long a freshly opened stream may take to deliver its first frame before the
+# connection is judged dead. Some rigs (high-latency link + H.265 decoder spin-up)
+# take a fixed ~6s from open to first frame - deterministically longer than the 5s
+# steady-state read timeout, which made every connect "succeed" and then fail one
+# second short of the first frame, forever (2026-08-28). Module-level so tests can
+# patch it down.
+_FIRST_FRAME_GRACE = 15.0
 
 
 class RTSPBufferlessCapture:
@@ -79,7 +101,11 @@ class RTSPBufferlessCapture:
             buffer_size: OpenCV buffer size (default 1)
         """
         self.url = rtsp_url
+        LOG.debug("opening %s (buffer=%d)", sanitize_url(rtsp_url), buffer_size)
+        opened_at = time.time()
         self.cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+        LOG.debug("VideoCapture open took %.1fs, isOpened=%s",
+                  time.time() - opened_at, self.cap.isOpened())
 
         if self.cap.isOpened():
             # Configure buffer
@@ -90,6 +116,9 @@ class RTSPBufferlessCapture:
         self.q = queue.Queue(maxsize=1)  # Only hold 1 frame at a time
         self.stopped = False
         self.read_error = False
+        # Reader-loop logging is transition-based (first frame, error<->ok),
+        # never per-frame - the loop runs at stream fps all night.
+        self._logged_first_frame = False
 
         # Start background reader thread
         self.thread = threading.Thread(target=self._reader, daemon=True)
@@ -101,10 +130,18 @@ class RTSPBufferlessCapture:
             ret, frame = self.cap.read()
 
             if not ret:
+                if not self.read_error and not self.stopped:
+                    LOG.debug("reader: cap.read() failed - retrying in background")
                 self.read_error = True
                 time.sleep(0.1)  # Brief pause before retry
                 continue
 
+            if not self._logged_first_frame:
+                self._logged_first_frame = True
+                LOG.debug("reader: first frame received (%dx%d)",
+                          frame.shape[1], frame.shape[0])
+            elif self.read_error:
+                LOG.debug("reader: stream recovered after read failure(s)")
             self.read_error = False
 
             # Discard old frame if queue is full, keep only newest
@@ -115,10 +152,17 @@ class RTSPBufferlessCapture:
                     pass
 
             self.q.put(frame)  # Add fresh frame
+        LOG.debug("reader thread exiting")
 
-    def read(self) -> tuple[bool, Optional[np.ndarray]]:
+    def read(self, timeout: float = 5.0) -> tuple[bool, Optional[np.ndarray]]:
         """
         Get the latest available frame (always fresh).
+
+        Args:
+            timeout: seconds to wait for a frame. The 5s default suits steady
+                state (the reader keeps the queue topped up); the first-frame
+                wait after a connect uses shorter slices so the caller can
+                stay stop-responsive between reads.
 
         Returns:
             Tuple of (success, frame)
@@ -127,9 +171,11 @@ class RTSPBufferlessCapture:
             return False, None
 
         try:
-            frame = self.q.get(timeout=5.0)  # Wait up to 5 seconds
+            frame = self.q.get(timeout=timeout)
             return True, frame
         except queue.Empty:
+            LOG.debug("read: no frame within %.1fs (read_error=%s)",
+                      timeout, self.read_error)
             return False, None
 
     def isOpened(self) -> bool:
@@ -138,9 +184,13 @@ class RTSPBufferlessCapture:
 
     def release(self):
         """Stop capture and clean up."""
+        LOG.debug("releasing capture")
         self.stopped = True
         if self.thread.is_alive():
             self.thread.join(timeout=2.0)
+            if self.thread.is_alive():
+                LOG.debug("release: reader thread still blocked after 2s join "
+                          "(daemon - will exit on its own)")
         if self.cap:
             self.cap.release()
 
@@ -257,6 +307,14 @@ class CaptureEngine:
             self._log("WARNING", "Capture already running or starting")
             return False
 
+        LOG.debug("start_capture: interval=%ss, window=%s-%s, rollover=%s, "
+                  "proactive_reconnect=%ss, ignore_window=%s",
+                  self.config["capture"]["interval_seconds"],
+                  self.config["schedule"]["start_time"],
+                  self.config["schedule"]["end_time"],
+                  self.config["schedule"]["folder_rollover_hour"],
+                  self.config["capture"].get("proactive_reconnect_seconds", 0),
+                  bool(self.config["schedule"].get("ignore_window")))
         self.stop_event.clear()
         self.frame_count = 0
         self.failed_frame_count = 0
@@ -291,18 +349,26 @@ class CaptureEngine:
         self._log("INFO", f"Testing connection to {self._sanitize_url(url)}")
 
         try:
+            # Time the open and the first read separately: the gap between them
+            # is exactly what the capture path's first-frame grace must cover,
+            # so a remote user's test result doubles as the diagnostic.
+            t0 = time.time()
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            open_seconds = time.time() - t0
             if not cap.isOpened():
                 return False, "Failed to open RTSP stream"
 
             # Try to read a frame
+            t1 = time.time()
             ret, frame = cap.read()
+            first_frame_seconds = time.time() - t1
             cap.release()
 
             if not ret or frame is None:
                 return False, "Connected but failed to read frame"
 
-            return True, f"Connected successfully! Frame size: {frame.shape[1]}x{frame.shape[0]}"
+            return True, (f"Connected successfully! Frame size: {frame.shape[1]}x{frame.shape[0]} "
+                          f"(open {open_seconds:.1f}s, first frame +{first_frame_seconds:.1f}s)")
 
         except Exception as e:
             return False, f"Connection error: {str(e)}"
@@ -526,8 +592,7 @@ class CaptureEngine:
 
     def _sanitize_url(self, url: str) -> str:
         """Remove password from URL for logging."""
-        import re
-        return re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', url)
+        return sanitize_url(url)
 
     def _open_capture(self, url: str, retries: int = None,
                       quiet: bool = False) -> Optional[RTSPBufferlessCapture]:
@@ -542,8 +607,9 @@ class CaptureEngine:
                 every backoff cycle and owns the log cadence itself.
 
         Returns:
-            RTSPBufferlessCapture object or None on failure (or stop requested -
-            callers that need to tell the two apart re-check stop_event).
+            RTSPBufferlessCapture object (opened AND frame-verified) or None on
+            failure (or stop requested - callers that need to tell the two apart
+            re-check stop_event).
         """
         if retries is None:
             retries = self.config["capture"]["max_retries"]
@@ -564,9 +630,20 @@ class CaptureEngine:
             cap = RTSPBufferlessCapture(url, buffer_size=buffer_frames)
 
             if cap.isOpened():
-                if not quiet:
-                    self._log("INFO", f"Connection successful - Multi-threaded bufferless mode (buffer: {buffer_frames} frame)")
-                return cap
+                # A connection only counts once it has delivered a frame. An open
+                # alone proved nothing on a stream that never fed frames: every
+                # reconnect "succeeded" instantly, so the outage backoff never
+                # engaged and the camera was reopened every ~12s all night.
+                started = time.time()
+                if self._await_first_frame(cap):
+                    if not quiet:
+                        self._log("INFO",
+                                  f"Connection successful - first frame in {time.time() - started:.1f}s "
+                                  f"(buffer: {buffer_frames} frame)")
+                    return cap
+                if not quiet and not self.stop_event.is_set():
+                    self._log("WARNING",
+                              f"Stream opened but no frame within {_FIRST_FRAME_GRACE:.0f}s")
 
             cap.release()
 
@@ -577,6 +654,29 @@ class CaptureEngine:
                     return None
 
         return None
+
+    def _await_first_frame(self, cap) -> bool:
+        """Wait up to _FIRST_FRAME_GRACE for a freshly opened stream's first frame.
+
+        Reads in short slices so a stop request is honoured mid-wait. Consuming
+        the frame here is fine: the background reader requeues the next one
+        within ~1/fps, so the capture loop's own grab stays fresh.
+
+        Returns:
+            True once a frame arrived; False on grace expiry or stop request.
+        """
+        deadline = time.time() + _FIRST_FRAME_GRACE
+        while time.time() < deadline:
+            if self.stop_event.is_set():
+                return False
+            ret, _ = cap.read(timeout=1.0)
+            if ret:
+                return True
+            # read() returns instantly while the reader has a pending error -
+            # pace the loop (and stay stop-responsive) instead of spinning.
+            if self.stop_event.wait(timeout=0.2):
+                return False
+        return False
 
     def _reconnect(self, url: str) -> bool:
         """One planned connection cycle (proactive reconnect).
@@ -676,6 +776,7 @@ class CaptureEngine:
         # This ensures we get the freshest frame from the camera
         flush_count = self.config["capture"].get("flush_buffer_count", 10)
         if flush_count > 0:
+            LOG.debug("grab: flushing %d buffered frame(s)", flush_count)
             for i in range(flush_count):
                 ret, _ = self.cap.read()
                 if not ret:
@@ -683,10 +784,14 @@ class CaptureEngine:
                     break
 
         # Now read the fresh frame
+        grab_started = time.time()
         ret, frame = self.cap.read()
 
         if not ret or frame is None:
             raise RuntimeError("Failed to read frame from stream")
+
+        LOG.debug("grab: frame %dx%d in %.2fs",
+                  frame.shape[1], frame.shape[0], time.time() - grab_started)
 
         # Extract frame timestamp from stream metadata
         stream_timestamp = self._get_frame_timestamp()
@@ -742,6 +847,12 @@ class CaptureEngine:
         quality = self.config["capture"]["jpeg_quality"]
         cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
 
+        try:
+            size = os.path.getsize(filepath)
+        except OSError:
+            size = -1
+        LOG.debug("saved %s (%d bytes, quality=%d)", filepath, size, quality)
+
         return filepath
 
     def ensure_date_dir(self) -> str:
@@ -791,6 +902,10 @@ class CaptureEngine:
 
     def _update_state(self, new_state: CaptureState):
         """Update state and notify callback."""
+        if new_state is not self.state:
+            LOG.debug("state %s -> %s (frames=%d, failed=%d, disconnects=%d)",
+                      self.state.name, new_state.name, self.frame_count,
+                      self.failed_frame_count, self.disconnect_count)
         self.state = new_state
         self._notify_status()
 

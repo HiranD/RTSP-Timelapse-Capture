@@ -10,6 +10,8 @@ import os
 import sys
 import re
 import json
+import logging
+import logging.handlers
 import mimetypes
 import uuid
 import urllib.request
@@ -66,6 +68,7 @@ def get_app_icon_path() -> Path:
     """Path to the application icon (.ico)."""
     return get_resource_path("assets/icon.ico")
 
+from app_logging import get_logger, mask_secrets
 from config_manager import ConfigManager
 from capture_engine import CaptureEngine, CaptureState, effective_date
 from video_export_panel import VideoExportPanel
@@ -83,6 +86,18 @@ import startup_manager
 # App version reported by the remote API's /health endpoint. Keep in sync with
 # src/__init__.py / version_info.txt on release.
 APP_VERSION = "3.6.0"
+
+# Activity-log level names -> logging module levels, for the optional file log.
+_FILE_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "SUCCESS": logging.INFO,
+}
+
+# App-level detail (user actions, session parameters) for the file log.
+_LOG = get_logger("app")
 
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
@@ -145,10 +160,40 @@ class RTSPTimelapseGUI:
         # Load existing config if available
         self.load_config()
 
+        # Optional file log (Integrations tab). The root "rtsp" logger always
+        # exists - log_message and every module's get_logger(area) child write
+        # to it unconditionally, and the attached handler is what turns writing
+        # on. NullHandler so that with file logging off, records go nowhere
+        # instead of hitting logging's last-resort stderr handler; the WARNING
+        # level makes the app-wide DEBUG detail calls near-free while off
+        # (_set_file_logging raises it to DEBUG). The handler is re-adopted from
+        # the (process-wide) named logger so a re-created GUI can't attach a
+        # duplicate.
+        self._file_logger = get_logger()
+        self._file_logger.setLevel(logging.WARNING)
+        self._file_logger.propagate = False
+        if not any(isinstance(h, logging.NullHandler) for h in self._file_logger.handlers):
+            self._file_logger.addHandler(logging.NullHandler())
+        self._file_log_handler = next(
+            (h for h in self._file_logger.handlers
+             if isinstance(h, logging.handlers.RotatingFileHandler)), None)
+        # Enabled before the widgets exist on purpose, so the startup sequence
+        # (remote API listening, tray, scheduler restore) reaches the file; a
+        # failure is reported once the Activity Log can show it (below).
+        file_logging_error = None
+        if self.config_manager.ui.file_logging:
+            ok, err = self._set_file_logging(True)
+            if not ok:
+                file_logging_error = err
+
         # Build GUI
         self.create_widgets()
         self.setup_callbacks()
         self.setup_keyboard_shortcuts()
+
+        if file_logging_error:
+            self.log_message("WARNING", f"Could not enable file logging: {file_logging_error}")
+            self.integrations_panel.sync_file_logging_enabled(False)
 
         # Update status initially
         self.update_status()
@@ -224,6 +269,10 @@ class RTSPTimelapseGUI:
 
         # Route Integrations-tab messages (e.g. start-with-Windows) to the main log
         self.integrations_panel.set_log_callback(self.log_message)
+
+        # Let the Integrations tab's "Write a log file" checkbox attach/detach
+        # the file handler live.
+        self.integrations_panel.set_file_logging_callback(self._set_file_logging)
 
         # Set up video export panel callback to get current snapshots dir from Capture tab
         self.video_export_panel.set_snapshots_dir_callback(
@@ -654,6 +703,8 @@ class RTSPTimelapseGUI:
 
     def _deliver_video(self, output_file: Path, date_str: str) -> bool:
         """Route the finished video to the configured delivery method."""
+        _LOG.debug("delivering %s via %s", output_file,
+                   self.config_manager.astro_schedule.delivery_method)
         if self.config_manager.astro_schedule.delivery_method == "mqtt":
             return self._send_mqtt(output_file, date_str)
         return self._send_discord_webhook(output_file, date_str)
@@ -1145,15 +1196,76 @@ class RTSPTimelapseGUI:
                 pass
             self.tray_icon = None
 
+    def _set_file_logging(self, enabled) -> tuple:
+        """Attach/detach the rotating file handler behind the Integrations checkbox.
+
+        Returns (ok, error) so the panel can untick and report when the log
+        folder can't be written (read-only install dir must never crash the app).
+        """
+        if enabled:
+            if self._file_log_handler is not None:
+                # Handler re-adopted from a prior GUI instance: __init__ resets
+                # the process-wide logger to WARNING, so the level must still be
+                # raised or the app-wide DEBUG detail silently stops.
+                self._file_logger.setLevel(logging.DEBUG)
+                return True, None  # already on - idempotent
+            try:
+                log_dir = get_app_base_dir() / "logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                handler = logging.handlers.RotatingFileHandler(
+                    log_dir / "app.log", maxBytes=5_000_000, backupCount=3,
+                    encoding="utf-8", delay=True)
+                # Logger name carries the area ("rtsp.capture", "rtsp.export"),
+                # threadName tells the capture/export/HTTP threads apart - both
+                # earn their columns in a file meant for remote debugging.
+                handler.setFormatter(logging.Formatter(
+                    "[%(asctime)s] [%(levelname)s] [%(name)s] [%(threadName)s] %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S"))
+                self._file_logger.addHandler(handler)
+                # DEBUG only while a real handler listens: this is what turns on
+                # the app-wide detail logging (module get_logger(...) children).
+                self._file_logger.setLevel(logging.DEBUG)
+                self._file_log_handler = handler
+                # Which build wrote this file - the first question in any
+                # remote-debugging exchange.
+                exe = sys.executable if getattr(sys, "frozen", False) else __file__
+                self._file_logger.info(
+                    f"File logging enabled - RTSP Timelapse {APP_VERSION} ({exe})")
+                return True, None
+            except OSError as e:
+                return False, str(e)
+        else:
+            if self._file_log_handler is not None:
+                self._file_logger.info("File logging disabled")
+                self._file_logger.removeHandler(self._file_log_handler)
+                self._file_log_handler.close()
+                self._file_log_handler = None
+            self._file_logger.setLevel(logging.WARNING)
+            return True, None
+
     def log_message(self, level, message):
-        """Add a timestamped message to the activity log"""
+        """Add a timestamped message to the activity log (and the file log, if on).
+
+        Safe to call from any thread: the remote API and the event log invoke it
+        from HTTP worker threads. The file write is thread-safe as-is; the Tk
+        widget update is marshalled onto the main thread when needed.
+        """
+        # File first - a no-op unless the Integrations checkbox attached a handler.
+        self._file_logger.log(_FILE_LOG_LEVELS.get(level, logging.INFO), message)
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_entry = f"[{timestamp}] {message}\n"
 
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.insert(tk.END, log_entry, level)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        def append():
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.insert(tk.END, log_entry, level)
+            self.log_text.see(tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+
+        if threading.current_thread() is threading.main_thread():
+            append()
+        else:
+            self.root.after(0, append)
 
     def clear_log(self):
         """Clear the activity log"""
@@ -1222,6 +1334,11 @@ class RTSPTimelapseGUI:
 
     def _on_tab_changed(self, event=None):
         """Auto-save when switching tabs"""
+        try:
+            tab = self.notebook.tab(self.notebook.select(), "text").strip()
+        except tk.TclError:
+            tab = "?"
+        _LOG.debug("tab changed to '%s' - auto-saving config", tab)
         self.save_config()
 
     def update_config_from_ui(self, skip_schedule_times: bool = False):
@@ -1385,6 +1502,10 @@ class RTSPTimelapseGUI:
                 # bound. Transient - the saved Start Time is left untouched.
                 cfg["schedule"]["start_time"] = resolve_start_time(
                     "now", datetime.now(), cfg["schedule"]["start_time"])
+            # The exact configuration this session will run with - the first
+            # thing to check in a remote log. Passwords masked.
+            _LOG.debug("starting capture (from_scheduler=%s, immediate=%s, start_mode=%s): %s",
+                       from_scheduler, immediate, self.start_mode_var.get(), mask_secrets(cfg))
             self.capture_engine = CaptureEngine(cfg)
 
             # Set up callbacks
@@ -1419,6 +1540,7 @@ class RTSPTimelapseGUI:
 
     def stop_capture(self):
         """Stop the capture process"""
+        _LOG.debug("stop_capture requested (is_capturing=%s)", self.is_capturing)
         # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
         self._cancel_scheduled_stop()
 
@@ -1632,6 +1754,7 @@ class RTSPTimelapseGUI:
     def _cancel_scheduled_stop(self):
         """Cancel a pending scheduled stop, if any (manual stop or a new schedule)."""
         if self._sched_cancel is not None:
+            _LOG.debug("cancelling pending scheduled stop (pending=%s)", self._sched_pending)
             self._sched_cancel.set()
         self._sched_cancel = None
         self._sched_thread = None
@@ -2165,6 +2288,7 @@ class RTSPTimelapseGUI:
 
     def on_closing(self):
         """Handle window close event"""
+        _LOG.debug("window close requested (is_capturing=%s)", self.is_capturing)
         # Confirm first when capturing; only tear down once the user commits to
         # quitting, so Cancel leaves the window, tray icon, and scheduler intact.
         if self.is_capturing:
@@ -2189,6 +2313,7 @@ class RTSPTimelapseGUI:
                 self.log_message("WARNING", f"Could not save Integrations settings: {e}")
         self.save_config()
         self.cleanup_tray()
+        _LOG.debug("shutdown complete - destroying window")
         self.root.destroy()
 
 

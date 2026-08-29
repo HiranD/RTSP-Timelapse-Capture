@@ -13,6 +13,13 @@ from typing import Optional, Any
 from dataclasses import dataclass, asdict, field, fields
 from typing import List
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("config")
+
 
 def get_app_base_dir() -> Path:
     """Get the application's base directory (where exe or main script is located)."""
@@ -88,6 +95,10 @@ class UIConfig:
     # field, and applies to every render path - staging inside the output folder
     # leaked one empty .temp_export_* per night when that folder was sync-watched.
     temp_export_dir: str = ""
+    # Mirror the activity log into logs/app.log beside the app (rotating). Opt-in
+    # (Integrations tab) so a default install writes nothing; exists so a remote
+    # user can send complete logs instead of screenshots when reporting a problem.
+    file_logging: bool = False
 
 
 @dataclass
@@ -250,9 +261,11 @@ class ConfigManager:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, indent=2)
 
+            LOG.debug("configuration saved to %s", filepath)
             return True, f"Configuration saved to {filepath}"
 
         except Exception as e:
+            LOG.warning("configuration save to %s failed: %s", filepath, e)
             return False, f"Failed to save configuration: {str(e)}"
 
     def load_from_file(self, filepath: Optional[str] = None) -> tuple[bool, str]:
@@ -281,11 +294,15 @@ class ConfigManager:
                 config_dict = json.load(f)
 
             self.from_dict(config_dict)
+            LOG.debug("configuration loaded from %s (sections: %s)",
+                      filepath, sorted(config_dict.keys()))
             return True, f"Configuration loaded from {filepath}"
 
         except json.JSONDecodeError as e:
+            LOG.warning("configuration load from %s failed - invalid JSON: %s", filepath, e)
             return False, f"Invalid JSON in configuration file: {str(e)}"
         except Exception as e:
+            LOG.warning("configuration load from %s failed: %s", filepath, e)
             return False, f"Failed to load configuration: {str(e)}"
 
     def migrate_from_old_config(self) -> tuple[bool, str]:
@@ -419,6 +436,8 @@ class ConfigManager:
         if self.remote_api.enabled and not 1024 <= self.remote_api.port <= 65535:
             errors.append(f"Remote API port must be 1024-65535, got {self.remote_api.port}")
 
+        if errors:
+            LOG.debug("validation failed: %s", errors)
         return len(errors) == 0, errors
 
     def _is_valid_time(self, time_str: str) -> bool:

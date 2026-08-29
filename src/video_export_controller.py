@@ -16,10 +16,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import re
 
+from app_logging import get_logger
 from ffmpeg_wrapper import FFmpegWrapper, ProgressInfo
 from preset_manager import VideoExportSettings
 from event_overlay import build_plan, draw_captions, draw_target_label
 from event_log import EVENTS_FILENAME
+
+LOG = get_logger("export")
 
 # A .temp_export_* folder older than this is an abandoned leftover (its export is
 # long over) and gets swept before the next export. Generous on purpose: no encode
@@ -148,8 +151,10 @@ class VideoExportController:
 
             # Find all jpg files
             images = sorted(folder.glob("*.jpg"))
+            found_total = len(images)
 
             if len(images) == 0:
+                LOG.debug("scan %s: no .jpg files", folder)
                 return False, None, f"No .jpg files found in {folder_path}"
 
             # Optionally keep only frames captured at/after `since`.
@@ -161,7 +166,12 @@ class VideoExportController:
                         filtered.append(img)
                 images = filtered
                 if not images:
+                    LOG.debug("scan %s: %d file(s) but none at/after %s",
+                              folder, found_total, since)
                     return False, None, f"No images captured at/after {since:%Y%m%d-%H%M%S}"
+
+            LOG.debug("scan %s: %d image(s)%s", folder, len(images),
+                      f" (of {found_total}, since={since:%Y%m%d-%H%M%S})" if since else "")
 
             # Extract timestamps from filenames (format: YYYYMMDD-HHMMSS.jpg).
             # Kept per-image as well as first/last: event overlays need to know
@@ -363,6 +373,12 @@ class VideoExportController:
                     log_callback("Multi-folder render needs temporary copies - "
                                  "'preserve originals' enabled for this export")
 
+            LOG.debug("prepare_export: %d image(s) -> %s (fps=%s, crf=%s, speed=%sx, "
+                      "res=%s, temp_copies=%s, captions=%s, csv=%s)",
+                      image_collection.total_count, output_file, settings.framerate,
+                      settings.quality, settings.speed_multiplier, settings.resolution,
+                      use_temp_copies, draws_captions, event_csv)
+
             if use_temp_copies:
                 # Stage copies OUTSIDE the output folder: creating them beside
                 # the output leaked one empty .temp_export_* per render when
@@ -374,6 +390,7 @@ class VideoExportController:
                 else:
                     temp_base = Path(tempfile.gettempdir()) / "RTSP_Timelapse"
                 temp_base.mkdir(parents=True, exist_ok=True)
+                LOG.debug("prepare_export: staging temp copies under %s", temp_base)
                 # Sweep leftovers whose cleanup lost the race against an external
                 # handle (see _cleanup_temp): the temp base, plus - for one more
                 # release - the output folder, where older builds staged copies.
@@ -437,6 +454,9 @@ class VideoExportController:
                 hold_seconds=hold_seconds,
                 since=since,
             )
+            if plan is not None:
+                LOG.debug("overlay plan: %d caption(s), %d target change(s), hold=%.1fs",
+                          len(plan.captions), len(plan._target_captions), hold_seconds)
         except Exception as e:
             # An unreadable event log must not fail the video the user actually asked for.
             if log_callback:
@@ -665,7 +685,9 @@ class VideoExportController:
             # setting - this is an intermediate that FFmpeg re-encodes, so the only
             # goal is not to add visible loss before it gets there.
             frame.save(dst_image, "JPEG", quality=95)
-        except Exception:
+        except Exception as e:
+            LOG.debug("caption draw failed for %s (%s) - plain copy used",
+                      src_image.name, e)
             shutil.copy2(src_image, dst_image)
 
     def _write_event_csv(self, job: ExportJob, log_callback: Optional[Callable[[str], None]]):
@@ -719,6 +741,7 @@ class VideoExportController:
             if log_callback:
                 log_callback(message)
 
+        LOG.debug("delete_rendered_snapshots: %d file(s)", len(images))
         ok = True
         folders: List[Path] = []
         for image in images:
@@ -762,8 +785,10 @@ class VideoExportController:
         for attempt in range(3):
             try:
                 shutil.rmtree(job.temp_folder)
+                LOG.debug("removed temp folder %s (attempt %d)", job.temp_folder, attempt + 1)
                 return
-            except OSError:
+            except OSError as e:
+                LOG.debug("temp folder delete attempt %d failed: %s", attempt + 1, e)
                 if attempt < 2:
                     time.sleep(1)
         if log_callback:

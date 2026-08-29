@@ -7,6 +7,7 @@ a = Analysis(
     binaries=[],
     datas=[('assets/icon.ico', 'assets')],
     hiddenimports=[
+        'app_logging',
         'config_manager',
         'capture_engine',
         'video_export_panel',

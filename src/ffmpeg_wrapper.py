@@ -10,8 +10,16 @@ import re
 import os
 import sys
 import shutil
+import time
 from pathlib import Path
 from typing import Optional, Tuple, Callable, Dict, Any
+
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("ffmpeg")
 
 
 class ProgressInfo:
@@ -47,16 +55,19 @@ class FFmpegWrapper:
             app_dir = Path(sys.executable).parent
             bundled_ffmpeg = app_dir / 'bin' / 'ffmpeg.exe'
             if bundled_ffmpeg.exists():
+                LOG.debug("using bundled ffmpeg: %s", bundled_ffmpeg)
                 return str(bundled_ffmpeg)
 
         # Check local bin folder (for development/source)
         local_bin = Path(__file__).parent.parent / 'bin' / 'ffmpeg.exe'
         if local_bin.exists():
+            LOG.debug("using local bin ffmpeg: %s", local_bin)
             return str(local_bin)
 
         # Check if ffmpeg is in PATH
         ffmpeg_cmd = shutil.which('ffmpeg')
         if ffmpeg_cmd:
+            LOG.debug("using ffmpeg from PATH: %s", ffmpeg_cmd)
             return ffmpeg_cmd
 
         # Check common Windows installation locations
@@ -68,8 +79,10 @@ class FFmpegWrapper:
 
         for path in common_paths:
             if Path(path).exists():
+                LOG.debug("using ffmpeg from common location: %s", path)
                 return path
 
+        LOG.debug("ffmpeg not found (bundled/bin/PATH/common locations)")
         return None
 
     def check_installation(self) -> Tuple[bool, Optional[str]]:
@@ -200,6 +213,8 @@ class FFmpegWrapper:
             (success, message) tuple
         """
         try:
+            LOG.debug("running: %s", " ".join(command))
+            started = time.time()
             # Run FFmpeg process
             process = subprocess.Popen(
                 command,
@@ -222,14 +237,18 @@ class FFmpegWrapper:
 
             # Wait for completion
             process.wait()
+            LOG.debug("ffmpeg exited with code %d after %.1fs",
+                      process.returncode, time.time() - started)
 
             if process.returncode == 0:
                 return True, "Video export completed successfully"
             else:
                 error_msg = ''.join(stderr_output[-20:])  # Last 20 lines
+                LOG.debug("ffmpeg stderr tail: %s", error_msg)
                 return False, f"FFmpeg failed with code {process.returncode}: {error_msg}"
 
         except Exception as e:
+            LOG.debug("ffmpeg run raised: %s", e)
             return False, f"Error running FFmpeg: {str(e)}"
 
     def parse_progress(self, line: str, total_frames: Optional[int] = None) -> Optional[ProgressInfo]:

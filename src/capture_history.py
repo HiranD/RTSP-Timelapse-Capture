@@ -12,6 +12,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+try:
+    from src.app_logging import get_logger
+except ImportError:
+    from app_logging import get_logger
+
+LOG = get_logger("history")
+
 
 def get_app_base_dir() -> Path:
     """Get the application's base directory (where exe or main script is located)."""
@@ -80,6 +87,8 @@ class CaptureHistoryManager:
                     self.sessions[session.date] = session
 
             except (json.JSONDecodeError, KeyError, TypeError) as e:
+                LOG.warning("could not load capture history from %s: %s",
+                            self.history_file, e)
                 print(f"Warning: Could not load capture history: {e}")
                 self.sessions = {}
 
@@ -92,6 +101,7 @@ class CaptureHistoryManager:
             with open(self.history_file, 'w') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
+            LOG.warning("could not save capture history to %s: %s", self.history_file, e)
             print(f"Warning: Could not save capture history: {e}")
 
     def add_session(self, session: CaptureSession):
@@ -101,6 +111,8 @@ class CaptureHistoryManager:
         Args:
             session: The capture session to record.
         """
+        LOG.debug("recording session %s: %d image(s), status=%s, video_created=%s",
+                  session.date, session.image_count, session.status, session.video_created)
         self.sessions[session.date] = session
         self._save()
 
