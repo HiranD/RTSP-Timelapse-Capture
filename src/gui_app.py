@@ -1204,6 +1204,10 @@ class RTSPTimelapseGUI:
         """
         if enabled:
             if self._file_log_handler is not None:
+                # Handler re-adopted from a prior GUI instance: __init__ resets
+                # the process-wide logger to WARNING, so the level must still be
+                # raised or the app-wide DEBUG detail silently stops.
+                self._file_logger.setLevel(logging.DEBUG)
                 return True, None  # already on - idempotent
             try:
                 log_dir = get_app_base_dir() / "logs"
