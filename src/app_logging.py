@@ -31,16 +31,36 @@ def get_logger(area: str = None) -> logging.Logger:
     return logging.getLogger(f"{ROOT_NAME}.{area}" if area else ROOT_NAME)
 
 
-def mask_secrets(value):
-    """Deep-copy dicts/lists with password-ish values replaced by "****".
+# A key containing any of these (case-insensitive) is a secret and its value is
+# masked. Substring match on purpose - "mqtt_password", "discord_webhook_url",
+# "api_key"... - and biased towards over-masking: hiding a harmless value costs
+# a little diagnostic detail, leaking a real one costs a credential. Any new
+# config field that carries a credential MUST have one of these words in its
+# name; the full-config test in tests/test_file_logging.py pins the known ones.
+_SECRET_KEY_WORDS = ("password", "webhook", "token", "secret", "key")
 
-    For logging config snapshots: the camera and MQTT passwords live in plain
-    dicts, and a log file must never carry them. Non-container values pass
-    through unchanged.
+
+def _is_secret_key(key) -> bool:
+    lowered = str(key).lower()
+    return any(word in lowered for word in _SECRET_KEY_WORDS)
+
+
+def mask_secrets(value):
+    """Deep-copy dicts/lists with secret values replaced by "****".
+
+    For logging config snapshots: the camera and MQTT passwords and the Discord
+    webhook URL live in plain dicts, and a log file must never carry them -
+    it's the file remote users are asked to send in for diagnosis. Non-container
+    values pass through unchanged; empty secrets stay empty so the log still
+    shows whether one is configured.
+
+    Until 2026-09-06 only "password" keys were masked, so the webhook URL (which
+    lets anyone post to that channel) went into app.log verbatim on every
+    capture start.
     """
     if isinstance(value, dict):
         return {
-            key: ("****" if ("password" in str(key).lower() and val) else mask_secrets(val))
+            key: ("****" if (_is_secret_key(key) and val) else mask_secrets(val))
             for key, val in value.items()
         }
     if isinstance(value, list):

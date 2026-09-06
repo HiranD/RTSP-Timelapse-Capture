@@ -1516,7 +1516,7 @@ class RTSPTimelapseGUI:
                 cfg["schedule"]["start_time"] = resolve_start_time(
                     "now", datetime.now(), cfg["schedule"]["start_time"])
             # The exact configuration this session will run with - the first
-            # thing to check in a remote log. Passwords masked.
+            # thing to check in a remote log. Secrets (passwords, webhook) masked.
             _LOG.debug("starting capture (from_scheduler=%s, immediate=%s, start_mode=%s): %s",
                        from_scheduler, immediate, self.start_mode_var.get(), mask_secrets(cfg))
             self.capture_engine = CaptureEngine(cfg)
