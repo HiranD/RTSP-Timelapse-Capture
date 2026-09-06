@@ -121,6 +121,19 @@ class MultiSessionStoreTests(unittest.TestCase):
         self.assertEqual(completed.image_count, 800)
         self.assertFalse(failed.video_created)
 
+    def test_update_video_created_picks_the_last_of_value_identical_twins(self):
+        """Dataclass equality let list.index() find the FIRST value-identical
+        entry rather than the most recent one actually chosen from the end."""
+        twin = (_dt(20), _dt(5, day=6))
+        self.mgr.record_session(DATE, *twin, 800, source="manual")
+        self.mgr.record_session(DATE, *twin, 800, source="manual")
+
+        self.mgr.update_video_created(DATE, True)
+
+        first, last = self.mgr.get_sessions_for_date(DATE)
+        self.assertFalse(first.video_created)
+        self.assertTrue(last.video_created)
+
     def test_update_video_created_on_unknown_date_is_a_noop(self):
         self.mgr.update_video_created("20991231", True)  # must not raise
         self.assertEqual(self.mgr.get_sessions_for_date("20991231"), [])

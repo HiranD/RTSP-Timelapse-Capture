@@ -244,10 +244,14 @@ class CaptureHistoryManager:
             day_sessions = self.sessions.get(date)
             if not day_sessions:
                 return
-            target = next((s for s in reversed(day_sessions) if s.status == "completed"),
-                          day_sessions[-1])
-            idx = day_sessions.index(target)
-            day_sessions[idx] = replace(target, video_created=video_created)
+            # Pick by position, walking back from the end. list.index() would
+            # compare dataclass fields, so two value-identical sessions on one
+            # date could send the mark to the earlier twin instead of the most
+            # recent one chosen here.
+            idx = next((i for i in range(len(day_sessions) - 1, -1, -1)
+                        if day_sessions[i].status == "completed"),
+                       len(day_sessions) - 1)
+            day_sessions[idx] = replace(day_sessions[idx], video_created=video_created)
             self._save()
 
     def record_session(
