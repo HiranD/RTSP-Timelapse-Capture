@@ -4,7 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **The calendar now distinguishes how a night was captured.** Days captured by the astronomical
+  scheduler stay green; days captured via the Start button or the remote API (NINA plugin) get
+  their own plum color, with legend entries for both. **Hovering any captured day shows its
+  sessions** — source (Scheduled / Manual / Remote), start–end times, frame count, and whether a
+  video was created.
+
 ### Fixed
+- **Manual and NINA/remote capture sessions are now recorded to capture history.** Previously only
+  scheduler sessions were recorded — a day captured manually or via the NINA plugin was green only
+  while its snapshot folder survived, and silently lost its calendar mark once "Delete snapshots
+  after creating video" cleaned up. Every session now persists (with what started it), on both the
+  Stop button and natural end-of-schedule/error stops.
+- Removed a calendar-wide tooltip that had never displayed (it queried a widget option `ttk.Frame`
+  doesn't have, and died before the popup was built); the per-day hover details replace it.
 - **Turning the frame counter overlay off now actually turns it off.** The counter was a field of
   the selected video preset, so unticking the checkbox saved nothing: scheduled and remote-API
   renders build their settings from the *saved* preset and kept stamping the counter onto every
@@ -14,6 +28,13 @@ All notable changes to this project are documented in this file.
   created via the remote API, and the Export button.
 
 ### Changed
+- **`user_data\capture_history.json` now keeps every session of a day** (previously one, last-wins:
+  a short morning test could overwrite the real night's record), and each entry carries a `source`
+  field. Existing files load unchanged; entries from older versions count as scheduled, which is
+  what wrote them. Days whose only evidence is frames on disk (no history entry) now show plum
+  rather than green — without a record there's no proof the schedule was involved. Note for anyone
+  downgrading later: builds older than this release ignore the whole history file once it contains
+  the new field, so keep a backup copy if you plan to roll back.
 - **"Add frame counter overlay" is no longer part of video presets.** Presets saved by older
   versions that still carry the old `add_timestamp` field load fine — the stale field is ignored
   and dropped on the next preset save. After upgrading, anyone who *wants* the counter ticks the

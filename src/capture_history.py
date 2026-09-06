@@ -7,7 +7,8 @@ snapshots are deleted (e.g., after auto video creation).
 
 import sys
 import json
-from dataclasses import dataclass, asdict
+import threading
+from dataclasses import dataclass, asdict, fields, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -39,6 +40,11 @@ class CaptureSession:
     image_count: int       # Number of images captured
     video_created: bool    # Whether auto-video was created
     status: str            # "completed", "partial", "failed"
+    # What started the session: "scheduled" | "remote" | "manual". Defaults to
+    # "scheduled" because legacy history files predate the field and only the
+    # scheduler ever wrote history back then - so the default is factually
+    # correct for old entries, not merely safe.
+    source: str = "scheduled"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -46,12 +52,25 @@ class CaptureSession:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CaptureSession':
-        """Create from dictionary."""
-        return cls(**data)
+        """Create from dictionary, dropping unknown keys.
+
+        An unknown key used to TypeError the constructor, and the broad except
+        in _load() would then silently discard the ENTIRE history - so a file
+        written by a newer version must never break an older loader again.
+        """
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 class CaptureHistoryManager:
-    """Manages persistent capture session history."""
+    """Manages persistent capture session history.
+
+    Sessions are kept per date as a LIST: a short manual test and the real
+    scheduled night can share a date, and the calendar needs both (the color
+    depends on whether ANY session that day was scheduled, and the hover
+    tooltip lists them all). The on-disk shape is unchanged - a flat
+    "sessions" list - so files round-trip with older versions.
+    """
 
     def __init__(self, config_dir: Optional[Path] = None):
         """
@@ -65,7 +84,12 @@ class CaptureHistoryManager:
 
         self.config_dir = Path(config_dir)
         self.history_file = self.config_dir / 'capture_history.json'
-        self.sessions: Dict[str, CaptureSession] = {}  # Keyed by date string
+        self.sessions: Dict[str, List[CaptureSession]] = {}  # Keyed by date string
+
+        # Three threads write history: the Tk main thread (manual/remote stops),
+        # the scheduler's monitor thread (_on_session_complete), and the video
+        # export worker (update_video_created after a render).
+        self._lock = threading.Lock()
 
         self._ensure_config_dir()
         self._load()
@@ -84,7 +108,12 @@ class CaptureHistoryManager:
                 sessions_list = data.get('sessions', [])
                 for session_data in sessions_list:
                     session = CaptureSession.from_dict(session_data)
-                    self.sessions[session.date] = session
+                    self.sessions.setdefault(session.date, []).append(session)
+
+                # Chronological per date (ISO strings sort correctly); files are
+                # hand-editable, so don't trust the stored order.
+                for day_sessions in self.sessions.values():
+                    day_sessions.sort(key=lambda s: s.start_time)
 
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 LOG.warning("could not load capture history from %s: %s",
@@ -93,10 +122,12 @@ class CaptureHistoryManager:
                 self.sessions = {}
 
     def _save(self):
-        """Save history to file."""
+        """Save history to file. Callers must hold self._lock."""
         try:
             data = {
-                'sessions': [s.to_dict() for s in self.sessions.values()]
+                'sessions': [s.to_dict()
+                             for day_sessions in self.sessions.values()
+                             for s in day_sessions]
             }
             with open(self.history_file, 'w') as f:
                 json.dump(data, f, indent=2)
@@ -106,19 +137,24 @@ class CaptureHistoryManager:
 
     def add_session(self, session: CaptureSession):
         """
-        Add or update a capture session.
+        Add a capture session. Sessions on the same date accumulate.
 
         Args:
             session: The capture session to record.
         """
-        LOG.debug("recording session %s: %d image(s), status=%s, video_created=%s",
-                  session.date, session.image_count, session.status, session.video_created)
-        self.sessions[session.date] = session
-        self._save()
+        LOG.debug("recording session %s: %d image(s), status=%s, video_created=%s, source=%s",
+                  session.date, session.image_count, session.status,
+                  session.video_created, session.source)
+        with self._lock:
+            self.sessions.setdefault(session.date, []).append(session)
+            self._save()
 
     def get_session(self, date: str) -> Optional[CaptureSession]:
         """
-        Get a capture session by date.
+        Get the most recent capture session for a date.
+
+        Compatibility shim from the one-session-per-date era; new callers that
+        care about the whole day should use get_sessions_for_date().
 
         Args:
             date: Date string in YYYYMMDD format.
@@ -126,22 +162,50 @@ class CaptureHistoryManager:
         Returns:
             CaptureSession if found, None otherwise.
         """
-        return self.sessions.get(date)
+        day_sessions = self.sessions.get(date)
+        return day_sessions[-1] if day_sessions else None
 
-    def has_capture(self, date: str) -> bool:
+    def get_sessions_for_date(self, date: str) -> List[CaptureSession]:
         """
-        Check if a date has a recorded capture session.
+        Get all capture sessions for a date, chronological.
 
         Args:
             date: Date string in YYYYMMDD format.
 
         Returns:
-            True if capture session exists and has images.
+            List of sessions (possibly empty). A copy - safe to iterate while
+            other threads record.
         """
-        session = self.sessions.get(date)
-        if session:
-            return session.status == "completed" and session.image_count > 0
-        return False
+        with self._lock:
+            return list(self.sessions.get(date, []))
+
+    def has_capture(self, date: str) -> bool:
+        """
+        Check if a date has any successful recorded capture session.
+
+        Args:
+            date: Date string in YYYYMMDD format.
+
+        Returns:
+            True if any session that day completed with images.
+        """
+        return any(s.status == "completed" and s.image_count > 0
+                   for s in self.sessions.get(date, []))
+
+    def has_scheduled_capture(self, date: str) -> bool:
+        """
+        Check if a date has a successful SCHEDULED capture session.
+
+        Drives the calendar's color split: any scheduled session makes the day
+        "captured (scheduled)"; a day with only manual/remote sessions gets its
+        own color.
+
+        Args:
+            date: Date string in YYYYMMDD format.
+        """
+        return any(s.status == "completed" and s.image_count > 0
+                   and s.source == "scheduled"
+                   for s in self.sessions.get(date, []))
 
     def get_captured_dates(self) -> List[str]:
         """
@@ -150,29 +214,33 @@ class CaptureHistoryManager:
         Returns:
             List of date strings (YYYYMMDD format).
         """
-        return [
-            date for date, session in self.sessions.items()
-            if session.status == "completed" and session.image_count > 0
-        ]
+        with self._lock:
+            return [date for date, day_sessions in self.sessions.items()
+                    if any(s.status == "completed" and s.image_count > 0
+                           for s in day_sessions)]
 
     def update_video_created(self, date: str, video_created: bool = True):
         """
-        Update a session to mark video as created.
+        Mark the most recent completed session of a date as having a video.
+
+        The render that just finished was built from frames, which a trailing
+        0-frame failed session doesn't have - so prefer the last *completed*
+        session, falling back to the last entry. dataclasses.replace() keeps
+        every other field (the old field-by-field rebuild silently dropped any
+        field added later, e.g. `source`).
 
         Args:
             date: Date string in YYYYMMDD format.
             video_created: Whether video was created.
         """
-        if date in self.sessions:
-            session = self.sessions[date]
-            self.sessions[date] = CaptureSession(
-                date=session.date,
-                start_time=session.start_time,
-                end_time=session.end_time,
-                image_count=session.image_count,
-                video_created=video_created,
-                status=session.status
-            )
+        with self._lock:
+            day_sessions = self.sessions.get(date)
+            if not day_sessions:
+                return
+            target = next((s for s in reversed(day_sessions) if s.status == "completed"),
+                          day_sessions[-1])
+            idx = day_sessions.index(target)
+            day_sessions[idx] = replace(target, video_created=video_created)
             self._save()
 
     def record_session(
@@ -181,7 +249,8 @@ class CaptureHistoryManager:
         start_time: datetime,
         end_time: datetime,
         image_count: int,
-        video_created: bool = False
+        video_created: bool = False,
+        source: str = "scheduled"
     ):
         """
         Convenience method to record a capture session.
@@ -192,6 +261,7 @@ class CaptureHistoryManager:
             end_time: When capture ended.
             image_count: Number of images captured.
             video_created: Whether video was created.
+            source: What started the session: "scheduled" | "remote" | "manual".
         """
         status = "completed" if image_count > 0 else "failed"
 
@@ -201,7 +271,8 @@ class CaptureHistoryManager:
             end_time=end_time.isoformat(),
             image_count=image_count,
             video_created=video_created,
-            status=status
+            status=status,
+            source=source
         )
         self.add_session(session)
 

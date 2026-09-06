@@ -156,6 +156,9 @@ class RTSPTimelapseGUI:
         self.total_captures = 0
         self.failed_captures = 0
         self.session_start_time = None
+        # What started the current/last session ("scheduled"|"remote"|"manual");
+        # None until the first start. Drives capture-history recording on stop.
+        self._session_source = None
 
         # Load existing config if available
         self.load_config()
@@ -1458,7 +1461,7 @@ class RTSPTimelapseGUI:
             self.stop_capture()
 
     def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True,
-                      immediate: bool = False):
+                      immediate: bool = False, source: str = "manual"):
         """Start the capture process
 
         Args:
@@ -1469,6 +1472,9 @@ class RTSPTimelapseGUI:
             immediate: If True (remote API / NINA), ignore the Capture-tab schedule
                 window and capture right away until explicitly stopped. Transient —
                 does not change the saved schedule.
+            source: What started the session, recorded into capture history on
+                stop: "manual" (default, the Start button) or "remote" (API/NINA).
+                Scheduler starts are tagged from from_scheduler instead.
 
         Returns:
             (success: bool, error: str | None)
@@ -1489,6 +1495,7 @@ class RTSPTimelapseGUI:
         self.total_captures = 0
         self.failed_captures = 0
         self.session_start_time = datetime.now()
+        self._session_source = "scheduled" if from_scheduler else source
         self.update_statistics()
 
         # Create capture engine
@@ -1541,6 +1548,12 @@ class RTSPTimelapseGUI:
     def stop_capture(self):
         """Stop the capture process"""
         _LOG.debug("stop_capture requested (is_capturing=%s)", self.is_capturing)
+        # Snapshot before teardown: the natural-stop branch in
+        # update_status_from_engine also records sessions, and both paths run on
+        # the Tk main thread flipping is_capturing - so whichever runs first
+        # records, the other sees False and skips. Exactly one record per session.
+        was_capturing = self.is_capturing
+
         # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
         self._cancel_scheduled_stop()
 
@@ -1558,12 +1571,45 @@ class RTSPTimelapseGUI:
         self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
         self.log_message("INFO", "Capture stopped")
 
+        if was_capturing:
+            self._record_own_session()
+
         # Re-enable config inputs
         self.set_config_inputs_state(tk.NORMAL)
         self._apply_start_mode_ui()
 
         # Update status one last time
         self.update_status()
+
+    def _record_own_session(self):
+        """Record a finished manual/remote session to capture history (main thread).
+
+        Scheduler-started sessions are deliberately skipped: the scheduler's own
+        on_session_complete path records those (scheduling_panel), and recording
+        here too would double-count the night.
+        """
+        if self._session_source in (None, "scheduled") or self.session_start_time is None:
+            return
+        try:
+            # The owning night: a post-midnight start belongs to the previous
+            # date - the same rule the snapshot folders follow.
+            rollover = self.config_manager.schedule.folder_rollover_hour
+            date_str = effective_date(self.session_start_time, rollover).strftime("%Y%m%d")
+            get_capture_history().record_session(
+                date=date_str,
+                start_time=self.session_start_time,
+                end_time=datetime.now(),
+                # Per-session counter - unlike a folder glob, still correct when
+                # the session crossed the folder rollover.
+                image_count=self.total_captures,
+                video_created=False,
+                source=self._session_source)
+            self.log_message("INFO", f"Session recorded to history: "
+                             f"{self.total_captures} frame(s), {self._session_source}")
+            if hasattr(self, "scheduling_panel"):
+                self.scheduling_panel.refresh_calendar()
+        except Exception as e:
+            self.log_message("WARNING", f"Could not record session to history: {e}")
 
     # ------------------------------------------------- Remote control HTTP API
 
@@ -1678,7 +1724,7 @@ class RTSPTimelapseGUI:
         def _start():
             if self.is_capturing:
                 return True, None, self._build_status()  # already capturing — idempotent
-            ok, err = self.start_capture(show_dialogs=False, immediate=True)
+            ok, err = self.start_capture(show_dialogs=False, immediate=True, source="remote")
             return ok, err, (self._build_status() if ok else None)
         return self._run_on_ui(_start)
 
@@ -1702,7 +1748,7 @@ class RTSPTimelapseGUI:
             if stop_at_dt <= datetime.now():
                 return False, "stop_at is in the past", None
             if not self.is_capturing:
-                ok, err = self.start_capture(show_dialogs=False, immediate=True)
+                ok, err = self.start_capture(show_dialogs=False, immediate=True, source="remote")
                 if not ok:
                     return False, err, None
             # Derive 'since' from the live session start (not "now"), so the render covers the whole
@@ -1966,6 +2012,10 @@ class RTSPTimelapseGUI:
             # Re-enable config inputs
             self.set_config_inputs_state(tk.NORMAL)
             self._apply_start_mode_ui()
+            # A session ending on its own (end time, error) never passes through
+            # stop_capture, so record it here; the `and self.is_capturing` gate
+            # above is what stops this firing again after a stop_capture run.
+            self._record_own_session()
             # A scheduled stop with create_video was pending: render what was
             # captured now rather than never (the 2026-07-27 outage lost a whole
             # night's video this way). After teardown, so events.jsonl is closed.
