@@ -12,6 +12,14 @@ All notable changes to this project are documented in this file.
   video was created.
 
 ### Fixed
+- **The app no longer crashes when a reconnect happens while the camera has stalled a read.** Every
+  5-minute proactive reconnect (and every outage reconnect) released the stream handle even when the
+  background reader thread was still blocked inside a read on it — a use-after-free in OpenCV's FFmpeg
+  backend that killed the app with no Python traceback (Windows records it as an APPCRASH in
+  `opencv_videoio_ffmpeg`, or later in `ntdll`). Present since the bufferless capture was introduced;
+  it only needed the camera to stall at the wrong moment, and until v3.6.1's log file there was nothing
+  to see but a vanished app. The reader thread now owns the handle and releases it once its in-flight
+  read returns, so a stalled old session briefly lingers alongside the new one instead of crashing.
 - **Manual and NINA/remote capture sessions are now recorded to capture history.** Previously only
   scheduler sessions were recorded — a day captured manually or via the NINA plugin was green only
   while its snapshot folder survived, and silently lost its calendar mark once "Delete snapshots

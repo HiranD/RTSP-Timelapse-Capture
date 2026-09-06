@@ -81,6 +81,11 @@ _RECONNECT_BACKOFF = (5, 10, 30, 60, 120)
 # patch it down.
 _FIRST_FRAME_GRACE = 15.0
 
+# How long release() waits for the reader thread to leave cap.read() before
+# handing the teardown over to the reader itself. Usually ~1/fps; only a stalled
+# stream makes it expire. Module-level so tests can patch it down.
+_RELEASE_JOIN_TIMEOUT = 2.0
+
 
 class RTSPBufferlessCapture:
     """
@@ -107,11 +112,12 @@ class RTSPBufferlessCapture:
         LOG.debug("VideoCapture open took %.1fs, isOpened=%s",
                   time.time() - opened_at, self.cap.isOpened())
 
-        if self.cap.isOpened():
-            # Configure buffer
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
-            self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
-            self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
+        # No post-open cap.set() calls: on the FFmpeg backend they are no-ops
+        # (verified 2026-09-06, cv2 4.12 - set() returns False for BUFFERSIZE
+        # and both *_TIMEOUT_MSEC; timeouts only take effect as open params).
+        # Buffering is handled by our own reader thread below, and the effective
+        # read bound is OpenCV's default interrupt timeout (~30s) - the ceiling
+        # on how long a stalled reader can linger after release().
 
         self.q = queue.Queue(maxsize=1)  # Only hold 1 frame at a time
         self.stopped = False
@@ -120,39 +126,52 @@ class RTSPBufferlessCapture:
         # never per-frame - the loop runs at stream fps all night.
         self._logged_first_frame = False
 
-        # Start background reader thread
-        self.thread = threading.Thread(target=self._reader, daemon=True)
+        # The cv2 handle is released exactly once, and never while the reader
+        # may be inside cap.read() - see release().
+        self._cap_lock = threading.Lock()
+        self._cap_released = False
+
+        # Start background reader thread (named so the file log's threadName
+        # column identifies it).
+        self.thread = threading.Thread(target=self._reader, name="rtsp-reader", daemon=True)
         self.thread.start()
 
     def _reader(self):
-        """Background thread: continuously read frames and keep only the latest."""
-        while not self.stopped:
-            ret, frame = self.cap.read()
+        """Background thread: continuously read frames and keep only the latest.
 
-            if not ret:
-                if not self.read_error and not self.stopped:
-                    LOG.debug("reader: cap.read() failed - retrying in background")
-                self.read_error = True
-                time.sleep(0.1)  # Brief pause before retry
-                continue
+        Also the owner of the cv2 handle's teardown: the `finally` releases it
+        once this thread has provably left cap.read() (see release()).
+        """
+        try:
+            while not self.stopped:
+                ret, frame = self.cap.read()
 
-            if not self._logged_first_frame:
-                self._logged_first_frame = True
-                LOG.debug("reader: first frame received (%dx%d)",
-                          frame.shape[1], frame.shape[0])
-            elif self.read_error:
-                LOG.debug("reader: stream recovered after read failure(s)")
-            self.read_error = False
+                if not ret:
+                    if not self.read_error and not self.stopped:
+                        LOG.debug("reader: cap.read() failed - retrying in background")
+                    self.read_error = True
+                    time.sleep(0.1)  # Brief pause before retry
+                    continue
 
-            # Discard old frame if queue is full, keep only newest
-            if not self.q.empty():
-                try:
-                    self.q.get_nowait()  # Remove stale frame
-                except queue.Empty:
-                    pass
+                if not self._logged_first_frame:
+                    self._logged_first_frame = True
+                    LOG.debug("reader: first frame received (%dx%d)",
+                              frame.shape[1], frame.shape[0])
+                elif self.read_error:
+                    LOG.debug("reader: stream recovered after read failure(s)")
+                self.read_error = False
 
-            self.q.put(frame)  # Add fresh frame
-        LOG.debug("reader thread exiting")
+                # Discard old frame if queue is full, keep only newest
+                if not self.q.empty():
+                    try:
+                        self.q.get_nowait()  # Remove stale frame
+                    except queue.Empty:
+                        pass
+
+                self.q.put(frame)  # Add fresh frame
+        finally:
+            LOG.debug("reader thread exiting")
+            self._release_cap()
 
     def read(self, timeout: float = 5.0) -> tuple[bool, Optional[np.ndarray]]:
         """
@@ -183,16 +202,48 @@ class RTSPBufferlessCapture:
         return self.cap.isOpened() and not self.stopped and not self.read_error
 
     def release(self):
-        """Stop capture and clean up."""
+        """Stop capture and clean up.
+
+        The cv2 handle must never be released while the reader thread is inside
+        cap.read() on it: cv2.VideoCapture is not thread-safe, and OpenCV's
+        FFmpeg backend tears the stream context down under the in-flight read -
+        a use-after-free that killed the app with no Python traceback (Windows
+        APPCRASH in opencv_videoio_ffmpeg, 2026-09-03 and 2026-09-05; earlier
+        v3.6.0 deaths surfaced later in ntdll the same way). Each time, the
+        preceding log line was this method's "reader still blocked" - and then
+        it released anyway. So: stop, wait briefly, and if the reader is still
+        stuck in a read, leave the handle to it (its `finally` releases once the
+        read returns, bounded by the FFmpeg read timeout). Meanwhile the old
+        RTSP session lingers alongside the new one - cameras allow a few, and
+        the alternative was a crash.
+        """
         LOG.debug("releasing capture")
         self.stopped = True
         if self.thread.is_alive():
-            self.thread.join(timeout=2.0)
+            self.thread.join(timeout=_RELEASE_JOIN_TIMEOUT)
             if self.thread.is_alive():
-                LOG.debug("release: reader thread still blocked after 2s join "
-                          "(daemon - will exit on its own)")
-        if self.cap:
-            self.cap.release()
+                LOG.debug("release: reader still inside cap.read() after %.1fs - "
+                          "the reader will release the handle when that read returns",
+                          _RELEASE_JOIN_TIMEOUT)
+                return
+        # Reader is gone (its finally normally already released) - idempotent.
+        self._release_cap()
+
+    def _release_cap(self):
+        """Release the cv2 handle exactly once.
+
+        Only safe once the reader can no longer be inside cap.read(): called
+        from the reader's own finally, or from release() after join() confirmed
+        the reader has exited. self.cap is kept (not nulled) - the isOpened()/
+        get()/set() pass-throughs still call it, and a released VideoCapture
+        answers them safely.
+        """
+        with self._cap_lock:
+            if self._cap_released:
+                return
+            self._cap_released = True
+            if self.cap:
+                self.cap.release()
 
     def set(self, prop: int, value: float):
         """Pass-through for cv2.VideoCapture.set()."""
