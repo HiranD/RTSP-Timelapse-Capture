@@ -104,9 +104,14 @@ class ReaderOwnedReleaseTests(unittest.TestCase):
     def test_reader_exception_still_releases_the_handle(self):
         """A reader that dies on an exception must not strand the handle."""
         fake = _FakeCap(raise_on_read=True)
-        cap = _capture(fake)
-        cap.thread.join(timeout=2.0)
+        # The exception is the point here, not a failure: route it to a mock
+        # hook so the suite output doesn't show a traceback that reads like
+        # one - and so we can assert it really surfaced.
+        with mock.patch("threading.excepthook") as hook:
+            cap = _capture(fake)
+            cap.thread.join(timeout=2.0)
         self.assertFalse(cap.thread.is_alive())
+        hook.assert_called_once()
         self.assertEqual(fake.release_calls, ["rtsp-reader"])
         cap.release()  # and the caller-side release stays a no-op
         self.assertEqual(len(fake.release_calls), 1)

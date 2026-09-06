@@ -286,8 +286,10 @@ Choose between two scheduling modes:
 
 2. **Select Dates on Calendar**
    - Click dates to toggle selection (blue = scheduled)
-   - Green dates = past dates with captured images
+   - Green dates = past dates captured by the scheduler
+   - Plum dates = past dates captured manually or via the remote API (NINA plugin)
    - Gray dates = past dates without captures
+   - Hover a captured date to see its sessions (source, times, frame count, video)
    - Red border = today
    - Use **Select All** / **Clear All** buttons for bulk operations
    - Navigate months with **<** and **>** buttons

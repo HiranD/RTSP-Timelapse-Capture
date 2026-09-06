@@ -159,6 +159,11 @@ class RTSPTimelapseGUI:
         # What started the current/last session ("scheduled"|"remote"|"manual");
         # None until the first start. Drives capture-history recording on stop.
         self._session_source = None
+        # When the current/last session's first frame arrived (set by the
+        # engine's frame callback). In "At time" start mode the engine can wait
+        # hours between the Start click and the first frame, so this - not the
+        # click - is what dates the session in capture history.
+        self._first_frame_time = None
 
         # Load existing config if available
         self.load_config()
@@ -1496,6 +1501,7 @@ class RTSPTimelapseGUI:
         self.failed_captures = 0
         self.session_start_time = datetime.now()
         self._session_source = "scheduled" if from_scheduler else source
+        self._first_frame_time = None
         self.update_statistics()
 
         # Create capture engine
@@ -1586,18 +1592,33 @@ class RTSPTimelapseGUI:
 
         Scheduler-started sessions are deliberately skipped: the scheduler's own
         on_session_complete path records those (scheduling_panel), and recording
-        here too would double-count the night.
+        here too would double-count the night. Manual sessions that saved no
+        frames are skipped as well - see below.
         """
         if self._session_source in (None, "scheduled") or self.session_start_time is None:
             return
+        if self._session_source == "manual" and self.total_captures == 0:
+            # Almost always a Start/Stop while testing, with the user watching the
+            # log: a "0 frames (failed)" line in the calendar's hover text would be
+            # clutter, and with no frames the date is only a guess anyway. Remote
+            # (and scheduled) sessions run unattended, so their empty runs stay
+            # recorded as evidence that the night failed.
+            _LOG.debug("manual session saved no frames - not recorded to history")
+            return
         try:
+            # The session starts when frames start, not when Start was clicked:
+            # in "At time" mode the engine waits for the window, so a morning
+            # click for tonight's window would otherwise be filed - via the
+            # rollover rule below - under the previous night, with the click
+            # shown as the start. With no frames at all the click is all there is.
+            started = self._first_frame_time or self.session_start_time
             # The owning night: a post-midnight start belongs to the previous
             # date - the same rule the snapshot folders follow.
             rollover = self.config_manager.schedule.folder_rollover_hour
-            date_str = effective_date(self.session_start_time, rollover).strftime("%Y%m%d")
+            date_str = effective_date(started, rollover).strftime("%Y%m%d")
             get_capture_history().record_session(
                 date=date_str,
-                start_time=self.session_start_time,
+                start_time=started,
                 end_time=datetime.now(),
                 # Per-session counter - unlike a folder glob, still correct when
                 # the session crossed the folder rollover.
@@ -1944,8 +1965,11 @@ class RTSPTimelapseGUI:
 
     def on_frame_captured(self, frame):
         """Callback for frame capture"""
-        # Update statistics
+        # Update statistics. Engine thread: plain attribute writes, the same
+        # way total_captures has always been kept.
         self.total_captures += 1
+        if self._first_frame_time is None:
+            self._first_frame_time = datetime.now()
 
         # Update last capture time and statistics on main thread
         def update_ui():

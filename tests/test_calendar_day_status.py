@@ -6,6 +6,7 @@ test_scheduler_autovideo.py pattern) so no Tk root is needed; the tooltip text
 builder is a plain module function.
 """
 
+import calendar
 import sys
 import tempfile
 import unittest
@@ -147,6 +148,57 @@ class TooltipTextTests(unittest.TestCase):
     def test_empty_day_yields_empty_text(self):
         """Empty text suppresses the ToolTip entirely."""
         self.assertEqual(build_day_tooltip_text(DAY, [], False), "")
+
+
+class TooltipRefreshFolderCheckTests(unittest.TestCase):
+    """_update_month_grid stats the snapshots folder only for past days.
+
+    Every redraw (each calendar click) refreshes all cells' hover text; a
+    future day can't have frames, so probing its folder is pure cost - and
+    on a network output folder, dozens of round trips per click."""
+
+    def _widget(self):
+        p = mock.MagicMock()
+        p.COLORS = TwoMonthCalendar.COLORS
+        p.capture_history = None  # nothing recorded -> every day is a folder candidate
+        p._day_labels = {}
+        p._day_tooltips = {}
+        for mo in (0, 1):
+            p._day_labels[(mo, -1, 0)] = mock.MagicMock()  # month header
+            for r in range(6):
+                for c in range(7):
+                    p._day_labels[(mo, r, c)] = (mock.MagicMock(), mock.MagicMock())
+                    p._day_tooltips[(mo, r, c)] = mock.MagicMock()
+        p._folder_has_images.return_value = False
+        p._get_date_status.return_value = "past"
+        p._get_status_color.return_value = "#E0E0E0"
+        return p
+
+    def test_past_month_checked_future_month_not(self):
+        today = date.today()
+        this_first = today.replace(day=1)
+        prev_first = (this_first - timedelta(days=1)).replace(day=1)
+        next_first = (this_first + timedelta(days=32)).replace(day=1)
+
+        p = self._widget()
+        TwoMonthCalendar._update_month_grid(p, 0, prev_first)
+        checked = [c.args[0] for c in p._folder_has_images.call_args_list]
+        self.assertEqual(len(checked), calendar.monthrange(prev_first.year, prev_first.month)[1])
+        self.assertTrue(all(d < today for d in checked))
+
+        p = self._widget()
+        TwoMonthCalendar._update_month_grid(p, 1, next_first)
+        p._folder_has_images.assert_not_called()
+
+    def test_today_is_not_checked(self):
+        """A running session has frames on disk but no record yet - "Images on
+        disk (no session record)" for today would just be misleading."""
+        today = date.today()
+        p = self._widget()
+        TwoMonthCalendar._update_month_grid(p, 0, today.replace(day=1))
+        checked = [c.args[0] for c in p._folder_has_images.call_args_list]
+        self.assertNotIn(today, checked)
+        self.assertTrue(all(d < today for d in checked))
 
 
 if __name__ == "__main__":

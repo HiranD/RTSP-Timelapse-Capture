@@ -260,8 +260,11 @@ class TwoMonthCalendar(ttk.Frame):
 
                 # Hover detail for the day's sessions. On the label only:
                 # ToolTip queries the widget's -state option, which tk.Frame
-                # doesn't have.
-                self._day_tooltips[(month_offset, row, col)] = ToolTip(lbl, "")
+                # doesn't have. Wider than ToolTip's 300px default: one line
+                # per session is the layout, and a long line ("Remote (NINA):
+                # 20:41 - 05:12, 1234 frames, video created") already measures
+                # ~300px in Segoe UI 9, so five-digit frame counts would wrap.
+                self._day_tooltips[(month_offset, row, col)] = ToolTip(lbl, "", wraplength=420)
 
     def _create_legend_item(self, parent: ttk.Frame, color: str, text: str):
         """Create a legend item with color box and label"""
@@ -333,12 +336,16 @@ class TwoMonthCalendar(ttk.Frame):
                     cell_frame.config(bg=bg_color)
 
                     # Refresh the hover text. Every history mutation triggers a
-                    # redraw, so eager refresh here can never go stale; only
-                    # glob the snapshots folder when history has nothing.
+                    # redraw, so eager refresh here can never go stale. Only
+                    # touch the snapshots folder when history has nothing, and
+                    # only for past days: a future day has no frames, and each
+                    # redraw (every calendar click) would otherwise stat dozens
+                    # of non-existent folders - noticeable on a network share.
                     sessions = (self.capture_history.get_sessions_for_date(
                         current_date.strftime("%Y%m%d"))
                         if self.capture_history else [])
-                    folder_has = (not sessions) and self._folder_has_images(current_date)
+                    folder_has = (not sessions and current_date < today
+                                  and self._folder_has_images(current_date))
                     tip.update_text(build_day_tooltip_text(current_date, sessions, folder_has))
 
                     # Special border for today

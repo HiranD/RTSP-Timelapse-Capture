@@ -24,7 +24,9 @@ All notable changes to this project are documented in this file.
   scheduler sessions were recorded — a day captured manually or via the NINA plugin was green only
   while its snapshot folder survived, and silently lost its calendar mark once "Delete snapshots
   after creating video" cleaned up. Every session now persists (with what started it), on both the
-  Stop button and natural end-of-schedule/error stops.
+  Stop button and natural end-of-schedule/error stops. One exception: a manual session that saved
+  no frames (a Start/Stop while testing) is not recorded, so it leaves no "failed" line behind;
+  remote sessions are recorded even when empty, as evidence that an unattended night failed.
 - Removed a calendar-wide tooltip that had never displayed (it queried a widget option `ttk.Frame`
   doesn't have, and died before the popup was built); the per-day hover details replace it.
 - **Turning the frame counter overlay off now actually turns it off.** The counter was a field of
