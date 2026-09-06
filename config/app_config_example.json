@@ -57,6 +57,7 @@
     "event_overlay": false,
     "event_overlay_seconds": 4.0,
     "event_csv": false,
+    "frame_counter_overlay": false,
     "delete_snapshots_after_video": false
   },
   "remote_api": {

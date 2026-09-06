@@ -2,7 +2,8 @@
 Unit tests for the opt-in diagnostic file logging (PR #22).
 
 Covers the security-sensitive app_logging helpers (mask_secrets must never let
-a camera/MQTT password reach a log file people send around) and the
+a camera/MQTT password or the Discord webhook URL reach a log file people send
+around - the webhook did leak until 2026-09-06, on every capture start) and the
 _set_file_logging attach/detach/re-adopt lifecycle - the re-adopt path already
 needed one follow-up fix (a re-created GUI kept the handler but left the logger
 at WARNING, silently dropping all DEBUG detail).
@@ -52,15 +53,36 @@ class MaskSecretsTests(unittest.TestCase):
         value = [{"password": "x"}, "plain"]
         self.assertEqual(mask_secrets(value), [{"password": "****"}, "plain"])
 
-    def test_no_password_survives_a_full_config_dump(self):
-        # The exact pattern gui_app logs at capture start.
+    def test_masks_webhook_token_secret_and_key_names(self):
+        """A Discord webhook URL is a write credential for that channel; it
+        went into the log verbatim while only "password" keys were masked."""
+        config = {
+            "discord_webhook_url": "https://discord.com/api/webhooks/1/abc",
+            "api_token": "t", "client_secret": "s", "API_KEY": "k",
+            "nested": {"Auth-Token": "n"},
+            "ip_address": "1.2.3.4",
+        }
+        masked = mask_secrets(config)
+        self.assertEqual(masked["discord_webhook_url"], "****")
+        self.assertEqual(masked["api_token"], "****")
+        self.assertEqual(masked["client_secret"], "****")
+        self.assertEqual(masked["API_KEY"], "****")
+        self.assertEqual(masked["nested"]["Auth-Token"], "****")
+        self.assertEqual(masked["ip_address"], "1.2.3.4")
+
+    def test_no_secret_survives_a_full_config_dump(self):
+        # The exact pattern gui_app logs at capture start. Every config field
+        # that carries a credential belongs in this list.
         from config_manager import ConfigManager
         manager = ConfigManager()
         manager.camera.password = "cam-secret"
         manager.astro_schedule.mqtt_password = "mqtt-secret"
+        manager.astro_schedule.discord_webhook_url = "https://discord.com/api/webhooks/1/hook-secret"
         dumped = repr(mask_secrets(manager.to_dict()))
         self.assertNotIn("cam-secret", dumped)
         self.assertNotIn("mqtt-secret", dumped)
+        self.assertNotIn("hook-secret", dumped)
+        self.assertNotIn("discord.com/api/webhooks", dumped)
 
 
 class TruncTests(unittest.TestCase):

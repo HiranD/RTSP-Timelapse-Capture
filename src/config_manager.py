@@ -86,6 +86,12 @@ class UIConfig:
     # only durable copy when "delete snapshots after video" is on, since events.jsonl
     # lives inside the snapshot folder that gets removed.
     event_csv: bool = False
+    # Burn a frame-number counter into rendered video (top-left). A standing
+    # preference like event_overlay, honoured by every render path. It used to be
+    # a preset field, which made unticking the checkbox ineffective for unattended
+    # renders (they build settings from the saved preset) - and the preset re-ticked
+    # it on every restart.
+    frame_counter_overlay: bool = False
     # Delete the snapshot folder after a video is created from it. Applies to every
     # render - scheduled, remote-API and the Video Export tab's own button - which is
     # why it lives here rather than under astro_schedule.

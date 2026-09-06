@@ -4,7 +4,9 @@ Displays current month and next month side by side with date selection.
 
 Features:
 - Click dates to toggle selection on/off
-- Visual indicators: captured (green), scheduled (blue), past (gray), today (bordered)
+- Visual indicators: captured by schedule (green), captured manually/via NINA (plum),
+  scheduled (blue), past (gray), today (bordered)
+- Hovering a day shows its recorded sessions (source, times, frames, video status)
 - Navigation arrows to view future months
 - Select All / Clear All buttons
 """
@@ -12,18 +14,71 @@ Features:
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, date, timedelta
-from typing import Set, Callable, Optional
+from typing import Set, Callable, List, Optional
 from pathlib import Path
 import calendar
 
 try:
-    from src.capture_history import get_capture_history, CaptureHistoryManager
+    from src.capture_history import get_capture_history, CaptureHistoryManager, CaptureSession
     from src.app_logging import get_logger
+    from src.tooltip import ToolTip
 except ImportError:
-    from capture_history import get_capture_history, CaptureHistoryManager
+    from capture_history import get_capture_history, CaptureHistoryManager, CaptureSession
     from app_logging import get_logger
+    from tooltip import ToolTip
 
 LOG = get_logger("calendar")
+
+# How a session's source reads in the hover tooltip. Unknown values (a
+# hand-edited file, a future version) fall back to the raw string.
+_SOURCE_LABELS = {
+    "scheduled": "Scheduled",
+    "manual": "Manual",
+    "remote": "Remote (NINA)",
+}
+
+
+def _hhmm(iso_time: str) -> str:
+    """ISO datetime -> HH:MM, or the raw string if it doesn't parse.
+
+    The history file is hand-editable, so a bad value must not break the
+    calendar - it just shows as-is.
+    """
+    try:
+        return datetime.fromisoformat(iso_time).strftime("%H:%M")
+    except (ValueError, TypeError):
+        return iso_time
+
+
+def build_day_tooltip_text(day: date, sessions: List[CaptureSession],
+                           folder_has_images: bool) -> str:
+    """Build the hover text for one calendar day.
+
+    Returns "" when there is nothing to show (the ToolTip suppresses empty
+    text). One line per session, chronological; end times may cross midnight -
+    the date header names the session's owning night.
+    """
+    lines = []
+    for s in sessions:
+        label = _SOURCE_LABELS.get(s.source, s.source)
+        n = s.image_count
+        line = f"{label}: {_hhmm(s.start_time)} - {_hhmm(s.end_time)}, " \
+               f"{n} frame{'s' if n != 1 else ''}"
+        if s.video_created:
+            line += ", video created"
+        if s.status != "completed":
+            line += f" ({s.status})"
+        lines.append(line)
+
+    if not lines and folder_has_images:
+        # Pre-history or foreign frames: the folder proves a capture happened,
+        # but nothing recorded how.
+        lines.append("Images on disk (no session record)")
+
+    if not lines:
+        return ""
+
+    return "\n".join([day.strftime("%a %Y-%m-%d")] + lines)
 
 
 class TwoMonthCalendar(ttk.Frame):
@@ -36,7 +91,9 @@ class TwoMonthCalendar(ttk.Frame):
 
     # Visual styling
     COLORS = {
-        "captured": "#90EE90",      # Light green - past date with images
+        "captured": "#90EE90",        # Light green - past date captured by the scheduler
+        "captured_other": "#DDA0DD",  # Plum - captured by manual Start or NINA/remote
+                                      # (no scheduled session that night)
         "scheduled": "#87CEEB",     # Light blue - future date selected
         "past": "#E0E0E0",          # Gray - past date without captures
         "today_bg": "#FFFFFF",      # White background for today
@@ -78,6 +135,10 @@ class TwoMonthCalendar(ttk.Frame):
 
         # Store day label references for updating
         self._day_labels = {}  # {(month_offset, row, col): label}
+
+        # One long-lived ToolTip per day label, text refreshed on every redraw
+        # (cells are created once and only reconfigured). Empty text = silent.
+        self._day_tooltips = {}  # {(month_offset, row, col): ToolTip}
 
         self._create_widgets()
         self._update_display()
@@ -148,7 +209,8 @@ class TwoMonthCalendar(ttk.Frame):
         legend_frame = ttk.Frame(btn_frame)
         legend_frame.pack(pady=(15, 0))
 
-        self._create_legend_item(legend_frame, self.COLORS["captured"], "Captured")
+        self._create_legend_item(legend_frame, self.COLORS["captured"], "Captured (scheduled)")
+        self._create_legend_item(legend_frame, self.COLORS["captured_other"], "Captured (manual/NINA)")
         self._create_legend_item(legend_frame, self.COLORS["scheduled"], "Scheduled")
         self._create_legend_item(legend_frame, self.COLORS["past"], "Past")
 
@@ -195,6 +257,14 @@ class TwoMonthCalendar(ttk.Frame):
 
                 # Store references
                 self._day_labels[(month_offset, row, col)] = (cell_frame, lbl)
+
+                # Hover detail for the day's sessions. On the label only:
+                # ToolTip queries the widget's -state option, which tk.Frame
+                # doesn't have. Wider than ToolTip's 300px default: one line
+                # per session is the layout, and a long line ("Remote (NINA):
+                # 20:41 - 05:12, 1234 frames, video created") already measures
+                # ~300px in Segoe UI 9, so five-digit frame counts would wrap.
+                self._day_tooltips[(month_offset, row, col)] = ToolTip(lbl, "", wraplength=420)
 
     def _create_legend_item(self, parent: ttk.Frame, color: str, text: str):
         """Create a legend item with color box and label"""
@@ -245,23 +315,38 @@ class TwoMonthCalendar(ttk.Frame):
                 day = month_days[idx]
 
                 cell_frame, lbl = self._day_labels[(month_offset, row, col)]
+                tip = self._day_tooltips[(month_offset, row, col)]
 
                 if day == 0:
                     # Empty cell
                     lbl.config(text="", bg=self.COLORS["future"])
                     cell_frame.config(bg=self.COLORS["future"], highlightthickness=0)
+                    tip.update_text("")
                 else:
                     current_date = date(month_date.year, month_date.month, day)
                     date_str = current_date.strftime("%Y-%m-%d")
 
                     lbl.config(text=str(day))
 
-                    # Determine cell status and color
-                    status = self._get_date_status(current_date, date_str)
+                    # One history read and at most one folder probe per cell;
+                    # the color and the hover text come from the same snapshot,
+                    # so they can't disagree. Every history mutation triggers a
+                    # redraw, so an eager refresh never goes stale. The folder
+                    # is probed only for a past day with no successful record:
+                    # a future day has no frames, and each redraw (every
+                    # calendar click) would otherwise stat dozens of
+                    # non-existent folders - noticeable on a network share.
+                    sessions = self._day_sessions(current_date)
+                    folder_has = (current_date < today
+                                  and not any(s.succeeded for s in sessions)
+                                  and self._folder_has_images(current_date))
+
+                    status = self._get_date_status(current_date, date_str, sessions, folder_has)
                     bg_color = self._get_status_color(status)
 
                     lbl.config(bg=bg_color)
                     cell_frame.config(bg=bg_color)
+                    tip.update_text(build_day_tooltip_text(current_date, sessions, folder_has))
 
                     # Special border for today
                     if current_date == today:
@@ -272,19 +357,23 @@ class TwoMonthCalendar(ttk.Frame):
                     else:
                         cell_frame.config(highlightthickness=0)
 
-    def _get_date_status(self, current_date: date, date_str: str) -> str:
+    def _get_date_status(self, current_date: date, date_str: str,
+                         sessions: List[CaptureSession], folder_has_images: bool) -> str:
         """
         Determine the status of a date.
 
-        Returns: "captured", "scheduled", "past", "today", or "future"
+        `sessions` and `folder_has_images` are the day's facts, fetched once by
+        the caller and shared with the hover text.
+
+        Returns: "captured", "captured_other", "scheduled", "past", "today", or "future"
         """
         today = date.today()
 
         if current_date < today:
-            # Past date - check if captured
-            if self._has_captures(current_date):
-                return "captured"
-            return "past"
+            # Past date - captured (and by what) or plain past. Today keeps its
+            # border/scheduled look even after a session - the day only earns a
+            # captured color once it's over.
+            return self._capture_kind(sessions, folder_has_images) or "past"
         elif current_date == today:
             # Today - check if scheduled
             if date_str in self.selected_dates:
@@ -300,6 +389,7 @@ class TwoMonthCalendar(ttk.Frame):
         """Get background color for a date status"""
         color_map = {
             "captured": self.COLORS["captured"],
+            "captured_other": self.COLORS["captured_other"],
             "scheduled": self.COLORS["scheduled"],
             "past": self.COLORS["past"],
             "today": self.COLORS["today_bg"],
@@ -307,24 +397,39 @@ class TwoMonthCalendar(ttk.Frame):
         }
         return color_map.get(status, self.COLORS["future"])
 
-    def _has_captures(self, check_date: date) -> bool:
-        """Check if a date has captured images (via history or folder check)"""
-        date_str = check_date.strftime("%Y%m%d")
+    def _day_sessions(self, check_date: date) -> List[CaptureSession]:
+        """The recorded sessions for a date: a copy taken under the history
+        lock, so one redraw works from one consistent list per day."""
+        if not self.capture_history:
+            return []
+        return self.capture_history.get_sessions_for_date(check_date.strftime("%Y%m%d"))
 
-        # Check capture history first (persists even after snapshots deleted)
-        if self.capture_history and self.capture_history.has_capture(date_str):
-            return True
+    @staticmethod
+    def _capture_kind(sessions: List[CaptureSession], folder_has_images: bool) -> Optional[str]:
+        """How a past date was captured, or None if it wasn't.
 
-        # Fallback: check folder for legacy/untracked captures
-        date_folder = self.snapshots_dir / date_str
+        Returns "captured" when any successful session that day was scheduled
+        (the schedule delivered, whatever else also ran), "captured_other" when
+        only manual/remote sessions - or untracked frames on disk - exist. The
+        folder fallback lands in the "other" bucket: without a history entry
+        there's no proof the schedule was involved.
+        """
+        successful = [s for s in sessions if s.succeeded]
+        if any(s.source == "scheduled" for s in successful):
+            return "captured"
+        if successful or folder_has_images:
+            return "captured_other"
+        return None
+
+    def _folder_has_images(self, check_date: date) -> bool:
+        """Fallback for legacy/untracked captures: frames on disk, no history."""
+        date_folder = self.snapshots_dir / check_date.strftime("%Y%m%d")
         if date_folder.exists():
             return any(date_folder.glob("*.jpg")) or any(date_folder.glob("*.jpeg"))
-
         return False
 
-    def _on_day_click(self, month_offset: int, row: int, col: int):
-        """Handle click on a day cell"""
-        # Calculate which date was clicked
+    def _date_for_cell(self, month_offset: int, row: int, col: int) -> Optional[date]:
+        """The date a grid cell currently shows, or None for an empty cell."""
         month_date = self._add_months(self.view_date, month_offset)
 
         cal = calendar.Calendar(firstweekday=6)
@@ -332,13 +437,20 @@ class TwoMonthCalendar(ttk.Frame):
 
         idx = row * 7 + col
         if idx >= len(month_days):
-            return
+            return None
 
         day = month_days[idx]
         if day == 0:
+            return None
+
+        return date(month_date.year, month_date.month, day)
+
+    def _on_day_click(self, month_offset: int, row: int, col: int):
+        """Handle click on a day cell"""
+        clicked_date = self._date_for_cell(month_offset, row, col)
+        if clicked_date is None:
             return
 
-        clicked_date = date(month_date.year, month_date.month, day)
         today = date.today()
 
         # Only allow selecting today or future dates
@@ -416,6 +528,10 @@ class TwoMonthCalendar(ttk.Frame):
             self.on_selection_change(self.selected_dates.copy())
 
     # Public API
+
+    def refresh(self):
+        """Redraw colors and hover texts - call after capture history changes."""
+        self._update_display()
 
     def get_selected_dates(self) -> Set[str]:
         """Get set of selected date strings (YYYY-MM-DD format)"""

@@ -2,6 +2,61 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **The calendar now distinguishes how a night was captured.** Days captured by the astronomical
+  scheduler stay green; days captured via the Start button or the remote API (NINA plugin) get
+  their own plum color, with legend entries for both. **Hovering any captured day shows its
+  sessions** — source (Scheduled / Manual / Remote), start–end times, frame count, and whether a
+  video was created.
+
+### Fixed
+- **The diagnostic log file no longer contains the Discord webhook URL.** Since v3.6.1, with
+  "Write a log file" enabled, the config snapshot written at every capture start masked only
+  password fields, so `discord_webhook_url` went into `logs\app.log` in clear text. A webhook URL
+  lets anyone who has it post into that channel. The masker now also hides any config key whose
+  name contains `webhook`, `token`, `secret`, or `key`. **If you have shared an `app.log` (or its
+  rotated `app.log.1`–`.3` backups) from a build with a webhook configured, regenerate the webhook
+  in Discord's channel settings and paste the new URL into the app.**
+- **The app no longer crashes when a reconnect happens while the camera has stalled a read.** Every
+  5-minute proactive reconnect (and every outage reconnect) released the stream handle even when the
+  background reader thread was still blocked inside a read on it — a use-after-free in OpenCV's FFmpeg
+  backend that killed the app with no Python traceback (Windows records it as an APPCRASH in
+  `opencv_videoio_ffmpeg`, or later in `ntdll`). Present since the bufferless capture was introduced;
+  it only needed the camera to stall at the wrong moment, and until v3.6.1's log file there was nothing
+  to see but a vanished app. The reader thread now owns the handle and releases it once its in-flight
+  read returns, so a stalled old session briefly lingers alongside the new one instead of crashing.
+- **Manual and NINA/remote capture sessions are now recorded to capture history.** Previously only
+  scheduler sessions were recorded — a day captured manually or via the NINA plugin was green only
+  while its snapshot folder survived, and silently lost its calendar mark once "Delete snapshots
+  after creating video" cleaned up. Every session now persists (with what started it), on both the
+  Stop button and natural end-of-schedule/error stops. One exception: a manual session that saved
+  no frames (a Start/Stop while testing) is not recorded, so it leaves no "failed" line behind;
+  remote sessions are recorded even when empty, as evidence that an unattended night failed.
+- Removed a calendar-wide tooltip that had never displayed (it queried a widget option `ttk.Frame`
+  doesn't have, and died before the popup was built); the per-day hover details replace it.
+- **Turning the frame counter overlay off now actually turns it off.** The counter was a field of
+  the selected video preset, so unticking the checkbox saved nothing: scheduled and remote-API
+  renders build their settings from the *saved* preset and kept stamping the counter onto every
+  video, and each restart silently re-ticked the checkbox from the preset. The setting now lives
+  in `config\app_config.json` (like the event-overlay options), is saved the moment the checkbox
+  is toggled, and is honoured identically by every render path — scheduled sessions, videos
+  created via the remote API, and the Export button.
+
+### Changed
+- **`user_data\capture_history.json` now keeps every session of a day** (previously one, last-wins:
+  a short morning test could overwrite the real night's record), and each entry carries a `source`
+  field. Existing files load unchanged; entries from older versions count as scheduled, which is
+  what wrote them. Days whose only evidence is frames on disk (no history entry) now show plum
+  rather than green — without a record there's no proof the schedule was involved. Note for anyone
+  downgrading later: builds older than this release ignore the whole history file once it contains
+  the new field, so keep a backup copy if you plan to roll back.
+- **"Add frame counter overlay" is no longer part of video presets.** Presets saved by older
+  versions that still carry the old `add_timestamp` field load fine — the stale field is ignored
+  and dropped on the next preset save. After upgrading, anyone who *wants* the counter ticks the
+  checkbox once; it then sticks for all renders until unticked.
+
 ## [3.6.1] - 2026-08-29
 
 ### Fixed
