@@ -87,6 +87,8 @@ class ExportJob:
     draw_captions: bool = False
     # Whether to write <video>.events.csv beside the render (config: ui.event_csv).
     write_events_csv: bool = False
+    # Whether to draw the frame-number counter (config: ui.frame_counter_overlay).
+    draw_frame_counter: bool = False
 
 
 @dataclass
@@ -303,6 +305,7 @@ class VideoExportController:
         event_overlay: bool = False,
         event_overlay_seconds: float = 4.0,
         event_csv: bool = False,
+        frame_counter: bool = False,
         temp_dir: str = ""
     ) -> Tuple[bool, Optional[ExportJob], str]:
         """
@@ -322,6 +325,9 @@ class VideoExportController:
             event_overlay_seconds: caption hold time, in seconds of finished video
             event_csv: write <video>.events.csv beside the render. Independent of
                 event_overlay - the log is useful without captions, and vice versa.
+            frame_counter: draw the frame-number counter on the video. An app
+                preference like event_overlay (ui.frame_counter_overlay), not a
+                preset field, for the same reason - callers read it from config.
             temp_dir: where temp frame copies are staged (ui.temp_export_dir, an
                 app preference like event_overlay - callers read it from config).
                 Blank = the Windows temp folder.
@@ -374,10 +380,10 @@ class VideoExportController:
                                  "'preserve originals' enabled for this export")
 
             LOG.debug("prepare_export: %d image(s) -> %s (fps=%s, crf=%s, speed=%sx, "
-                      "res=%s, temp_copies=%s, captions=%s, csv=%s)",
+                      "res=%s, temp_copies=%s, captions=%s, csv=%s, counter=%s)",
                       image_collection.total_count, output_file, settings.framerate,
                       settings.quality, settings.speed_multiplier, settings.resolution,
-                      use_temp_copies, draws_captions, event_csv)
+                      use_temp_copies, draws_captions, event_csv, frame_counter)
 
             if use_temp_copies:
                 # Stage copies OUTSIDE the output folder: creating them beside
@@ -407,7 +413,8 @@ class VideoExportController:
                 use_temp_copies=use_temp_copies,
                 overlay_plan=overlay_plan,
                 draw_captions=draws_captions,
-                write_events_csv=event_csv
+                write_events_csv=event_csv,
+                draw_frame_counter=frame_counter
             )
 
             return True, job, "Export prepared"
@@ -521,7 +528,7 @@ class VideoExportController:
                 quality=job.settings.quality,
                 resolution=job.settings.resolution if job.settings.resolution != 'original' else None,
                 speed_multiplier=job.settings.speed_multiplier,
-                add_timestamp=job.settings.add_timestamp,
+                add_timestamp=job.draw_frame_counter,
                 codec=job.settings.codec
             )
 

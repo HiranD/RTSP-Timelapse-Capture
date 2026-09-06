@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Turning the frame counter overlay off now actually turns it off.** The counter was a field of
+  the selected video preset, so unticking the checkbox saved nothing: scheduled and remote-API
+  renders build their settings from the *saved* preset and kept stamping the counter onto every
+  video, and each restart silently re-ticked the checkbox from the preset. The setting now lives
+  in `config\app_config.json` (like the event-overlay options), is saved the moment the checkbox
+  is toggled, and is honoured identically by every render path — scheduled sessions, videos
+  created via the remote API, and the Export button.
+
+### Changed
+- **"Add frame counter overlay" is no longer part of video presets.** Presets saved by older
+  versions that still carry the old `add_timestamp` field load fine — the stale field is ignored
+  and dropped on the next preset save. After upgrading, anyone who *wants* the counter ticks the
+  checkbox once; it then sticks for all renders until unticked.
+
 ## [3.6.1] - 2026-08-29
 
 ### Fixed

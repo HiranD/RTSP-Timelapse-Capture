@@ -88,8 +88,11 @@ VIDEO_EXPORT_TOOLTIPS = {
     ),
 
     "frame_counter": (
-        "Adds frame number overlay to the video (e.g., 'Frame 1', 'Frame 2'). "
-        "Useful for quality assurance and debugging."
+        "Adds a frame number overlay to the top-left corner of the video. "
+        "Useful for quality assurance and debugging.\n\n"
+        "Applies to every video: scheduled sessions, videos created via the remote API "
+        "(NINA plugin or scripts), and exports started from this tab. Saved immediately "
+        "and independent of the selected preset."
     ),
 
     "open_when_done": (

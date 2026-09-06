@@ -213,7 +213,8 @@
 - **Quality (CRF)**: 18 = visually lossless, 20 = default, 23+ = smaller files.
 - **Speed Multiplier**: Skip frames to speed up (2×, 4×, 8×, 16×, 32×).
 - **Resolution**: Keep original size or scale to 4K / 1080p / 720p / 480p / 360p.
-- **Overlay**: Optional frame counter overlay for QA workflows.
+- **Overlay**: Optional frame counter overlay for QA workflows. An app setting (not part of the
+  preset) — it applies to every render, including scheduled and remote-API videos, until unticked.
 
 Example outputs for 1,234 images captured over 6 hours:
 ```

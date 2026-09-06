@@ -97,8 +97,7 @@ def test_export_preparation(collection):
         speed_multiplier=1,
         resolution='original',
         format='mp4',
-        preserve_originals=True,
-        add_timestamp=False
+        preserve_originals=True
     )
 
     output_file = Path("test_output/timelapse_test.mp4")
@@ -178,14 +177,15 @@ def test_actual_export(collection):
         speed_multiplier=2,  # Use every 2nd frame for speed
         resolution='640x360',  # Lower resolution for speed
         format='mp4',
-        preserve_originals=True,
-        add_timestamp=True
+        preserve_originals=True
     )
 
     output_file = Path("test_output/timelapse_test_actual.mp4")
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    success, job, message = controller.prepare_export(settings, collection, output_file)
+    # Frame counter is an app preference (ui.frame_counter_overlay), not a preset field.
+    success, job, message = controller.prepare_export(settings, collection, output_file,
+                                                      frame_counter=True)
 
     if not success:
         print(f"✗ Preparation failed: {message}")

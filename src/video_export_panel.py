@@ -295,11 +295,17 @@ class VideoExportPanel(ttk.Frame):
         preserve_check.pack(side=tk.LEFT, padx=(0, 15))
         ToolTip(preserve_check, VIDEO_EXPORT_TOOLTIPS["preserve_originals"])
 
-        self.add_timestamp_var = tk.BooleanVar(value=False)
-        timestamp_check = ttk.Checkbutton(options_frame, text="Add frame counter overlay",
-                        variable=self.add_timestamp_var)
-        timestamp_check.pack(side=tk.LEFT, padx=(0, 15))
-        ToolTip(timestamp_check, VIDEO_EXPORT_TOOLTIPS["frame_counter"])
+        # Config-backed (ui.frame_counter_overlay), not a preset field: as a preset
+        # field, unticking it saved nothing - unattended renders kept the value from
+        # the saved preset, and every restart re-ticked the box from it.
+        ui_cfg = self.config_manager.ui if self.config_manager else None
+        self.frame_counter_var = tk.BooleanVar(
+            value=ui_cfg.frame_counter_overlay if ui_cfg else False)
+        counter_check = ttk.Checkbutton(options_frame, text="Add frame counter overlay",
+                        variable=self.frame_counter_var,
+                        command=self._save_frame_counter_setting)
+        counter_check.pack(side=tk.LEFT, padx=(0, 15))
+        ToolTip(counter_check, VIDEO_EXPORT_TOOLTIPS["frame_counter"])
 
         self.open_when_done_var = tk.BooleanVar(value=False)
         open_check = ttk.Checkbutton(options_frame, text="Open video when complete",
@@ -310,7 +316,6 @@ class VideoExportPanel(ttk.Frame):
         # Destructive, and applies to every render (scheduled, remote API, and the
         # Export button below), so it's config-backed rather than a preset field and
         # the label spells out what it deletes.
-        ui_cfg = self.config_manager.ui if self.config_manager else None
         self.delete_snapshots_var = tk.BooleanVar(
             value=ui_cfg.delete_snapshots_after_video if ui_cfg else False)
         delete_check = ttk.Checkbutton(options_frame, text="Delete snapshots after creating video",
@@ -614,12 +619,12 @@ class VideoExportPanel(ttk.Frame):
             self.speed_var.set(preset.speed_multiplier)
             self.resolution_var.set(preset.resolution)
             self.format_var.set(preset.format)
-            self.add_timestamp_var.set(preset.add_timestamp)
             self.preserve_originals_var.set(preset.preserve_originals)
             self.open_when_done_var.set(preset.open_when_done)
-            # Event overlays are deliberately NOT restored from the preset - they're a
-            # standing preference held in config. Switching preset to change resolution
-            # shouldn't silently stop events appearing on the video.
+            # Event overlays and the frame counter are deliberately NOT restored from
+            # the preset - they're standing preferences held in config. Switching
+            # preset to change resolution shouldn't silently change what gets drawn
+            # on the video.
 
             self.log_message(f"Loaded preset: {preset_name}")
             self.update_estimates()
@@ -722,7 +727,6 @@ class VideoExportPanel(ttk.Frame):
             speed_multiplier=self.speed_var.get(),
             resolution=self.resolution_var.get(),
             format=self.format_var.get(),
-            add_timestamp=self.add_timestamp_var.get(),
             preserve_originals=self.preserve_originals_var.get(),
             open_when_done=self.open_when_done_var.get()
         )
@@ -743,6 +747,13 @@ class VideoExportPanel(ttk.Frame):
         if not self.config_manager:
             return
         self.config_manager.ui.delete_snapshots_after_video = self.delete_snapshots_var.get()
+        self.config_manager.save_to_file()
+
+    def _save_frame_counter_setting(self):
+        """Persist the frame-counter choice; the scheduler and remote API read it too."""
+        if not self.config_manager:
+            return
+        self.config_manager.ui.frame_counter_overlay = self.frame_counter_var.get()
         self.config_manager.save_to_file()
 
     def _default_temp_dir(self) -> str:
@@ -859,6 +870,7 @@ class VideoExportPanel(ttk.Frame):
             event_overlay=ui_cfg.event_overlay if ui_cfg else self.event_overlay_var.get(),
             event_overlay_seconds=ui_cfg.event_overlay_seconds if ui_cfg else self.get_overlay_seconds(),
             event_csv=ui_cfg.event_csv if ui_cfg else self.event_csv_var.get(),
+            frame_counter=ui_cfg.frame_counter_overlay if ui_cfg else self.frame_counter_var.get(),
             temp_dir=self._selected_temp_dir())
 
         if not success:
