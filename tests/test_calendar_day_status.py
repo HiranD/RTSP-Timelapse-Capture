@@ -2,20 +2,22 @@
 Unit tests for the calendar's capture-source coloring and hover text.
 
 Widget methods are exercised unbound against a MagicMock stand-in (the
-test_scheduler_autovideo.py pattern) so no Tk root is needed; the tooltip text
-builder is a plain module function.
+test_scheduler_autovideo.py pattern) so no Tk root is needed. The color rule
+and the tooltip text builder are plain functions of a day's session list - the
+list a redraw fetches once per cell and shares between the two.
 """
 
 import calendar
 import sys
 import tempfile
+import types
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from capture_history import CaptureHistoryManager, CaptureSession  # noqa: E402
+from capture_history import CaptureSession  # noqa: E402
 from calendar_widget import TwoMonthCalendar, build_day_tooltip_text  # noqa: E402
 
 DAY = date(2026, 9, 5)
@@ -30,45 +32,46 @@ def _session(source="scheduled", images=800, video=False, status="completed",
 
 
 class CaptureKindTests(unittest.TestCase):
-    """Which color bucket a past day lands in."""
+    """Which color bucket a past day lands in, from its session list."""
 
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.history = CaptureHistoryManager(config_dir=Path(self._tmp.name))
-        self.p = mock.MagicMock()
-        self.p.capture_history = self.history
-        self.p._folder_has_images.return_value = False
-
-    def _kind(self):
-        return TwoMonthCalendar._get_capture_kind(self.p, DAY)
+    def _kind(self, sessions, folder=False):
+        return TwoMonthCalendar._capture_kind(sessions, folder)
 
     def test_scheduled_session_is_captured(self):
-        self.history.sessions[DATE] = [_session(source="scheduled")]
-        self.assertEqual(self._kind(), "captured")
+        self.assertEqual(self._kind([_session(source="scheduled")]), "captured")
 
     def test_manual_only_is_captured_other(self):
-        self.history.sessions[DATE] = [_session(source="manual")]
-        self.assertEqual(self._kind(), "captured_other")
+        self.assertEqual(self._kind([_session(source="manual")]), "captured_other")
 
     def test_mixed_day_counts_as_scheduled(self):
         """The schedule delivered, whatever else also ran that day."""
-        self.history.sessions[DATE] = [_session(source="scheduled"),
-                                       _session(source="manual", images=5)]
-        self.assertEqual(self._kind(), "captured")
+        self.assertEqual(self._kind([_session(source="scheduled"),
+                                     _session(source="manual", images=5)]), "captured")
+
+    def test_failed_scheduled_session_does_not_count(self):
+        """A 0-frame scheduled night beside a real manual session: the
+        schedule did not deliver, so the manual bucket."""
+        self.assertEqual(self._kind([_session(source="scheduled", images=0, status="failed"),
+                                     _session(source="manual")]), "captured_other")
 
     def test_folder_fallback_is_captured_other(self):
         """Frames on disk with no history entry: no proof the schedule was
         involved, so the untracked bucket."""
-        self.p._folder_has_images.return_value = True
-        self.assertEqual(self._kind(), "captured_other")
+        self.assertEqual(self._kind([], folder=True), "captured_other")
+
+    def test_failed_session_plus_frames_on_disk_is_captured_other(self):
+        self.assertEqual(self._kind([_session(images=0, status="failed")], folder=True),
+                         "captured_other")
 
     def test_nothing_is_none(self):
-        self.assertIsNone(self._kind())
+        self.assertIsNone(self._kind([]))
+        self.assertIsNone(self._kind([_session(images=0, status="failed")]))
 
     def test_folder_has_images_globs_the_date_folder(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
         p = mock.MagicMock()
-        p.snapshots_dir = Path(self._tmp.name) / "snaps"
+        p.snapshots_dir = Path(tmp.name) / "snaps"
         self.assertFalse(TwoMonthCalendar._folder_has_images(p, DAY))
         folder = p.snapshots_dir / DATE
         folder.mkdir(parents=True)
@@ -76,32 +79,43 @@ class CaptureKindTests(unittest.TestCase):
         (folder / "20260905-204100.jpg").write_bytes(b"")
         self.assertTrue(TwoMonthCalendar._folder_has_images(p, DAY))
 
+    def test_day_sessions_is_one_history_read(self):
+        p = mock.MagicMock()
+        p.capture_history.get_sessions_for_date.return_value = [_session()]
+        self.assertEqual(len(TwoMonthCalendar._day_sessions(p, DAY)), 1)
+        p.capture_history.get_sessions_for_date.assert_called_once_with(DATE)
+        p.capture_history = None
+        self.assertEqual(TwoMonthCalendar._day_sessions(p, DAY), [])
+
 
 class DateStatusTests(unittest.TestCase):
     def setUp(self):
         self.p = mock.MagicMock()
         self.p.selected_dates = set()
+        self.p._capture_kind = TwoMonthCalendar._capture_kind  # the real rule
 
-    def _status(self, d):
-        return TwoMonthCalendar._get_date_status(self.p, d, d.strftime("%Y-%m-%d"))
+    def _status(self, d, sessions=(), folder=False):
+        return TwoMonthCalendar._get_date_status(self.p, d, d.strftime("%Y-%m-%d"),
+                                                 list(sessions), folder)
 
     def test_past_day_takes_its_capture_kind(self):
         yesterday = date.today() - timedelta(days=1)
-        for kind in ("captured", "captured_other"):
-            self.p._get_capture_kind.return_value = kind
-            self.assertEqual(self._status(yesterday), kind)
+        self.assertEqual(self._status(yesterday, [_session(source="scheduled")]), "captured")
+        self.assertEqual(self._status(yesterday, [_session(source="remote")]), "captured_other")
+        self.assertEqual(self._status(yesterday, [], folder=True), "captured_other")
 
     def test_past_day_without_captures_is_past(self):
-        self.p._get_capture_kind.return_value = None
         self.assertEqual(self._status(date.today() - timedelta(days=1)), "past")
 
     def test_future_and_today_unchanged(self):
+        """Sessions never color today or a future day - a day only earns a
+        captured color once it's over."""
         tomorrow = date.today() + timedelta(days=1)
         self.assertEqual(self._status(tomorrow), "future")
         self.p.selected_dates = {tomorrow.strftime("%Y-%m-%d")}
         self.assertEqual(self._status(tomorrow), "scheduled")
         self.p.selected_dates = set()
-        self.assertEqual(self._status(date.today()), "today")
+        self.assertEqual(self._status(date.today(), [_session()]), "today")
 
     def test_status_color_map_covers_captured_other(self):
         p = mock.MagicMock()
@@ -150,17 +164,18 @@ class TooltipTextTests(unittest.TestCase):
         self.assertEqual(build_day_tooltip_text(DAY, [], False), "")
 
 
-class TooltipRefreshFolderCheckTests(unittest.TestCase):
-    """_update_month_grid stats the snapshots folder only for past days.
+class RedrawCostTests(unittest.TestCase):
+    """_update_month_grid: one history read and at most one folder probe per
+    cell, and only a past day without a successful record touches the folder.
 
-    Every redraw (each calendar click) refreshes all cells' hover text; a
-    future day can't have frames, so probing its folder is pure cost - and
-    on a network output folder, dozens of round trips per click."""
+    Every redraw (each calendar click) refreshes every cell's color and hover
+    text; a future day can't have frames, and on a network output folder each
+    probe is a round trip."""
 
-    def _widget(self):
+    def _widget(self, sessions_by_date=None):
         p = mock.MagicMock()
         p.COLORS = TwoMonthCalendar.COLORS
-        p.capture_history = None  # nothing recorded -> every day is a folder candidate
+        p.selected_dates = set()
         p._day_labels = {}
         p._day_tooltips = {}
         for mo in (0, 1):
@@ -169,36 +184,75 @@ class TooltipRefreshFolderCheckTests(unittest.TestCase):
                 for c in range(7):
                     p._day_labels[(mo, r, c)] = (mock.MagicMock(), mock.MagicMock())
                     p._day_tooltips[(mo, r, c)] = mock.MagicMock()
+        # Real decision logic on the stand-in; only the data sources are faked.
+        p.statuses = {}
+
+        def status(d, s, sessions, folder):
+            p.statuses[d] = TwoMonthCalendar._get_date_status(p, d, s, sessions, folder)
+            return p.statuses[d]
+        p._get_date_status = status
+        p._capture_kind = TwoMonthCalendar._capture_kind
+        p._get_status_color = types.MethodType(TwoMonthCalendar._get_status_color, p)
+        by_date = sessions_by_date or {}
+        p._day_sessions.side_effect = lambda d: list(by_date.get(d, []))
         p._folder_has_images.return_value = False
-        p._get_date_status.return_value = "past"
-        p._get_status_color.return_value = "#E0E0E0"
         return p
 
-    def test_past_month_checked_future_month_not(self):
+    @staticmethod
+    def _probed(p):
+        return [c.args[0] for c in p._folder_has_images.call_args_list]
+
+    def test_past_month_probed_once_per_day_future_month_never(self):
         today = date.today()
         this_first = today.replace(day=1)
         prev_first = (this_first - timedelta(days=1)).replace(day=1)
         next_first = (this_first + timedelta(days=32)).replace(day=1)
+        days = calendar.monthrange(prev_first.year, prev_first.month)[1]
 
         p = self._widget()
         TwoMonthCalendar._update_month_grid(p, 0, prev_first)
-        checked = [c.args[0] for c in p._folder_has_images.call_args_list]
-        self.assertEqual(len(checked), calendar.monthrange(prev_first.year, prev_first.month)[1])
-        self.assertTrue(all(d < today for d in checked))
+        probed = self._probed(p)
+        self.assertEqual(len(probed), days)        # exactly one probe per past day...
+        self.assertEqual(len(set(probed)), days)   # ...never the same day twice
+        self.assertEqual(p._day_sessions.call_count, days)  # and one history read each
 
         p = self._widget()
         TwoMonthCalendar._update_month_grid(p, 1, next_first)
         p._folder_has_images.assert_not_called()
 
-    def test_today_is_not_checked(self):
+    def test_today_is_not_probed(self):
         """A running session has frames on disk but no record yet - "Images on
         disk (no session record)" for today would just be misleading."""
         today = date.today()
         p = self._widget()
         TwoMonthCalendar._update_month_grid(p, 0, today.replace(day=1))
-        checked = [c.args[0] for c in p._folder_has_images.call_args_list]
-        self.assertNotIn(today, checked)
-        self.assertTrue(all(d < today for d in checked))
+        probed = self._probed(p)
+        self.assertNotIn(today, probed)
+        self.assertTrue(all(d < today for d in probed))
+
+    def test_recorded_day_skips_the_folder_and_colors_from_the_same_list(self):
+        """A day with a successful record never touches the folder, and its
+        color and hover text come from the one list that was fetched."""
+        yesterday = date.today() - timedelta(days=1)
+        p = self._widget({yesterday: [_session(source="manual", images=42)]})
+        TwoMonthCalendar._update_month_grid(p, 0, yesterday.replace(day=1))
+
+        self.assertNotIn(yesterday, self._probed(p))
+        self.assertEqual(p.statuses[yesterday], "captured_other")
+        hover_texts = [c.args[0] for tip in p._day_tooltips.values()
+                       for c in tip.update_text.call_args_list]
+        self.assertTrue(any("Manual: 20:41 - 05:12, 42 frames" in t for t in hover_texts))
+
+    def test_failed_only_day_still_probes_the_folder(self):
+        """A 0-frame record proves nothing about frames on disk (an untracked
+        capture that night), so the fallback still runs - once."""
+        yesterday = date.today() - timedelta(days=1)
+        p = self._widget({yesterday: [_session(source="remote", images=0, status="failed")]})
+        p._folder_has_images.return_value = True
+        TwoMonthCalendar._update_month_grid(p, 0, yesterday.replace(day=1))
+
+        self.assertEqual(self._probed(p).count(yesterday), 1)
+        self.assertEqual(p.statuses[yesterday], "captured_other")
 
 
 if __name__ == "__main__":

@@ -328,24 +328,24 @@ class TwoMonthCalendar(ttk.Frame):
 
                     lbl.config(text=str(day))
 
-                    # Determine cell status and color
-                    status = self._get_date_status(current_date, date_str)
+                    # One history read and at most one folder probe per cell;
+                    # the color and the hover text come from the same snapshot,
+                    # so they can't disagree. Every history mutation triggers a
+                    # redraw, so an eager refresh never goes stale. The folder
+                    # is probed only for a past day with no successful record:
+                    # a future day has no frames, and each redraw (every
+                    # calendar click) would otherwise stat dozens of
+                    # non-existent folders - noticeable on a network share.
+                    sessions = self._day_sessions(current_date)
+                    folder_has = (current_date < today
+                                  and not any(s.succeeded for s in sessions)
+                                  and self._folder_has_images(current_date))
+
+                    status = self._get_date_status(current_date, date_str, sessions, folder_has)
                     bg_color = self._get_status_color(status)
 
                     lbl.config(bg=bg_color)
                     cell_frame.config(bg=bg_color)
-
-                    # Refresh the hover text. Every history mutation triggers a
-                    # redraw, so eager refresh here can never go stale. Only
-                    # touch the snapshots folder when history has nothing, and
-                    # only for past days: a future day has no frames, and each
-                    # redraw (every calendar click) would otherwise stat dozens
-                    # of non-existent folders - noticeable on a network share.
-                    sessions = (self.capture_history.get_sessions_for_date(
-                        current_date.strftime("%Y%m%d"))
-                        if self.capture_history else [])
-                    folder_has = (not sessions and current_date < today
-                                  and self._folder_has_images(current_date))
                     tip.update_text(build_day_tooltip_text(current_date, sessions, folder_has))
 
                     # Special border for today
@@ -357,9 +357,13 @@ class TwoMonthCalendar(ttk.Frame):
                     else:
                         cell_frame.config(highlightthickness=0)
 
-    def _get_date_status(self, current_date: date, date_str: str) -> str:
+    def _get_date_status(self, current_date: date, date_str: str,
+                         sessions: List[CaptureSession], folder_has_images: bool) -> str:
         """
         Determine the status of a date.
+
+        `sessions` and `folder_has_images` are the day's facts, fetched once by
+        the caller and shared with the hover text.
 
         Returns: "captured", "captured_other", "scheduled", "past", "today", or "future"
         """
@@ -369,7 +373,7 @@ class TwoMonthCalendar(ttk.Frame):
             # Past date - captured (and by what) or plain past. Today keeps its
             # border/scheduled look even after a session - the day only earns a
             # captured color once it's over.
-            return self._get_capture_kind(current_date) or "past"
+            return self._capture_kind(sessions, folder_has_images) or "past"
         elif current_date == today:
             # Today - check if scheduled
             if date_str in self.selected_dates:
@@ -393,26 +397,28 @@ class TwoMonthCalendar(ttk.Frame):
         }
         return color_map.get(status, self.COLORS["future"])
 
-    def _get_capture_kind(self, check_date: date) -> Optional[str]:
+    def _day_sessions(self, check_date: date) -> List[CaptureSession]:
+        """The recorded sessions for a date: a copy taken under the history
+        lock, so one redraw works from one consistent list per day."""
+        if not self.capture_history:
+            return []
+        return self.capture_history.get_sessions_for_date(check_date.strftime("%Y%m%d"))
+
+    @staticmethod
+    def _capture_kind(sessions: List[CaptureSession], folder_has_images: bool) -> Optional[str]:
         """How a past date was captured, or None if it wasn't.
 
-        Returns "captured" when any session that day was scheduled (the
-        schedule delivered, whatever else also ran), "captured_other" when only
-        manual/remote sessions - or untracked frames on disk - exist. The
+        Returns "captured" when any successful session that day was scheduled
+        (the schedule delivered, whatever else also ran), "captured_other" when
+        only manual/remote sessions - or untracked frames on disk - exist. The
         folder fallback lands in the "other" bucket: without a history entry
         there's no proof the schedule was involved.
         """
-        date_str = check_date.strftime("%Y%m%d")
-
-        if self.capture_history:
-            if self.capture_history.has_scheduled_capture(date_str):
-                return "captured"
-            if self.capture_history.has_capture(date_str):
-                return "captured_other"
-
-        if self._folder_has_images(check_date):
+        successful = [s for s in sessions if s.succeeded]
+        if any(s.source == "scheduled" for s in successful):
+            return "captured"
+        if successful or folder_has_images:
             return "captured_other"
-
         return None
 
     def _folder_has_images(self, check_date: date) -> bool:

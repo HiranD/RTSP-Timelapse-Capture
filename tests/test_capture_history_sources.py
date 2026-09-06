@@ -49,6 +49,30 @@ class CaptureSessionCompatTests(unittest.TestCase):
         self.assertFalse(hasattr(session, "some_future_field"))
 
 
+class SucceededRuleTests(unittest.TestCase):
+    """CaptureSession.succeeded is the one rule behind has_capture(),
+    get_captured_dates() and the calendar's color buckets."""
+
+    def _s(self, **kw):
+        base = dict(date=DATE, start_time="2026-09-05T20:00:00",
+                    end_time="2026-09-06T05:00:00", image_count=800,
+                    video_created=False, status="completed")
+        return CaptureSession(**{**base, **kw})
+
+    def test_completed_with_images_succeeded(self):
+        self.assertTrue(self._s().succeeded)
+
+    def test_zero_images_or_non_completed_did_not(self):
+        self.assertFalse(self._s(image_count=0).succeeded)
+        self.assertFalse(self._s(status="failed").succeeded)
+        self.assertFalse(self._s(status="partial", image_count=0).succeeded)
+        # Hand-edited file: "completed" with no images is still not a capture.
+        self.assertFalse(self._s(status="completed", image_count=0).succeeded)
+
+    def test_not_serialized(self):
+        self.assertNotIn("succeeded", self._s().to_dict())
+
+
 class MultiSessionStoreTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

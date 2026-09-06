@@ -46,6 +46,13 @@ class CaptureSession:
     # correct for old entries, not merely safe.
     source: str = "scheduled"
 
+    @property
+    def succeeded(self) -> bool:
+        """Completed with at least one image - the one rule for whether a
+        session earns its day a calendar mark. Shared by the history queries
+        and the calendar (TwoMonthCalendar._capture_kind) so they can't drift."""
+        return self.status == "completed" and self.image_count > 0
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
@@ -195,23 +202,23 @@ class CaptureHistoryManager:
             True if any session that day completed with images.
         """
         with self._lock:
-            return any(s.status == "completed" and s.image_count > 0
-                       for s in self.sessions.get(date, []))
+            return any(s.succeeded for s in self.sessions.get(date, []))
 
     def has_scheduled_capture(self, date: str) -> bool:
         """
         Check if a date has a successful SCHEDULED capture session.
 
-        Drives the calendar's color split: any scheduled session makes the day
-        "captured (scheduled)"; a day with only manual/remote sessions gets its
-        own color.
+        Single-query form of the calendar's color rule: any successful
+        scheduled session makes the day "captured (scheduled)"; a day with only
+        manual/remote sessions gets its own color. The calendar itself applies
+        the same rule to the list it fetches once per cell
+        (TwoMonthCalendar._capture_kind).
 
         Args:
             date: Date string in YYYYMMDD format.
         """
         with self._lock:
-            return any(s.status == "completed" and s.image_count > 0
-                       and s.source == "scheduled"
+            return any(s.succeeded and s.source == "scheduled"
                        for s in self.sessions.get(date, []))
 
     def get_captured_dates(self) -> List[str]:
@@ -223,8 +230,7 @@ class CaptureHistoryManager:
         """
         with self._lock:
             return [date for date, day_sessions in self.sessions.items()
-                    if any(s.status == "completed" and s.image_count > 0
-                           for s in day_sessions)]
+                    if any(s.succeeded for s in day_sessions)]
 
     def update_video_created(self, date: str, video_created: bool = True):
         """
