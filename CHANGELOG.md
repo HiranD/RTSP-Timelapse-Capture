@@ -14,7 +14,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 - **The diagnostic log file no longer contains the Discord webhook URL.** Since v3.6.1, with
   "Write a log file" enabled, the config snapshot written at every capture start masked only
-  password fields, so `discord_webhook_url` went into `logspp.log` in clear text. A webhook URL
+  password fields, so `discord_webhook_url` went into `logs\app.log` in clear text. A webhook URL
   lets anyone who has it post into that channel. The masker now also hides any config key whose
   name contains `webhook`, `token`, `secret`, or `key`. **If you have shared an `app.log` (or its
   rotated `app.log.1`–`.3` backups) from a build with a webhook configured, regenerate the webhook

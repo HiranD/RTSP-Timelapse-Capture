@@ -88,7 +88,11 @@ class CaptureHistoryManager:
 
         # Three threads write history: the Tk main thread (manual/remote stops),
         # the scheduler's monitor thread (_on_session_complete), and the video
-        # export worker (update_video_created after a render).
+        # export worker (update_video_created after a render). Every public
+        # accessor takes it, readers included: one rule for touching
+        # self.sessions instead of a per-method reliance on the GIL. Not
+        # re-entrant - _save() is called with the lock already held and must
+        # never take it itself.
         self._lock = threading.Lock()
 
         self._ensure_config_dir()
@@ -162,8 +166,9 @@ class CaptureHistoryManager:
         Returns:
             CaptureSession if found, None otherwise.
         """
-        day_sessions = self.sessions.get(date)
-        return day_sessions[-1] if day_sessions else None
+        with self._lock:
+            day_sessions = self.sessions.get(date)
+            return day_sessions[-1] if day_sessions else None
 
     def get_sessions_for_date(self, date: str) -> List[CaptureSession]:
         """
@@ -189,8 +194,9 @@ class CaptureHistoryManager:
         Returns:
             True if any session that day completed with images.
         """
-        return any(s.status == "completed" and s.image_count > 0
-                   for s in self.sessions.get(date, []))
+        with self._lock:
+            return any(s.status == "completed" and s.image_count > 0
+                       for s in self.sessions.get(date, []))
 
     def has_scheduled_capture(self, date: str) -> bool:
         """
@@ -203,9 +209,10 @@ class CaptureHistoryManager:
         Args:
             date: Date string in YYYYMMDD format.
         """
-        return any(s.status == "completed" and s.image_count > 0
-                   and s.source == "scheduled"
-                   for s in self.sessions.get(date, []))
+        with self._lock:
+            return any(s.status == "completed" and s.image_count > 0
+                       and s.source == "scheduled"
+                       for s in self.sessions.get(date, []))
 
     def get_captured_dates(self) -> List[str]:
         """
