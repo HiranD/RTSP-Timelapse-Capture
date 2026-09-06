@@ -49,8 +49,8 @@ class CaptureSession:
     @property
     def succeeded(self) -> bool:
         """Completed with at least one image - the one rule for whether a
-        session earns its day a calendar mark. Shared by the history queries
-        and the calendar (TwoMonthCalendar._capture_kind) so they can't drift."""
+        session earns its day a calendar mark (TwoMonthCalendar._capture_kind
+        applies it). Kept here, beside the data it judges."""
         return self.status == "completed" and self.image_count > 0
 
     def to_dict(self) -> Dict[str, Any]:
@@ -160,23 +160,6 @@ class CaptureHistoryManager:
             self.sessions.setdefault(session.date, []).append(session)
             self._save()
 
-    def get_session(self, date: str) -> Optional[CaptureSession]:
-        """
-        Get the most recent capture session for a date.
-
-        Compatibility shim from the one-session-per-date era; new callers that
-        care about the whole day should use get_sessions_for_date().
-
-        Args:
-            date: Date string in YYYYMMDD format.
-
-        Returns:
-            CaptureSession if found, None otherwise.
-        """
-        with self._lock:
-            day_sessions = self.sessions.get(date)
-            return day_sessions[-1] if day_sessions else None
-
     def get_sessions_for_date(self, date: str) -> List[CaptureSession]:
         """
         Get all capture sessions for a date, chronological.
@@ -190,47 +173,6 @@ class CaptureHistoryManager:
         """
         with self._lock:
             return list(self.sessions.get(date, []))
-
-    def has_capture(self, date: str) -> bool:
-        """
-        Check if a date has any successful recorded capture session.
-
-        Args:
-            date: Date string in YYYYMMDD format.
-
-        Returns:
-            True if any session that day completed with images.
-        """
-        with self._lock:
-            return any(s.succeeded for s in self.sessions.get(date, []))
-
-    def has_scheduled_capture(self, date: str) -> bool:
-        """
-        Check if a date has a successful SCHEDULED capture session.
-
-        Single-query form of the calendar's color rule: any successful
-        scheduled session makes the day "captured (scheduled)"; a day with only
-        manual/remote sessions gets its own color. The calendar itself applies
-        the same rule to the list it fetches once per cell
-        (TwoMonthCalendar._capture_kind).
-
-        Args:
-            date: Date string in YYYYMMDD format.
-        """
-        with self._lock:
-            return any(s.succeeded and s.source == "scheduled"
-                       for s in self.sessions.get(date, []))
-
-    def get_captured_dates(self) -> List[str]:
-        """
-        Get all dates with successful captures.
-
-        Returns:
-            List of date strings (YYYYMMDD format).
-        """
-        with self._lock:
-            return [date for date, day_sessions in self.sessions.items()
-                    if any(s.succeeded for s in day_sessions)]
 
     def update_video_created(self, date: str, video_created: bool = True):
         """

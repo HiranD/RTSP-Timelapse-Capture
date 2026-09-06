@@ -50,8 +50,8 @@ class CaptureSessionCompatTests(unittest.TestCase):
 
 
 class SucceededRuleTests(unittest.TestCase):
-    """CaptureSession.succeeded is the one rule behind has_capture(),
-    get_captured_dates() and the calendar's color buckets."""
+    """CaptureSession.succeeded is the one rule behind the calendar's color
+    buckets (TwoMonthCalendar._capture_kind)."""
 
     def _s(self, **kw):
         base = dict(date=DATE, start_time="2026-09-05T20:00:00",
@@ -91,7 +91,7 @@ class MultiSessionStoreTests(unittest.TestCase):
         sessions = mgr.get_sessions_for_date(DATE)
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0].source, "scheduled")
-        self.assertTrue(mgr.has_capture(DATE))
+        self.assertTrue(sessions[0].succeeded)
 
     def test_sessions_on_the_same_date_accumulate(self):
         """The old last-wins overwrite let a 5-frame morning test erase the
@@ -103,30 +103,28 @@ class MultiSessionStoreTests(unittest.TestCase):
         sessions = reloaded.get_sessions_for_date(DATE)
         self.assertEqual([s.source for s in sessions], ["scheduled", "manual"])
         self.assertEqual([s.image_count for s in sessions], [800, 5])
-        self.assertTrue(reloaded.has_capture(DATE))
-        self.assertEqual(reloaded.get_captured_dates(), [DATE])
+        self.assertTrue(all(s.succeeded for s in sessions))
+        self.assertEqual(list(reloaded.sessions), [DATE])
 
-    def test_has_scheduled_capture_distinguishes_sources(self):
+    def test_source_round_trips_per_session(self):
+        """Each session keeps its own source through save and reload - the
+        calendar's color split (TwoMonthCalendar._capture_kind) reads it."""
         self.mgr.record_session(DATE, _dt(20), _dt(23), 100, source="manual")
-        self.mgr.record_session("20260906", _dt(20, day=6), _dt(23, day=6), 100,
-                                source="scheduled")
-        self.assertFalse(self.mgr.has_scheduled_capture(DATE))
-        self.assertTrue(self.mgr.has_scheduled_capture("20260906"))
-        # Mixed day: any scheduled session makes it scheduled.
         self.mgr.record_session(DATE, _dt(23, 30), _dt(23, 45), 10, source="scheduled")
-        self.assertTrue(self.mgr.has_scheduled_capture(DATE))
+        self.mgr.record_session("20260906", _dt(20, day=6), _dt(23, day=6), 100,
+                                source="remote")
+
+        reloaded = CaptureHistoryManager(config_dir=self.dir)
+        self.assertEqual([s.source for s in reloaded.get_sessions_for_date(DATE)],
+                         ["manual", "scheduled"])
+        self.assertEqual([s.source for s in reloaded.get_sessions_for_date("20260906")],
+                         ["remote"])
 
     def test_zero_frame_session_is_failed_and_not_captured(self):
         self.mgr.record_session(DATE, _dt(20), _dt(20, 1), 0, source="remote")
-        self.assertEqual(self.mgr.get_sessions_for_date(DATE)[0].status, "failed")
-        self.assertFalse(self.mgr.has_capture(DATE))
-        self.assertEqual(self.mgr.get_captured_dates(), [])
-
-    def test_get_session_shim_returns_the_last_session(self):
-        self.mgr.record_session(DATE, _dt(20), _dt(23), 800, source="scheduled")
-        self.mgr.record_session(DATE, _dt(9, day=6), _dt(9, 5, day=6), 5, source="manual")
-        self.assertEqual(self.mgr.get_session(DATE).source, "manual")
-        self.assertIsNone(self.mgr.get_session("20991231"))
+        session = self.mgr.get_sessions_for_date(DATE)[0]
+        self.assertEqual(session.status, "failed")
+        self.assertFalse(session.succeeded)
 
     def test_update_video_created_targets_most_recent_completed(self):
         """The render was built from frames - a trailing 0-frame failed session
