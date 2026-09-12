@@ -156,6 +156,14 @@ class RTSPTimelapseGUI:
         self.total_captures = 0
         self.failed_captures = 0
         self.session_start_time = None
+        # What started the current/last session ("scheduled"|"remote"|"manual");
+        # None until the first start. Drives capture-history recording on stop.
+        self._session_source = None
+        # When the current/last session's first frame arrived (set by the
+        # engine's frame callback). In "At time" start mode the engine can wait
+        # hours between the Start click and the first frame, so this - not the
+        # click - is what dates the session in capture history.
+        self._first_frame_time = None
 
         # Load existing config if available
         self.load_config()
@@ -1458,7 +1466,7 @@ class RTSPTimelapseGUI:
             self.stop_capture()
 
     def start_capture(self, from_scheduler: bool = False, show_dialogs: bool = True,
-                      immediate: bool = False):
+                      immediate: bool = False, source: str = "manual"):
         """Start the capture process
 
         Args:
@@ -1469,6 +1477,9 @@ class RTSPTimelapseGUI:
             immediate: If True (remote API / NINA), ignore the Capture-tab schedule
                 window and capture right away until explicitly stopped. Transient —
                 does not change the saved schedule.
+            source: What started the session, recorded into capture history on
+                stop: "manual" (default, the Start button) or "remote" (API/NINA).
+                Scheduler starts are tagged from from_scheduler instead.
 
         Returns:
             (success: bool, error: str | None)
@@ -1489,6 +1500,8 @@ class RTSPTimelapseGUI:
         self.total_captures = 0
         self.failed_captures = 0
         self.session_start_time = datetime.now()
+        self._session_source = "scheduled" if from_scheduler else source
+        self._first_frame_time = None
         self.update_statistics()
 
         # Create capture engine
@@ -1503,7 +1516,7 @@ class RTSPTimelapseGUI:
                 cfg["schedule"]["start_time"] = resolve_start_time(
                     "now", datetime.now(), cfg["schedule"]["start_time"])
             # The exact configuration this session will run with - the first
-            # thing to check in a remote log. Passwords masked.
+            # thing to check in a remote log. Secrets (passwords, webhook) masked.
             _LOG.debug("starting capture (from_scheduler=%s, immediate=%s, start_mode=%s): %s",
                        from_scheduler, immediate, self.start_mode_var.get(), mask_secrets(cfg))
             self.capture_engine = CaptureEngine(cfg)
@@ -1541,6 +1554,12 @@ class RTSPTimelapseGUI:
     def stop_capture(self):
         """Stop the capture process"""
         _LOG.debug("stop_capture requested (is_capturing=%s)", self.is_capturing)
+        # Snapshot before teardown: the natural-stop branch in
+        # update_status_from_engine also records sessions, and both paths run on
+        # the Tk main thread flipping is_capturing - so whichever runs first
+        # records, the other sees False and skips. Exactly one record per session.
+        was_capturing = self.is_capturing
+
         # A manual stop (button, Stop block, or /capture/stop) cancels any pending scheduled stop.
         self._cancel_scheduled_stop()
 
@@ -1558,12 +1577,60 @@ class RTSPTimelapseGUI:
         self.start_stop_tooltip.update_text(CAPTURE_TOOLTIPS["start_capture"])
         self.log_message("INFO", "Capture stopped")
 
+        if was_capturing:
+            self._record_own_session()
+
         # Re-enable config inputs
         self.set_config_inputs_state(tk.NORMAL)
         self._apply_start_mode_ui()
 
         # Update status one last time
         self.update_status()
+
+    def _record_own_session(self):
+        """Record a finished manual/remote session to capture history (main thread).
+
+        Scheduler-started sessions are deliberately skipped: the scheduler's own
+        on_session_complete path records those (scheduling_panel), and recording
+        here too would double-count the night. Manual sessions that saved no
+        frames are skipped as well - see below.
+        """
+        if self._session_source in (None, "scheduled") or self.session_start_time is None:
+            return
+        if self._session_source == "manual" and self.total_captures == 0:
+            # Almost always a Start/Stop while testing, with the user watching the
+            # log: a "0 frames (failed)" line in the calendar's hover text would be
+            # clutter, and with no frames the date is only a guess anyway. Remote
+            # (and scheduled) sessions run unattended, so their empty runs stay
+            # recorded as evidence that the night failed.
+            _LOG.debug("manual session saved no frames - not recorded to history")
+            return
+        try:
+            # The session starts when frames start, not when Start was clicked:
+            # in "At time" mode the engine waits for the window, so a morning
+            # click for tonight's window would otherwise be filed - via the
+            # rollover rule below - under the previous night, with the click
+            # shown as the start. With no frames at all the click is all there is.
+            started = self._first_frame_time or self.session_start_time
+            # The owning night: a post-midnight start belongs to the previous
+            # date - the same rule the snapshot folders follow.
+            rollover = self.config_manager.schedule.folder_rollover_hour
+            date_str = effective_date(started, rollover).strftime("%Y%m%d")
+            get_capture_history().record_session(
+                date=date_str,
+                start_time=started,
+                end_time=datetime.now(),
+                # Per-session counter - unlike a folder glob, still correct when
+                # the session crossed the folder rollover.
+                image_count=self.total_captures,
+                video_created=False,
+                source=self._session_source)
+            self.log_message("INFO", f"Session recorded to history: "
+                             f"{self.total_captures} frame(s), {self._session_source}")
+            if hasattr(self, "scheduling_panel"):
+                self.scheduling_panel.refresh_calendar()
+        except Exception as e:
+            self.log_message("WARNING", f"Could not record session to history: {e}")
 
     # ------------------------------------------------- Remote control HTTP API
 
@@ -1678,7 +1745,7 @@ class RTSPTimelapseGUI:
         def _start():
             if self.is_capturing:
                 return True, None, self._build_status()  # already capturing — idempotent
-            ok, err = self.start_capture(show_dialogs=False, immediate=True)
+            ok, err = self.start_capture(show_dialogs=False, immediate=True, source="remote")
             return ok, err, (self._build_status() if ok else None)
         return self._run_on_ui(_start)
 
@@ -1702,7 +1769,7 @@ class RTSPTimelapseGUI:
             if stop_at_dt <= datetime.now():
                 return False, "stop_at is in the past", None
             if not self.is_capturing:
-                ok, err = self.start_capture(show_dialogs=False, immediate=True)
+                ok, err = self.start_capture(show_dialogs=False, immediate=True, source="remote")
                 if not ok:
                     return False, err, None
             # Derive 'since' from the live session start (not "now"), so the render covers the whole
@@ -1898,8 +1965,11 @@ class RTSPTimelapseGUI:
 
     def on_frame_captured(self, frame):
         """Callback for frame capture"""
-        # Update statistics
+        # Update statistics. Engine thread: plain attribute writes, the same
+        # way total_captures has always been kept.
         self.total_captures += 1
+        if self._first_frame_time is None:
+            self._first_frame_time = datetime.now()
 
         # Update last capture time and statistics on main thread
         def update_ui():
@@ -1966,6 +2036,10 @@ class RTSPTimelapseGUI:
             # Re-enable config inputs
             self.set_config_inputs_state(tk.NORMAL)
             self._apply_start_mode_ui()
+            # A session ending on its own (end time, error) never passes through
+            # stop_capture, so record it here; the `and self.is_capturing` gate
+            # above is what stops this firing again after a stop_capture run.
+            self._record_own_session()
             # A scheduled stop with create_video was pending: render what was
             # captured now rather than never (the 2026-07-27 outage lost a whole
             # night's video this way). After teardown, so events.jsonl is closed.
@@ -2219,6 +2293,7 @@ class RTSPTimelapseGUI:
                 event_overlay=self.config_manager.ui.event_overlay,
                 event_overlay_seconds=self.config_manager.ui.event_overlay_seconds,
                 event_csv=self.config_manager.ui.event_csv,
+                frame_counter=self.config_manager.ui.frame_counter_overlay,
                 temp_dir=self.config_manager.ui.temp_export_dir)
             if not success:
                 self.log_message("ERROR", f"[Auto Video] {msg}")

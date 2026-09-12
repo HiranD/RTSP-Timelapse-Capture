@@ -213,7 +213,8 @@
 - **Quality (CRF)**: 18 = visually lossless, 20 = default, 23+ = smaller files.
 - **Speed Multiplier**: Skip frames to speed up (2×, 4×, 8×, 16×, 32×).
 - **Resolution**: Keep original size or scale to 4K / 1080p / 720p / 480p / 360p.
-- **Overlay**: Optional frame counter overlay for QA workflows.
+- **Overlay**: Optional frame counter overlay for QA workflows. An app setting (not part of the
+  preset) — it applies to every render, including scheduled and remote-API videos, until unticked.
 
 Example outputs for 1,234 images captured over 6 hours:
 ```
@@ -285,8 +286,10 @@ Choose between two scheduling modes:
 
 2. **Select Dates on Calendar**
    - Click dates to toggle selection (blue = scheduled)
-   - Green dates = past dates with captured images
+   - Green dates = past dates captured by the scheduler
+   - Plum dates = past dates captured manually or via the remote API (NINA plugin)
    - Gray dates = past dates without captures
+   - Hover a captured date to see its sessions (source, times, frame count, video)
    - Red border = today
    - Use **Select All** / **Clear All** buttons for bulk operations
    - Navigate months with **<** and **>** buttons

@@ -38,12 +38,14 @@ class VideoExportSettings:
     resolution: str = 'original'  # 'original', '1920x1080', '1280x720', etc.
     format: str = 'mp4'  # 'mp4', 'avi', 'mkv', 'webm'
     codec: str = 'libx264'
-    add_timestamp: bool = False
     preserve_originals: bool = True
     open_when_done: bool = False
-    # NOTE: event overlays are deliberately NOT a preset field. They're a standing
-    # app preference in config/app_config.json (UIConfig.event_overlay), so there is
-    # one place to configure them and switching preset can't silently turn them off.
+    # NOTE: event overlays and the frame counter are deliberately NOT preset fields.
+    # They're standing app preferences in config/app_config.json (UIConfig.event_overlay
+    # / UIConfig.frame_counter_overlay), so there is one place to configure them and
+    # switching preset can't silently change what gets drawn on the video. The frame
+    # counter (add_timestamp) used to live here; from_dict drops the stale key when
+    # loading presets saved by older versions.
 
     def to_dict(self) -> dict:
         """Convert to dictionary"""
@@ -67,7 +69,6 @@ class PresetManager:
             resolution='original',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),
@@ -78,7 +79,6 @@ class PresetManager:
             resolution='original',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),
@@ -89,7 +89,6 @@ class PresetManager:
             resolution='original',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),
@@ -100,7 +99,6 @@ class PresetManager:
             resolution='1280x720',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),
@@ -111,7 +109,6 @@ class PresetManager:
             resolution='854x480',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),
@@ -122,7 +119,6 @@ class PresetManager:
             resolution='original',
             format='mp4',
             codec='libx264',
-            add_timestamp=False,
             preserve_originals=True,
             open_when_done=False
         ),

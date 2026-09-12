@@ -67,15 +67,8 @@ SCHEDULING_TOOLTIPS = {
     ),
 
     # Calendar
-    "calendar": (
-        "Click on dates to schedule captures.\n\n"
-        "Colors:\n"
-        "  Green: Past date with captured images\n"
-        "  Blue: Scheduled for capture\n"
-        "  Gray: Past date without captures\n"
-        "  Red border: Today\n\n"
-        "Use < > arrows to navigate months."
-    ),
+    # (No whole-calendar tooltip: the legend beside the calendar documents the
+    # colors, and each day cell has its own hover detail.)
     "select_all": (
         "Select all future dates in the visible months.\n"
         "Useful for scheduling a continuous capture period."

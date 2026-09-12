@@ -96,6 +96,12 @@ class ToolTip:
         """
         Display the tooltip window near the widget.
         """
+        # Nothing to say: the calendar's day cells hold one long-lived ToolTip
+        # each whose text is legitimately empty for days with no sessions -
+        # popping an empty box would be worse than staying quiet.
+        if not self.text:
+            return
+
         # Don't show if widget is disabled
         if str(self.widget.cget("state")) == "disabled":
             return

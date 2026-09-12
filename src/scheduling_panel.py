@@ -323,7 +323,9 @@ class SchedulingPanel(ttk.Frame):
             on_selection_change=self._on_calendar_selection_change
         )
         self.calendar.grid(row=0, column=0, sticky="nsew")
-        ToolTip(self.calendar, SCHEDULING_TOOLTIPS["calendar"])
+        # No widget-level ToolTip here: it never displayed anyway (ToolTip
+        # queries the -state option, which ttk.Frame lacks -> TclError before
+        # the popup was built), and the calendar now has per-day hover details.
 
     def _create_video_section(self, parent: ttk.LabelFrame):
         """Create auto video settings widgets"""
@@ -695,7 +697,11 @@ class SchedulingPanel(ttk.Frame):
     def _stop_scheduler(self):
         """Stop the astronomical scheduler"""
         if self.scheduler:
-            # If capture is running due to scheduler, stop it first
+            # If capture is running due to scheduler, stop it first.
+            # Known gap: this path bypasses the scheduler's _stop_capture_session,
+            # so on_session_complete never fires and the in-flight scheduled
+            # session is not recorded to capture history (pre-existing; fabricating
+            # a session-complete from here would race the monitor thread).
             if self.scheduler.capture_active:
                 self._log("INFO", "Stopping scheduled capture...")
                 if self.stop_capture_callback:
@@ -814,6 +820,15 @@ class SchedulingPanel(ttk.Frame):
                 # render exactly this session (session-aware, multi-folder).
                 self.create_video_callback(date_str, session_start)
 
+    def refresh_calendar(self):
+        """Redraw the calendar after capture history changed.
+
+        Public entry point for gui_app (manual/remote session recording) so it
+        doesn't have to reach into the widget internals.
+        """
+        if self._widget_alive() and hasattr(self, 'calendar'):
+            self.calendar.refresh()
+
     def _record_capture_session(self, date_str: str):
         """Record a completed capture session to history"""
         try:
@@ -828,20 +843,23 @@ class SchedulingPanel(ttk.Frame):
             end_time = datetime.now()
             start_time = self.session_start_time or end_time
 
-            # Record to history
+            # Record to history. The single-folder glob above is fine here: the
+            # scheduler's session date IS the owning/effective date by
+            # construction, so this session's frames live in that one folder.
             self.capture_history.record_session(
                 date=date_str,
                 start_time=start_time,
                 end_time=end_time,
                 image_count=image_count,
-                video_created=False  # Will be updated after video creation
+                video_created=False,  # Will be updated after video creation
+                source="scheduled"    # explicit, though it's the default
             )
 
             self._log("INFO", f"Recorded session: {image_count} images captured")
 
             # Refresh calendar to show new captured date
             if hasattr(self, 'calendar'):
-                self.after(100, self.calendar._update_display)
+                self.after(100, self.calendar.refresh)
 
         except Exception as e:
             self._log("WARNING", f"Could not record session to history: {e}")
