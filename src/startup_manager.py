@@ -19,10 +19,7 @@ import sys
 import platform
 from pathlib import Path
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 LOG = get_logger("startup")
 

@@ -52,10 +52,7 @@ import queue
 import cv2
 import numpy as np
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 # File-log detail channel; near-free while file logging is off (see app_logging).
 LOG = get_logger("capture")

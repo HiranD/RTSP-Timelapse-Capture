@@ -13,10 +13,7 @@ from typing import Optional, Any
 from dataclasses import dataclass, asdict, field, fields
 from typing import List
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 LOG = get_logger("config")
 

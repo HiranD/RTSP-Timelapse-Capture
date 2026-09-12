@@ -12,6 +12,13 @@ All notable changes to this project are documented in this file.
   video was created.
 
 ### Fixed
+- **Manual and NINA nights could stay gray on the calendar until the app was restarted, and the
+  history file could lose sessions.** The shared capture history was loaded twice, once per import
+  path (`capture_history` and `src.capture_history`), so the session recorder and the calendar held
+  different copies of the history file and each copy's save overwrote the other's. Every module now
+  imports shared code the same way, so there is exactly one history in memory (and one copy of every
+  other module in the exe). In 3.6.x the same double load reverted a scheduled night's "video
+  created" mark when the next night was recorded.
 - **The diagnostic log file no longer contains the Discord webhook URL.** Since v3.6.1, with
   "Write a log file" enabled, the config snapshot written at every capture start masked only
   password fields, so `discord_webhook_url` went into `logs\app.log` in clear text. A webhook URL

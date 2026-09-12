@@ -11,10 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 LOG = get_logger("presets")
 

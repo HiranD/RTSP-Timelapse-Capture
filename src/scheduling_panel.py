@@ -16,26 +16,15 @@ from typing import Optional, Set
 from datetime import datetime
 from pathlib import Path
 
-try:
-    from src.calendar_widget import TwoMonthCalendar
-    from src.twilight_calculator import TwilightCalculator
-    from src.config_manager import ConfigManager
-    from src.preset_manager import PresetManager
-    from src.astro_scheduler import AstroScheduler
-    from src.tooltip import ToolTip
-    from src.scheduling_tooltips import SCHEDULING_TOOLTIPS
-    from src.capture_history import get_capture_history
-    from src.app_logging import get_logger
-except ImportError:
-    from calendar_widget import TwoMonthCalendar
-    from twilight_calculator import TwilightCalculator
-    from config_manager import ConfigManager
-    from preset_manager import PresetManager
-    from astro_scheduler import AstroScheduler
-    from tooltip import ToolTip
-    from scheduling_tooltips import SCHEDULING_TOOLTIPS
-    from capture_history import get_capture_history
-    from app_logging import get_logger
+from calendar_widget import TwoMonthCalendar
+from twilight_calculator import TwilightCalculator
+from config_manager import ConfigManager
+from preset_manager import PresetManager
+from astro_scheduler import AstroScheduler
+from tooltip import ToolTip
+from scheduling_tooltips import SCHEDULING_TOOLTIPS
+from capture_history import get_capture_history
+from app_logging import get_logger
 
 LOG = get_logger("scheduling")
 

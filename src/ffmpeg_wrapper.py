@@ -14,10 +14,7 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple, Callable, Dict, Any
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 LOG = get_logger("ffmpeg")
 

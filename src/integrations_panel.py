@@ -17,16 +17,10 @@ ConfigManager and persists via save_to_file(). "Start with Windows" is registry-
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-try:
-    from src.config_manager import ConfigManager
-    from src.tooltip import ToolTip
-    from src import startup_manager
-    from src.app_logging import get_logger
-except ImportError:
-    from config_manager import ConfigManager
-    from tooltip import ToolTip
-    import startup_manager
-    from app_logging import get_logger
+from config_manager import ConfigManager
+from tooltip import ToolTip
+import startup_manager
+from app_logging import get_logger
 
 LOG = get_logger("integrations")
 
