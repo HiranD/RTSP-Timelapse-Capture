@@ -18,14 +18,9 @@ from typing import Set, Callable, List, Optional
 from pathlib import Path
 import calendar
 
-try:
-    from src.capture_history import get_capture_history, CaptureHistoryManager, CaptureSession
-    from src.app_logging import get_logger
-    from src.tooltip import ToolTip
-except ImportError:
-    from capture_history import get_capture_history, CaptureHistoryManager, CaptureSession
-    from app_logging import get_logger
-    from tooltip import ToolTip
+from capture_history import get_capture_history, CaptureHistoryManager, CaptureSession
+from app_logging import get_logger
+from tooltip import ToolTip
 
 LOG = get_logger("calendar")
 

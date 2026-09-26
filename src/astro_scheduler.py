@@ -16,16 +16,10 @@ from datetime import datetime, date
 from typing import Optional, Callable
 from pathlib import Path
 
-try:
-    from src.twilight_calculator import TwilightCalculator, DarknessWindow
-    from src.config_manager import ConfigManager
-    from src.capture_engine import effective_date
-    from src.app_logging import get_logger
-except ImportError:
-    from twilight_calculator import TwilightCalculator, DarknessWindow
-    from config_manager import ConfigManager
-    from capture_engine import effective_date
-    from app_logging import get_logger
+from twilight_calculator import TwilightCalculator, DarknessWindow
+from config_manager import ConfigManager
+from capture_engine import effective_date
+from app_logging import get_logger
 
 # File-log detail. The monitor loop polls every 15s, so lines here are
 # transition-based (decisions that changed), never per-poll.

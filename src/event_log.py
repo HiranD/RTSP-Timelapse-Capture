@@ -33,10 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
-try:
-    from src.app_logging import get_logger, trunc
-except ImportError:
-    from app_logging import get_logger, trunc
+from app_logging import get_logger, trunc
 
 LOG = get_logger("events")
 

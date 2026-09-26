@@ -36,10 +36,7 @@ import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-try:
-    from src.app_logging import get_logger
-except ImportError:
-    from app_logging import get_logger
+from app_logging import get_logger
 
 # The event wire format is owned by event_log (stdlib-only, no GUI), so the
 # handler parses timestamps with the same format the log writes.
