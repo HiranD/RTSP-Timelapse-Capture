@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.6.1"
+set "VERSION=3.7.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,30 +69,32 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    First-Frame Fix + Diagnostic Logging
+echo    Reconnect Crash Fix + Calendar Session History
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * FIXED: cameras whose first frame arrives more than 5 seconds
-echo     after the stream opens ^(seen with H.265 over a high-latency
-echo     link^) can now capture at all. Capture used to give up exactly
-echo     5s after every connect and reconnect forever with zero frames
-echo     - even while Test Connection passed. A freshly opened stream
-echo     now gets a 15-second first-frame grace.
-echo   * FIXED: a reconnect only counts once a frame has actually
-echo     arrived, so the escalating retry backoff engages properly
-echo     against a camera that opens but never sends frames ^(instead
-echo     of reopening it every ~12 seconds all night^).
-echo   * IMPROVED: Test Connection now reports timing - "open X.Xs,
-echo     first frame +Y.Ys" - so a slow-starting camera is visible
-echo     straight from the success message.
-echo   * NEW: optional diagnostic log file. Integrations tab -^>
-echo     Application -^> "Write a log file" saves a detailed
-echo     logs\app.log next to the app ^(rotating, ~5 MB x 3 kept^):
-echo     connections with timing, frames, renders, scheduler decisions,
-echo     settings changes - with passwords always masked. Turn it on
-echo     when reporting a problem, reproduce it, then send the logs
-echo     folder. Off by default.
+echo   * FIXED: the app no longer crashes when a reconnect happens while
+echo     the camera has stalled a read. The 5-minute proactive reconnect
+echo     closed the stream even when the background reader was still
+echo     inside a read on it, killing the app with no error message
+echo     ^(Windows logged an APPCRASH^). The reader now closes the stream
+echo     itself once its read returns.
+echo   * NEW: the calendar shows how each night was captured - green for
+echo     the scheduler, plum for the Start button or the NINA plugin.
+echo     Hover a captured day to see its sessions: source, start and end
+echo     times, frame count, and whether a video was created.
+echo   * FIXED: nights captured manually or via NINA are now recorded, so
+echo     they keep their calendar mark after "Delete snapshots after
+echo     creating video" cleans up, and they appear on the calendar as
+echo     soon as the session ends instead of after a restart.
+echo   * FIXED: unticking "Add frame counter overlay" now turns it off
+echo     for every video, including scheduled and NINA renders. It is now
+echo     an app setting rather than part of the preset - after upgrading,
+echo     tick it once if you want the counter.
+echo   * SECURITY: the diagnostic log no longer contains the Discord
+echo     webhook URL. If you shared a logs\app.log from v3.6.1 with a
+echo     webhook set, regenerate the webhook in Discord and paste the new
+echo     URL into the app.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE

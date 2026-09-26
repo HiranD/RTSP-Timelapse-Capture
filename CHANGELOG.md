@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.7.0] - 2026-09-26
 
 ### Added
 - **The calendar now distinguishes how a night was captured.** Days captured by the astronomical
