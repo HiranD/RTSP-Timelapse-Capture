@@ -21,6 +21,7 @@ import shutil
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
+import queue
 from datetime import datetime
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageTk
@@ -99,6 +100,9 @@ _FILE_LOG_LEVELS = {
 # App-level detail (user actions, session parameters) for the file log.
 _LOG = get_logger("app")
 
+# How often the Tk main loop runs work queued by background threads (_post_to_ui).
+_UI_PUMP_MS = 50
+
 # Configure FFmpeg environment for Annke camera compatibility
 # These settings improve RTSP stream stability for IP cameras
 os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
@@ -126,6 +130,10 @@ class RTSPTimelapseGUI:
 
     def __init__(self, root):
         self.root = root
+        # Work handed to the Tk thread by background threads (see _post_to_ui).
+        # Pumping starts before anything below can spawn a thread that logs.
+        self._ui_calls = queue.SimpleQueue()
+        self._pump_ui_calls()
         self.root.title("RTSP Timelapse Capture System")
         self.root.geometry("1200x900")
         self.root.minsize(1000, 850)
@@ -1273,7 +1281,7 @@ class RTSPTimelapseGUI:
         if threading.current_thread() is threading.main_thread():
             append()
         else:
-            self.root.after(0, append)
+            self._post_to_ui(append)
 
     def clear_log(self):
         """Clear the activity log"""
@@ -1709,11 +1717,48 @@ class RTSPTimelapseGUI:
         """Lock/unlock the Remote API control so the two stay mutually exclusive."""
         self.integrations_panel.set_remote_api_control_enabled(not enabled)
 
+    def _post_to_ui(self, func):
+        """Queue func to run on the Tk main thread. Safe to call from any thread.
+
+        Don't call root.after() from a background thread instead. The first Tk call
+        on a thread makes Tcl allocate per-thread state that only Tcl_FinalizeThread
+        frees, and Python threads never run it. The remote API serves each request
+        on a new thread, so one after() per /status poll leaked ~17 KB and a handle
+        per request: 11 GB over three weeks of the NINA dock panel polling every 3 s.
+        A plain queue drained by _pump_ui_calls keeps every Tcl call on the Tk thread.
+        """
+        self._ui_calls.put(func)
+
+    def _pump_ui_calls(self):
+        """Run the work background threads queued via _post_to_ui, then re-arm (Tk thread).
+
+        Polled rather than woken: any wake-up (after(), event_generate()) would itself
+        be a Tk call from the background thread.
+        """
+        try:
+            while True:
+                try:
+                    func = self._ui_calls.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    func()
+                except Exception:
+                    # One failing call must not stop the pump - every remote API
+                    # request waits on it.
+                    _LOG.exception("UI call queued from a background thread failed")
+        finally:
+            try:
+                self.root.after(_UI_PUMP_MS, self._pump_ui_calls)
+            except tk.TclError:
+                pass  # window destroyed - nothing left to pump
+
     def _run_on_ui(self, func, timeout=20):
         """Run func on the Tk main thread and return its result.
 
         The HTTP server runs on daemon threads and Tk is not thread-safe, so we
-        hop onto the main loop via after() and block the caller until it finishes.
+        hand func to the main loop via _post_to_ui and block the caller until it
+        finishes.
         """
         result = {}
         done = threading.Event()
@@ -1726,7 +1771,7 @@ class RTSPTimelapseGUI:
             finally:
                 done.set()
 
-        self.root.after(0, runner)
+        self._post_to_ui(runner)
         if not done.wait(timeout):
             raise TimeoutError("UI call timed out")
         if "error" in result:
@@ -1791,7 +1836,7 @@ class RTSPTimelapseGUI:
         def _waiter():
             delay = (stop_at_dt - datetime.now()).total_seconds()
             if not cancel.wait(timeout=max(0, delay)):
-                self.root.after(0, lambda: self._do_scheduled_stop(cancel, create_video, since))
+                self._post_to_ui(lambda: self._do_scheduled_stop(cancel, create_video, since))
 
         self._sched_thread = threading.Thread(target=_waiter, name="ScheduledStop", daemon=True)
         self._sched_thread.start()
