@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.7.1] - 2026-10-23
 
 ### Fixed
 - **The remote API no longer leaks memory on every request.** Each request is served on a new

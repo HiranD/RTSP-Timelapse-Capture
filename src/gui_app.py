@@ -86,7 +86,7 @@ import startup_manager
 
 # App version reported by the remote API's /health endpoint. Keep in sync with
 # src/__init__.py / version_info.txt on release.
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.7.1"
 
 # Activity-log level names -> logging module levels, for the optional file log.
 _FILE_LOG_LEVELS = {

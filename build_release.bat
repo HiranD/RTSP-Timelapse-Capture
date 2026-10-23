@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.7.0"
+set "VERSION=3.7.1"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,32 +69,18 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Reconnect Crash Fix + Calendar Session History
+echo    Remote API Memory Leak Fix
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * FIXED: the app no longer crashes when a reconnect happens while
-echo     the camera has stalled a read. The 5-minute proactive reconnect
-echo     closed the stream even when the background reader was still
-echo     inside a read on it, killing the app with no error message
-echo     ^(Windows logged an APPCRASH^). The reader now closes the stream
-echo     itself once its read returns.
-echo   * NEW: the calendar shows how each night was captured - green for
-echo     the scheduler, plum for the Start button or the NINA plugin.
-echo     Hover a captured day to see its sessions: source, start and end
-echo     times, frame count, and whether a video was created.
-echo   * FIXED: nights captured manually or via NINA are now recorded, so
-echo     they keep their calendar mark after "Delete snapshots after
-echo     creating video" cleans up, and they appear on the calendar as
-echo     soon as the session ends instead of after a restart.
-echo   * FIXED: unticking "Add frame counter overlay" now turns it off
-echo     for every video, including scheduled and NINA renders. It is now
-echo     an app setting rather than part of the preset - after upgrading,
-echo     tick it once if you want the counter.
-echo   * SECURITY: the diagnostic log no longer contains the Discord
-echo     webhook URL. If you shared a logs\app.log from v3.6.1 with a
-echo     webhook set, regenerate the webhook in Discord and paste the new
-echo     URL into the app.
+echo   * FIXED: the remote API no longer leaks memory on every request.
+echo     Each request leaked about 17 KB and one Windows handle, so the
+echo     NINA plugin's status panel, polling every 3 seconds, grew the
+echo     app by about 0.5 GB a day. Left running for weeks, the app could
+echo     use up the PC's memory and stall other software such as PHD2 and
+echo     NINA. Memory now stays flat however long the panel polls.
+echo   * If you use the NINA status panel and cannot upgrade yet, restart
+echo     the app every few days.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
