@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **The remote API no longer leaks memory on every request.** Each request is served on a new
+  thread, and that thread scheduled its Tk work itself. Tcl allocates per-thread state on a
+  thread's first Tk call and never frees it for Python threads, so every request leaked about
+  17 KB and one handle. The NINA plugin's status panel polls `/status` every 3 seconds, which is
+  about 0.5 GB a day. On a test rig left running for four weeks the app reached 11 GB and
+  starved the PC of memory: PHD2's guide camera hung and the NINA sequence stalled behind it.
+  Request threads now only queue their work, and the Tk thread runs it, so memory stays flat
+  however long the panel polls. **If you run the NINA status panel on an older build, restart the
+  app every few days until you upgrade.**
+
 ## [3.7.0] - 2026-09-26
 
 ### Added
