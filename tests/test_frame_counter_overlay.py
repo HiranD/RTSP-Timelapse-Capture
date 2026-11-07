@@ -75,7 +75,7 @@ class FrameCounterExportPathTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.snapshots = Path(self._tmp.name) / "20260905"
         self.snapshots.mkdir()
-        # Placeholder frames are enough: with events and temp copies off, nothing
+        # Placeholder frames are enough: with events off and no export run, nothing
         # opens them - scan_folder only parses the timestamped names.
         for i in range(3):
             when = self.T0 + timedelta(seconds=30 * i)
@@ -87,8 +87,9 @@ class FrameCounterExportPathTests(unittest.TestCase):
         settings = VideoExportSettings(preserve_originals=False)
         ok, collection, msg = self.ctrl.scan_folder(self.snapshots)
         self.assertTrue(ok, msg)
+        # Time-named frames always get temp copies; stage them in the test's tmp dir.
         ok, job, msg = self.ctrl.prepare_export(
-            settings, collection, self.output_file, **kwargs)
+            settings, collection, self.output_file, temp_dir=self._tmp.name, **kwargs)
         self.assertTrue(ok, msg)
         return job
 

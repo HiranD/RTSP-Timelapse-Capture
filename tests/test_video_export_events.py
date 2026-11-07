@@ -178,16 +178,20 @@ class ExportEventOverlayTests(unittest.TestCase):
         job = self._prepare(event_overlay=True, preserve_originals=False)
         self.assertTrue(job.use_temp_copies)
         self.assertIsNotNone(job.temp_folder)
-        self.assertTrue(any("preserve originals" in m for m in self.messages), self.messages)
+        self.assertTrue(any("Event overlays need" in m for m in self.messages), self.messages)
 
+    # These frames are named by time, so they're copied anyway (see
+    # test_video_export_numbering). Check only that the overlay rule didn't fire.
     def test_no_forcing_when_overlay_disabled(self):
         self._default_events()
         job = self._prepare(event_overlay=False, preserve_originals=False)
-        self.assertFalse(job.use_temp_copies)
+        self.assertFalse(job.draw_captions)
+        self.assertFalse(any("Event overlays need" in m for m in self.messages), self.messages)
 
     def test_no_forcing_when_session_logged_nothing(self):
         job = self._prepare(event_overlay=True, preserve_originals=False)
-        self.assertFalse(job.use_temp_copies)
+        self.assertFalse(job.draw_captions)
+        self.assertFalse(any("Event overlays need" in m for m in self.messages), self.messages)
 
     # -------------------------------------------------------------- drawing
 

@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Video export no longer fails when "Preserve original filenames (create temp copies)" is
+  unticked.** With the box unticked, the export told FFmpeg to read frames named `000000.jpg`,
+  `000001.jpg`, … straight from the source folder. The app names its snapshots by capture time,
+  so FFmpeg found nothing and the export stopped with "Could not find no file with path
+  …%06d.jpg". The automatic video after a session failed the same way if the selected preset had
+  the box unticked and there were no session events to draw. Now the export makes the numbered
+  copies whenever the frames aren't already named that way, and says so in the export log.
+
 ## [3.8.0] - 2026-11-07
 
 ### Added

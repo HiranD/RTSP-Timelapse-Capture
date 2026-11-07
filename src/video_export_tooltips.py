@@ -82,9 +82,11 @@ VIDEO_EXPORT_TOOLTIPS = {
     ),
 
     "preserve_originals": (
-        "Creates temporary numbered copies for FFmpeg processing. "
-        "Your original timestamped files remain untouched. "
-        "Recommended: Keep enabled."
+        "Copies the frames to the temp folder as 000000.jpg, 000001.jpg, ... for FFmpeg. "
+        "Your original files are never renamed or changed.\n\n"
+        "When unticked, the copies are skipped only if the frames are already named "
+        "that way. The app's own snapshots are named by capture time, so they are "
+        "always copied."
     ),
 
     "frame_counter": (
