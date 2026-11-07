@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [3.8.0] - 2026-11-07
 
 ### Added
 - **Find button next to the camera's IP Address.** It searches the local network and lists the

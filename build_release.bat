@@ -3,7 +3,7 @@ REM Build script for RTSP Timelapse Capture System
 REM Creates Windows executable using PyInstaller
 
 REM === Release version (update this one line per release) ===
-set "VERSION=3.7.1"
+set "VERSION=3.8.0"
 
 echo ========================================
 echo RTSP Timelapse - Windows Release Build v%VERSION%
@@ -69,18 +69,19 @@ echo [5/5] Creating user guide...
 (
 echo ================================================================================
 echo    RTSP Timelapse Capture System v%VERSION%
-echo    Remote API Memory Leak Fix
+echo    Find Camera
 echo ================================================================================
 echo.
 echo WHAT'S NEW IN v%VERSION%:
-echo   * FIXED: the remote API no longer leaks memory on every request.
-echo     Each request leaked about 17 KB and one Windows handle, so the
-echo     NINA plugin's status panel, polling every 3 seconds, grew the
-echo     app by about 0.5 GB a day. Left running for weeks, the app could
-echo     use up the PC's memory and stall other software such as PHD2 and
-echo     NINA. Memory now stays flat however long the panel polls.
-echo   * If you use the NINA status panel and cannot upgrade yet, restart
-echo     the app every few days.
+echo   * NEW: a Find button next to the camera's IP Address. It searches
+echo     the local network and lists the cameras that answer ^(IP address,
+echo     model, MAC^). Pick one and its address is filled in for you.
+echo   * Find recognises your camera after the router gives it a new IP
+echo     address ^(DHCP^). The app remembers the camera's MAC address after
+echo     each successful connection, and Find marks your camera at its new
+echo     address. Click Use Selected to update the address.
+echo   * Find is read-only: it changes nothing on the camera and needs no
+echo     password. The camera and the PC must be on the same network.
 echo.
 echo ================================================================================
 echo QUICK START GUIDE
@@ -101,6 +102,8 @@ echo      sensible defaults - nothing is lost.
 echo.
 echo 2. CONFIGURE CAMERA ^(Capture Tab^)
 echo    ^> Enter camera IP address ^(e.g., 192.168.0.101^)
+echo      Don't know it? Click "Find" next to the field to list the
+echo      cameras on your network.
 echo    ^> Enter username and password
 echo    ^> Set stream path - must match your camera brand
 echo      ^(Hikvision /Streaming/Channels/101, Dahua
