@@ -379,6 +379,16 @@ class VideoExportController:
                     log_callback("Multi-folder render needs temporary copies - "
                                  "'preserve originals' enabled for this export")
 
+            # The non-temp path only works for frames already named 000000.jpg,
+            # 000001.jpg, ... The app's own snapshots are named by capture time
+            # (YYYYMMDD-HHMMSS.jpg), so for them ffmpeg would find no input at all.
+            if not use_temp_copies and not self._is_numbered_sequence(image_collection):
+                use_temp_copies = True
+                if log_callback:
+                    log_callback("Frames aren't named 000000.jpg, 000001.jpg, ... so they "
+                                 "need temporary copies - 'preserve originals' enabled "
+                                 "for this export")
+
             LOG.debug("prepare_export: %d image(s) -> %s (fps=%s, crf=%s, speed=%sx, "
                       "res=%s, temp_copies=%s, captions=%s, csv=%s, counter=%s)",
                       image_collection.total_count, output_file, settings.framerate,
@@ -421,6 +431,23 @@ class VideoExportController:
 
         except Exception as e:
             return False, None, f"Error preparing export: {str(e)}"
+
+    @staticmethod
+    def _is_numbered_sequence(image_collection: ImageCollection) -> bool:
+        """True if the frames are exactly 000000.jpg, 000001.jpg, ... with no gaps.
+
+        That's the only layout the non-temp path can render: it hands ffmpeg
+        "<source_folder>/%06d.jpg", which reads from 000000.jpg up to the first gap.
+        """
+        folder = image_collection.source_folder
+        images = image_collection.images
+        if not images:
+            return False
+        for index, image in enumerate(images):
+            if image.parent != folder or image.name.lower() != f"{index:06d}.jpg":
+                return False
+        # ffmpeg would also read any later numbered file, so the run must end here.
+        return not (folder / f"{len(images):06d}.jpg").exists()
 
     def _build_overlay_plan(
         self,
@@ -507,7 +534,7 @@ class VideoExportController:
 
                 input_pattern = str(job.temp_folder / "%06d.jpg")
             else:
-                # Use original images directly (assumes they're already numbered)
+                # Use original images directly (prepare_export checked they're numbered)
                 input_pattern = str(job.image_collection.source_folder / "%06d.jpg")
 
             if self.cancel_requested:

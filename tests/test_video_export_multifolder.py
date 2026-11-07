@@ -130,8 +130,14 @@ class PrepareExportMultiFolderTests(unittest.TestCase):
         self.assertTrue(any("Multi-folder render" in m for m in self.messages),
                         self.messages)
 
-    def test_single_folder_still_respects_preserve_originals_false(self):
-        ok, coll, _ = self.ctrl.scan_folder(self.base / "20260725")
+    def test_single_numbered_folder_still_respects_preserve_originals_false(self):
+        # Only frames already named 000000.jpg, ... can skip the copies
+        # (time-named ones are covered in test_video_export_numbering).
+        folder = self.base / "numbered"
+        folder.mkdir()
+        for index in range(2):
+            (folder / f"{index:06d}.jpg").write_bytes(b"")
+        ok, coll, _ = self.ctrl.scan_folder(folder)
         self.assertTrue(ok)
         settings = VideoExportSettings(framerate=24, preserve_originals=False)
         ok, job, _ = self.ctrl.prepare_export(settings, coll, self.base / "out.mp4")
