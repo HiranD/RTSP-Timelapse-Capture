@@ -79,6 +79,7 @@ from video_export_controller import VideoExportController
 from preset_manager import PresetManager
 from tooltip import ToolTip
 from capture_tooltips import CAPTURE_TOOLTIPS
+from camera_discovery import discover, entry_host, lookup_mac, match_configured, replace_host
 from capture_history import get_capture_history
 from remote_api import RemoteControlServer
 from event_log import EventLog
@@ -134,6 +135,8 @@ class RTSPTimelapseGUI:
         # Pumping starts before anything below can spawn a thread that logs.
         self._ui_calls = queue.SimpleQueue()
         self._pump_ui_calls()
+        # Camera host whose MAC was last looked up (see _learn_camera_mac).
+        self._mac_lookup_host = None
         self.root.title("RTSP Timelapse Capture System")
         self.root.geometry("1200x900")
         self.root.minsize(1000, 850)
@@ -775,12 +778,20 @@ class RTSPTimelapseGUI:
         camera_frame.columnconfigure(1, weight=1)
         row = 0
 
-        # Camera IP
+        # Camera IP, with Find (network discovery) beside it - laid out like Output Folder
         ttk.Label(camera_frame, text="IP Address:").grid(row=row, column=0, sticky=tk.W, pady=2)
-        self.ip_entry = ttk.Entry(camera_frame, width=20)
-        self.ip_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        ip_frame = ttk.Frame(camera_frame)
+        ip_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2, padx=(5, 0))
+        ip_frame.columnconfigure(0, weight=1)
+
+        self.ip_entry = ttk.Entry(ip_frame, width=14)
+        self.ip_entry.grid(row=0, column=0, sticky=(tk.W, tk.E))
         self.ip_entry.insert(0, self.config_manager.camera.ip_address)
         ToolTip(self.ip_entry, CAPTURE_TOOLTIPS["ip_address"])
+
+        self.find_camera_btn = ttk.Button(ip_frame, text="Find", width=6, command=self.find_camera)
+        self.find_camera_btn.grid(row=0, column=1, padx=(5, 0))
+        ToolTip(self.find_camera_btn, CAPTURE_TOOLTIPS["find_camera"])
         row += 1
 
         # Username
@@ -1364,7 +1375,7 @@ class RTSPTimelapseGUI:
             skip_schedule_times: If True, don't update schedule times (used when
                                astronomical scheduler has already set the times)
         """
-        self.config_manager.camera.ip_address = self.ip_entry.get()
+        self._sync_camera_address(self.ip_entry.get())
         self.config_manager.camera.username = self.username_entry.get()
         self.config_manager.camera.password = self.password_entry.get()
         self.config_manager.camera.stream_path = self.stream_path_entry.get()
@@ -1458,6 +1469,7 @@ class RTSPTimelapseGUI:
         if success:
             self.log_message("SUCCESS", f"Connection test passed: {message}")
             self.connection_label.configure(text="Connected", foreground="green")
+            self._learn_camera_mac(self.config_manager.camera.ip_address, force=True)
             messagebox.showinfo("Connection Test", message)
         else:
             self.log_message("ERROR", f"Connection test failed: {message}")
@@ -1465,6 +1477,230 @@ class RTSPTimelapseGUI:
             messagebox.showerror("Connection Test", message)
 
         self.test_btn.configure(state=tk.NORMAL)
+
+    def _sync_camera_address(self, new_value):
+        """Copy the IP Address field into the config (Tk thread).
+
+        Typing a different host may mean a different camera, so the saved MAC is
+        dropped; the next successful connection learns the right one. Find's Use
+        Selected sets address and MAC together, so it never trips this.
+        """
+        camera = self.config_manager.camera
+        if entry_host(new_value) != entry_host(camera.ip_address):
+            camera.mac_address = ""
+        camera.ip_address = new_value
+
+    def _learn_camera_mac(self, address, force=False):
+        """Remember the camera's MAC so Find recognises it after a DHCP move (Tk thread).
+
+        Called after a successful connection, when Windows has the camera in its
+        ARP cache. Off the local network (public IP, VPN) the lookup gives up after
+        ~3 s with nothing, so it runs on a background thread. Once per host per run
+        unless forced (Test Connection), since capture reconnects every few minutes.
+        """
+        host = entry_host(address)
+        if not host or (host == self._mac_lookup_host and not force):
+            return
+        self._mac_lookup_host = host
+
+        def worker():
+            # No Tk calls here - hand back via _post_to_ui (see its docstring).
+            mac = lookup_mac(host)
+            if mac:
+                self._post_to_ui(lambda: self._store_camera_mac(host, mac))
+
+        threading.Thread(target=worker, daemon=True, name="camera-mac").start()
+
+    def _store_camera_mac(self, host, mac):
+        """Save a looked-up MAC if it's new and still for the configured camera (Tk thread)."""
+        camera = self.config_manager.camera
+        # The address may have been changed while the lookup ran.
+        if entry_host(camera.ip_address) != host or camera.mac_address == mac:
+            return
+        camera.mac_address = mac
+        # Written now rather than at the next auto-save: the MAC is what finds the
+        # camera after the app restarts on a night the router moved it.
+        self._save_config_model()
+        self.log_message("INFO", f"Camera MAC {mac} saved - Find Camera will recognise "
+                                 "this camera if its address changes")
+
+    def _save_config_model(self):
+        """Write the in-memory config as-is (Tk thread).
+
+        Unlike save_config() this doesn't re-read every input first, so a
+        half-typed value elsewhere on the tab can't make it fail.
+        """
+        config_file = get_config_path()
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.config_manager.save_to_file(str(config_file))
+
+    def find_camera(self):
+        """Find Camera dialog: search the local network, fill in the IP Address.
+
+        Read-only on the network: it changes nothing on the camera. Use Selected
+        fills the entry box and saves address + MAC; the user still tests the
+        connection. The camera is recognised by its saved MAC first (it survives a
+        DHCP move), by IP otherwise - see camera_discovery.match_configured.
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Find Camera")
+        # Over the main window - a bare size opens it at the screen's top-left corner
+        width, height = 640, 340
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - width) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - height) // 3
+        dialog.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
+        dialog.minsize(460, 260)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        status_var = tk.StringVar()
+        ttk.Label(dialog, textvariable=status_var, wraplength=610,
+                  justify=tk.LEFT).pack(fill=tk.X, padx=10, pady=(10, 5))
+
+        tree_frame = ttk.Frame(dialog)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10)
+        # IP wide enough for "192.168.171.123 (your camera)", Model for "(not activated)"
+        columns = (("ip", "IP Address", 190), ("model", "Model", 170),
+                   ("mac", "MAC", 130), ("via", "Found via", 100))
+        tree = ttk.Treeview(tree_frame, columns=[c[0] for c in columns],
+                            show="headings", selectmode="browse", height=6)
+        for key, heading, col_width in columns:
+            tree.heading(key, text=heading, anchor=tk.W)
+            tree.column(key, width=col_width, anchor=tk.W)
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Per-selection hint (DHCP), kept apart from the search result line above
+        hint_var = tk.StringVar()
+        ttk.Label(dialog, textvariable=hint_var, wraplength=610, justify=tk.LEFT,
+                  foreground="#8a6d00").pack(fill=tk.X, padx=10, pady=(5, 0))
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+        use_btn = ttk.Button(button_frame, text="Use Selected", state=tk.DISABLED)
+        use_btn.pack(side=tk.RIGHT, padx=(0, 5))
+        search_btn = ttk.Button(button_frame, text="Search Again")
+        search_btn.pack(side=tk.LEFT)
+
+        cameras = {}  # tree iid -> DiscoveredCamera
+        current_host = entry_host(self.ip_entry.get())
+        # The saved MAC describes the configured address. If the field already holds
+        # a different, not-yet-saved host, the MAC is about the old camera - ignore it.
+        camera_config = self.config_manager.camera
+        saved_mac = (camera_config.mac_address
+                     if entry_host(camera_config.ip_address) == current_host else "")
+
+        def selected():
+            return cameras.get(next(iter(tree.selection()), None))
+
+        def on_select(_event=None):
+            cam = selected()
+            use_btn.configure(state=tk.NORMAL if cam else tk.DISABLED)
+            hint_var.set(
+                "This camera gets its address from DHCP, so it can change. Reserving "
+                "its address in your router keeps it fixed." if cam and cam.dhcp else "")
+
+        def use_selected(event=None):
+            if event is not None and tree.identify_region(event.x, event.y) != "cell":
+                return  # double-click on a heading or empty space
+            cam = selected()
+            if cam is None:
+                return
+            if str(self.ip_entry.cget("state")) == tk.DISABLED:
+                messagebox.showwarning(
+                    "Find Camera", "Stop capture before changing the camera address.",
+                    parent=dialog)
+                return
+            new_value = replace_host(self.ip_entry.get(), cam.ip)
+            self.ip_entry.delete(0, tk.END)
+            self.ip_entry.insert(0, new_value)
+            # Address and MAC change together (so _sync_camera_address keeps the
+            # MAC) and are saved now, like a learned MAC. Unknown MAC -> cleared,
+            # learned on the next successful connection.
+            camera_config.ip_address = new_value
+            camera_config.mac_address = cam.mac or ""
+            self._save_config_model()
+            self.log_message("INFO", f"Camera address set to {new_value} (Find Camera) "
+                                     "- click Test Connection to check")
+            dialog.destroy()
+
+        def show_results(found, error):
+            # The user may have closed the dialog while the search ran.
+            if not dialog.winfo_exists():
+                return
+            search_btn.configure(state=tk.NORMAL)
+            if error is not None:
+                status_var.set(f"The search could not run: {error}")
+                self.log_message("WARNING", f"Find Camera: search failed: {error}")
+                return
+            mine, moved = match_configured(found, current_host, saved_mac)
+            for cam in found:
+                model = cam.model or "-"
+                if cam.activated is False:
+                    model += " (not activated)"
+                ip_text = cam.ip
+                if cam is mine:
+                    ip_text += " (your camera)" if moved else " (current)"
+                iid = tree.insert("", tk.END, values=(ip_text, model, cam.mac or "-",
+                                                      cam.sources_label))
+                cameras[iid] = cam
+                if cam is mine:
+                    tree.selection_set(iid)
+                    tree.see(iid)
+            if found:
+                summary = ", ".join(f"{c.ip} ({c.model or 'unknown model'})" for c in found)
+                self.log_message("INFO", f"Find Camera: found {summary}")
+                if moved:
+                    status_var.set(
+                        f"Your camera has moved from {current_host} to {mine.ip} (recognised "
+                        f"by its MAC, {mine.mac}). Click Use Selected to update the address.")
+                    self.log_message("WARNING", f"Find Camera: camera {mine.mac} moved from "
+                                                f"{current_host} to {mine.ip}")
+                elif saved_mac and mine is None:
+                    other = (f" The device at {current_host} is a different camera."
+                             if any(c.ip == current_host for c in found) else "")
+                    status_var.set(
+                        f"Found {len(found)} camera{'s' if len(found) != 1 else ''}, but not "
+                        f"yours (MAC {saved_mac}).{other} Check that your camera is powered "
+                        "on and connected, or pick another camera.")
+                else:
+                    status_var.set(
+                        f"Found {len(found)} camera{'s' if len(found) != 1 else ''}. "
+                        "Select one and click Use Selected.")
+            else:
+                status_var.set(
+                    "No cameras answered. Check that the camera is powered on and on the "
+                    "same network as this PC. Some cameras ship with discovery (ONVIF) "
+                    "turned off. You can still type the IP address.")
+                self.log_message("INFO", "Find Camera: no cameras answered")
+
+        def start_search():
+            search_btn.configure(state=tk.DISABLED)
+            use_btn.configure(state=tk.DISABLED)
+            tree.delete(*tree.get_children())
+            cameras.clear()
+            hint_var.set("")
+            status_var.set("Searching the network...")
+
+            def worker():
+                # No Tk calls on this thread - the result goes back via _post_to_ui
+                # (root.after() here would leak Tcl per-thread state, see _post_to_ui).
+                try:
+                    found, error = discover(), None
+                except Exception as e:  # DiscoveryError, or anything unexpected
+                    found, error = [], e
+                self._post_to_ui(lambda: show_results(found, error))
+
+            threading.Thread(target=worker, daemon=True, name="find-camera").start()
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+        tree.bind("<Double-1>", use_selected)
+        use_btn.configure(command=use_selected)
+        search_btn.configure(command=start_search)
+        start_search()
 
     def toggle_capture(self):
         """Start or stop capture"""
@@ -1991,7 +2227,7 @@ class RTSPTimelapseGUI:
         so the Start Time field stays greyed when the mode is still 'Now'.
         """
         inputs = [
-            self.ip_entry, self.username_entry, self.password_entry,
+            self.ip_entry, self.find_camera_btn, self.username_entry, self.password_entry,
             self.stream_path_entry, self.start_time_entry, self.end_time_entry,
             self.start_at_radio, self.start_now_radio,
             self.interval_entry, self.output_entry, self.jpeg_quality_entry,
@@ -2055,6 +2291,7 @@ class RTSPTimelapseGUI:
         # Update connection status
         if state == CaptureState.RUNNING:
             self.connection_label.configure(text="Connected", foreground="green")
+            self._learn_camera_mac(self.config_manager.camera.ip_address)
         elif state == CaptureState.RECONNECTING:
             self.connection_label.configure(text="Reconnecting...", foreground="orange")
         elif state == CaptureState.ERROR:

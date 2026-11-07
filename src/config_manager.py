@@ -40,6 +40,9 @@ class CameraConfig:
     username: str = "admin"
     password: str = ""
     stream_path: str = "/stream1"
+    # Learned, not typed: saved after a successful connection so Find Camera can
+    # recognise the camera after DHCP gives it a new address. "" = not known yet.
+    mac_address: str = ""
 
 
 @dataclass

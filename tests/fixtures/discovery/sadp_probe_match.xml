@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ProbeMatch><Uuid>F74D5F4D-E510-49DA-8311-457F6AE6ED95</Uuid>
+<Types>inquiry</Types>
+<DeviceType>148133</DeviceType>
+<DeviceDescription>I81EM</DeviceDescription>
+<DeviceSN>TEST0000000000000000000000</DeviceSN>
+<CommandPort>8000</CommandPort>
+<HttpPort>80</HttpPort>
+<MAC>24-48-45-00-00-01</MAC>
+<IPv4Address>192.168.171.22</IPv4Address>
+<IPv4SubnetMask>255.255.255.0</IPv4SubnetMask>
+<IPv4Gateway>192.168.171.1</IPv4Gateway>
+<IPv6Address>::</IPv6Address>
+<IPv6Gateway>::</IPv6Gateway>
+<IPv6MaskLen>64</IPv6MaskLen>
+<DHCP>true</DHCP>
+<AnalogChannelNum>0</AnalogChannelNum>
+<DigitalChannelNum>1</DigitalChannelNum>
+<SoftwareVersion>V5.7.12build 231130</SoftwareVersion>
+<DSPVersion>V7.3 build 220727</DSPVersion>
+<BootTime>2026-09-09 04:00:40</BootTime>
+<Encrypt>true</Encrypt>
+<ResetAbility>false</ResetAbility>
+<DiskNumber>0</DiskNumber>
+<Activated>true</Activated>
+<PasswordResetAbility>true</PasswordResetAbility>
+<PasswordResetModeSecond>true</PasswordResetModeSecond>
+<DetailOEMCode>1</DetailOEMCode>
+<SupportSecurityQuestion>true</SupportSecurityQuestion>
+<SupportHCPlatform>true</SupportHCPlatform>
+<HCPlatformEnable>flase</HCPlatformEnable>
+<IsModifyVerificationCode>true</IsModifyVerificationCode>
+<Salt>0000000000000000000000000000000000000000000000000000000000000000</Salt>
+<DeviceLock>true</DeviceLock>
+<codeEncrypt>true</codeEncrypt>
+<SupportMailBox>true</SupportMailBox>
+<supportEzvizUnbind>true</supportEzvizUnbind>
+</ProbeMatch>
