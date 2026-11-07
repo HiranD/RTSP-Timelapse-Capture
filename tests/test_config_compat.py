@@ -140,6 +140,28 @@ class UnknownKeyToleranceTests(unittest.TestCase):
         self.assertEqual(mgr.astro_schedule.mqtt_qos, 1)
         self.assertFalse(mgr.astro_schedule.mqtt_use_tls)
 
+    def test_pre_find_camera_config_loads_without_a_mac(self):
+        """camera.mac_address arrived with Find Camera; older configs don't have it.
+
+        It must default to "not known yet" and survive a save/load round trip once
+        the app has learned it.
+        """
+        mgr = ConfigManager()
+        mgr.from_dict({"camera": {"ip_address": "192.168.171.22", "username": "admin"}})
+        self.assertEqual(mgr.camera.mac_address, "")
+
+        mgr.camera.mac_address = "24:48:45:00:00:01"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "app_config.json")
+            success, message = mgr.save_to_file(path)
+            self.assertTrue(success, message)
+            reloaded = ConfigManager()
+            success, message = reloaded.load_from_file(path)
+
+        self.assertTrue(success, message)
+        self.assertEqual(reloaded.camera.mac_address, "24:48:45:00:00:01")
+        self.assertEqual(reloaded.camera.ip_address, "192.168.171.22")
+
     def test_config_with_utf8_bom_loads(self):
         """A BOM must not wipe the user's settings.
 

@@ -164,6 +164,11 @@
      Password:    ********
      Stream Path: /stream1  (must match your camera - see Common RTSP Paths)
    ```
+   Don't know the camera's IP? Click **Find** next to IP Address. It lists the cameras on your
+   network (ONVIF, plus Hikvision/Annke discovery) and fills in the one you pick. The app remembers
+   your camera's MAC address after it connects, so if the router later gives the camera a new IP,
+   Find marks it "(your camera)" at its new address. Reserving the camera's address in your
+   router stops it changing in the first place.
 
 2. **Set Schedule**
    ```
@@ -574,7 +579,8 @@ Based on extensive testing with Annke I81EM IP cameras, two configurations are r
 ### Camera Connection Issues
 
 **Cannot connect to camera:**
-- Verify camera IP with `ping 192.168.0.101`.
+- Verify camera IP with `ping 192.168.0.101`. If its address may have changed (DHCP), click
+  **Find** to see where it is now.
 - Test the stream URL in VLC: `rtsp://user:pass@ip/stream1`. If VLC works and the app does not, copy
   VLC's path (Media -> Open Network Stream) into **Stream Path** verbatim - the Activity Log prints
   the exact URL the app dials (with the password masked), so compare the two.

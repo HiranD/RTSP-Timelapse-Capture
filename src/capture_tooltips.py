@@ -15,6 +15,12 @@ CAPTURE_TOOLTIPS = {
         "Example: 192.168.0.101 or 192.168.0.101:8554 (with custom port)."
     ),
 
+    "find_camera": (
+        "Search the local network for cameras (ONVIF and Hikvision/Annke SADP) "
+        "and pick one to fill in the IP address. Works only when the camera is "
+        "on the same network as this PC. Changes nothing on the camera."
+    ),
+
     "username": (
         "RTSP authentication username. "
         "Usually 'admin' for most IP cameras. Check your camera documentation."

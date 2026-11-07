@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Find button next to the camera's IP Address.** It searches the local network and lists the
+  cameras that answer (IP address, model, MAC), and picking one fills in the address. A custom
+  port you typed is kept. It uses ONVIF discovery, which most camera brands support, plus
+  Hikvision's SADP, which covers Hikvision and OEMs such as Annke. That helps when you don't
+  know the camera's IP, and above all when a camera on DHCP has moved to a new address.
+- **Find recognises your camera after its address changes.** After each successful connection
+  the app saves the camera's MAC address, which never changes, in `config\app_config.json`. If
+  the router gives the camera a new IP, Find picks it out by its MAC, marks it "(your camera)",
+  and says where it moved from and to. Use Selected then updates the address. This works even
+  when another device has taken the old address. Existing setups learn the MAC on their first
+  successful connection after upgrading. If the camera reports that it uses DHCP, the dialog
+  also suggests reserving its address in the router.
+- Find only sends the two read-only "who's there?" messages: it changes nothing on the camera and
+  needs no password. It works only when the camera and PC are on the same network.
+
 ## [3.7.1] - 2026-10-23
 
 ### Fixed
